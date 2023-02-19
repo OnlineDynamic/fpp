@@ -104,8 +104,8 @@ extraCommands = [
             ]
         },
         {
-            "description": "GPIO Mode",
-            "name": "gpio_mode",
+            "description": "GPIO Read Method",
+            "name": "readMethod",
             "optional": false,
             "type": "string",
             "contents": [

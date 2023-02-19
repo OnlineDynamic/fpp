@@ -16,6 +16,7 @@
 #include "MediaCommands.h"
 #include "MultiSync.h"
 #include "PlaylistCommands.h"
+#include "OLEDCommands.h"
 
 CommandManager CommandManager::INSTANCE;
 Command::Command(const std::string& n) :

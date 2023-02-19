@@ -182,9 +182,11 @@ bool FPPOLEDUtils::setupControlPin(const std::string& file) {
 
 FPPOLEDUtils::InputAction* FPPOLEDUtils::configureGPIOPin(const std::string& pinName,
                                                           const std::string& mode,
-                                                          const std::string& edge) {
+                                                          const std::string& edge,
+                                                          const std::string& readMethod) {
     const PinCapabilities& pin = PinCapabilities::getPinByName(pinName);
     pin.configPin(mode, false);
+if (readMethod !="Poll"){
 #ifdef HASGPIOD
     const GPIODCapabilities* gpiodPin = dynamic_cast<const GPIODCapabilities*>(pin.ptr());
     if (gpiodPin) {
@@ -197,6 +199,7 @@ FPPOLEDUtils::InputAction* FPPOLEDUtils::configureGPIOPin(const std::string& pin
         return action;
     }
 #endif
+}
 
     InputAction* action = new InputAction();
     action->pin = pinName;
@@ -260,6 +263,7 @@ bool FPPOLEDUtils::parseInputActionFromGPIO(const std::string& file) {
                 if (!root[x]["enabled"].asBool()) {
                     continue;
                 }
+                std::string readMethod = "";
                 std::string edge = "";
                 std::string actionValue = "";
                 std::string mode = root[x]["mode"].asString();
@@ -272,6 +276,10 @@ bool FPPOLEDUtils::parseInputActionFromGPIO(const std::string& file) {
                 if (root[x].isMember("falling") && root[x]["falling"]["command"].asString() == "OLED Navigation") {
                     edge = "falling";
                     fallingAction = root[x]["falling"]["args"][0].asString();
+                    readMethod = root[x]["falling"]["args"][1].asString();
+                    if (readMethod == "") {
+                        readMethod = "Interrupt";
+                    }
                     setInputFlag(fallingAction);
                 }
                 if (root[x].isMember("rising") && root[x]["rising"]["command"].asString() == "OLED Navigation") {
@@ -281,10 +289,14 @@ bool FPPOLEDUtils::parseInputActionFromGPIO(const std::string& file) {
                         edge = "rising";
                     }
                     risingAction = root[x]["rising"]["args"][0].asString();
+                    readMethod = root[x]["rising"]["args"][1].asString();
+                        if (readMethod == "") {
+                            readMethod = "Interrupt";
+                        }
                     setInputFlag(risingAction);
                 }
                 if (edge != "") {
-                    InputAction* action = configureGPIOPin(pinName, mode, edge);
+                    InputAction* action = configureGPIOPin(pinName, mode, edge, readMethod);
                     if (risingAction != "") {
                         printf("Configuring pin %s as input of type %s   (mode: %s, gpio: %d,  file: %d)\n", action->pin.c_str(), risingAction.c_str(), action->mode.c_str(), action->kernelGPIO, action->file);
                         action->actions.push_back(new FPPOLEDUtils::InputAction::Action(risingAction, 1, 1, 100000));
