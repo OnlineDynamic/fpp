@@ -8,6 +8,8 @@ require_once '../common.php';
 dispatch_get('/backups/list', 'GetAvailableBackups');
 dispatch_get('/backups/list/:DeviceName', 'GetAvailableBackupsOnDevice');
 dispatch_get('/backups/devices', 'GetAvailableBackupsDevices');
+dispatch_post('/backups/devices/mount/:DeviceName/:MountLocation', 'MountDevice');
+dispatch_post('/backups/devices/unmount/:DeviceName/:MountLocation', 'UnmountDevice');
 dispatch_post('/backups/configuration', 'MakeJSONBackup');
 dispatch_get('/backups/configuration/list', 'GetAvailableJSONBackups');
 dispatch_get('/backups/configuration/list/:DeviceName', 'GetAvailableJSONBackupsOnDevice');
@@ -54,6 +56,7 @@ dispatch_post('/file/:DirName/copy/:source/:dest', 'files_copy');
 dispatch_post('/file/:DirName/rename/:source/:dest', 'files_rename');
 dispatch_get('/file/:DirName/:Name', 'GetFile');
 dispatch_delete('/file/:DirName/:Name', 'DeleteFile');
+dispatch_post('/file/:DirName/:Name', 'PostFile');
 
 dispatch_get('/git/originLog', 'GetGitOriginLog');
 dispatch_get('/git/releases/os/:All', 'GitOSReleases');
