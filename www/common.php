@@ -655,7 +655,7 @@ function PrintSettingGroupTable($group, $appendData = "", $prependData = "", $in
     echo "</div>\n";
 }
 
-function PrintSettingCheckbox($title, $setting, $restart = 1, $reboot = 0, $checkedValue, $uncheckedValue, $pluginName = "", $callbackName = "", $defaultValue = 0, $desc = "", $sData = array())
+function PrintSettingCheckbox($title, $setting, $restart, $reboot, $checkedValue, $uncheckedValue, $pluginName = "", $callbackName = "", $defaultValue = 0, $desc = "", $sData = array())
 {
     global $settings;
     global $pluginSettings;
@@ -787,7 +787,7 @@ function " . $changedFunction . "() {
 
 }
 
-function PrintSettingSelectInternal($title, $setting, $restart = 1, $reboot = 0, $defaultValue, $values, $pluginName = "", $callbackName = "", $changedFunction = "", $sData = array(), $multiple = false)
+function PrintSettingSelectInternal($title, $setting, $restart, $reboot, $defaultValue, $values, $pluginName = "", $callbackName = "", $changedFunction = "", $sData = array(), $multiple = false)
 {
     global $settings;
     global $pluginSettings;
@@ -918,11 +918,11 @@ function " . $changedFunction . "() {
 
     echo "</select>\n";
 }
-function PrintSettingMultiSelect($title, $setting, $restart = 1, $reboot = 0, $defaultValue, $values, $pluginName = "", $callbackName = "", $changedFunction = "", $sData = array())
+function PrintSettingMultiSelect($title, $setting, $restart, $reboot, $defaultValue, $values, $pluginName = "", $callbackName = "", $changedFunction = "", $sData = array())
 {
     PrintSettingSelectInternal($title, $setting, $restart, $reboot, $defaultValue, $values, $pluginName, $callbackName, $changedFunction, $sData, true);
 }
-function PrintSettingSelect($title, $setting, $restart = 1, $reboot = 0, $defaultValue, $values, $pluginName = "", $callbackName = "", $changedFunction = "", $sData = array())
+function PrintSettingSelect($title, $setting, $restart, $reboot, $defaultValue, $values, $pluginName = "", $callbackName = "", $changedFunction = "", $sData = array())
 {
     PrintSettingSelectInternal($title, $setting, $restart, $reboot, $defaultValue, $values, $pluginName, $callbackName, $changedFunction, $sData, false);
 }
@@ -1196,6 +1196,30 @@ function " . $saveFunction . "() {
 <input type='button' class='buttons' id='save$setting' onClick='" . $saveFunction . "();' value='Save'>\n";
 }
 
+
+/**
+ * Returns the filesize for the given filename
+ *
+ * NORMALLY will return an int, but if the file is greater than 2G on a 32bit
+ * system, the return will be a string.  If making calculations with the return,
+ * make sure to use the "bcmath" functions so they can handle the string
+ * version on the 32bit systems
+ */
+function real_filesize($fileFullName)
+{
+    if (PHP_INT_SIZE === 4) {
+        //32 bit system, cannot use built in filesize call as files larger than 2G will
+        //cause problems and not report the proper size
+        $filesize = exec("stat --format=\"%s\" " . escapeshellarg($fileFullName));
+        if (intval($filesize) < PHP_INT_MAX) {
+            $filesize = intval($filesize);
+        }
+        return $filesize;
+    }
+    clearstatcache(true, $fileFullName);
+    return filesize($fileFullName);
+}
+
 /**
  * Returns sequence header info for the specified sequence
  *
@@ -1231,7 +1255,7 @@ function get_sequence_file_info($mediaName)
     //Make sure it exists first
     if (!empty($mediaName) & file_exists($filename)) {
         //Get the filesize
-        $media_filesize = filesize($filename);
+        $media_filesize = real_filesize($filename);
         //Read the sequence
         $file_handle = fopen($filename, "r");
         //Read the first 28 bytes for the header
