@@ -106,5 +106,6 @@
         "stop_token": "cpp"
     },
     "editor.formatOnSave": true,
-    "cmake.configureOnOpen": false
+    "cmake.configureOnOpen": false,
+    "clang-format.executable": "/root/.vscode-server/extensions/ms-vscode.cpptools-1.14.3-linux-armhf/LLVM/bin/clang-format"
 }
