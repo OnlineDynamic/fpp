@@ -311,7 +311,7 @@ void GPIOManager::SetupGPIOInput(std::map<int, std::function<bool(int)>>& callba
                     a.doAction(v);
                 } else {
                     //we are within the debounce time, we'll record this as a last value
-                    //and if we end up witha different value after the debounce time,
+                    //and if we end up with a different value after the debounce time,
                     //we'll send the command then
                     a.futureValue = v;
                     checkDebounces = true;
