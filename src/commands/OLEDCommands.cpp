@@ -18,7 +18,8 @@
 
 OLEDMenuCommand::OLEDMenuCommand() :
     Command("Stuart Test OLED Navigation", "Sends actions to the OLED Menu") {
-    args.push_back(CommandArg("action", "string", "Action").setContentListUrl("api/oled/action/options"));
+    args.push_back(CommandArg("action", "string", "Button Action").setContentListUrl("api/oled/action/options"));
+    args.push_back(CommandArg("readMethod", "string", "GPIO Read Mode").setDefaultValue("Interrupt").setContentList({ "Poll", "Interrupt" }));
 }
 std::unique_ptr<Command::Result> OLEDMenuCommand::run(const std::vector<std::string>& args) {
     if (args.size() != 1) {

@@ -285,7 +285,7 @@ bool FPPOLEDUtils::parseInputActionFromGPIO(const std::string& file) {
                 std::string pinName = root[x]["pin"].asString();
                 std::string fallingAction = "";
                 std::string risingAction = "";
-                if (root[x].isMember("falling") && root[x]["falling"]["command"].asString() == "OLED Navigation") {
+                if (root[x].isMember("falling") && root[x]["falling"]["command"].asString() == "Stuart Test OLED Navigation") {
                     edge = "falling";
                     fallingAction = root[x]["falling"]["args"][0].asString();
                     readMethod = root[x]["falling"]["args"][1].asString();
@@ -294,7 +294,7 @@ bool FPPOLEDUtils::parseInputActionFromGPIO(const std::string& file) {
                     }
                     setInputFlag(fallingAction);
                 }
-                if (root[x].isMember("rising") && root[x]["rising"]["command"].asString() == "OLED Navigation") {
+                if (root[x].isMember("rising") && root[x]["rising"]["command"].asString() == "Stuart Test OLED Navigation") {
                     if (edge == "falling") {
                         edge = "both";
                     } else {
