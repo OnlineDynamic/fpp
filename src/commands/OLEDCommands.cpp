@@ -22,14 +22,12 @@ OLEDMenuCommand::OLEDMenuCommand() :
     args.push_back(CommandArg("readMethod", "string", "GPIO Read Mode").setDefaultValue("Interrupt").setContentList({ "Poll", "Interrupt" }));
 }
 std::unique_ptr<Command::Result> OLEDMenuCommand::run(const std::vector<std::string>& args) {
-    if (args.size() != 1) {
+    if (args.size() != 2) {
         return std::make_unique<Command::ErrorResult>("Not found");
     }
 
-    //  int v = std::atoi(args[0].c_str());
-    // setVolume(v);
+    LogInfo(VB_COMMAND, "Stuarts OLED Button Push: ", args[0].c_str());
     // Need code in here to trigger action in the fppoled service
 
-    LogInfo(VB_COMMAND, "Stuarts OLED Button Push: \n", args[0].c_str());
     return std::make_unique<Command::Result>("Nav Menu Action");
 }

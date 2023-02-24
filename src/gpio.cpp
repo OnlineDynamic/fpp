@@ -139,7 +139,7 @@ void GPIOManager::CheckGPIOInputs(void) {
                         a.doAction(val);
                     }
                 } else {
-                    //will need to check again
+                    // will need to check again
                     checkDebounces = true;
                 }
             }
@@ -221,13 +221,13 @@ void GPIOManager::SetupGPIOInput(std::map<int, std::function<bool(int)>>& callba
                 if (state.pin) {
                     if (v.isMember("rising")) {
                         state.risingAction = v["rising"];
-                        if (state.risingAction["command"].asString() == "OLED Navigation") {
+                        if (state.risingAction["command"].asString() == "Old to be removed OLED Navigation") {
                             state.risingAction["command"] = "";
                         }
                     }
                     if (v.isMember("falling")) {
                         state.fallingAction = v["falling"];
-                        if (state.fallingAction["command"].asString() == "OLED Navigation") {
+                        if (state.fallingAction["command"].asString() == "Old to be removed OLED Navigation") {
                             state.fallingAction["command"] = "";
                         }
                     }
@@ -310,9 +310,9 @@ void GPIOManager::SetupGPIOInput(std::map<int, std::function<bool(int)>>& callba
                 if (a.lastTriggerTime < lastAllowedTime) {
                     a.doAction(v);
                 } else {
-                    //we are within the debounce time, we'll record this as a last value
-                    //and if we end up with a different value after the debounce time,
-                    //we'll send the command then
+                    // we are within the debounce time, we'll record this as a last value
+                    // and if we end up with a different value after the debounce time,
+                    // we'll send the command then
                     a.futureValue = v;
                     checkDebounces = true;
                 }

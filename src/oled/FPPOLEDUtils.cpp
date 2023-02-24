@@ -197,8 +197,10 @@ FPPOLEDUtils::InputAction* FPPOLEDUtils::configureGPIOPin(const std::string& pin
                                                           const std::string& edge,
                                                           const std::string& readMethod) {
     const PinCapabilities& pin = PinCapabilities::getPinByName(pinName);
-    pin.configPin(mode, false);
+
     if (readMethod != "Poll") {
+        pin.configPin(mode, false);
+
 #ifdef HASGPIOD
         const GPIODCapabilities* gpiodPin = dynamic_cast<const GPIODCapabilities*>(pin.ptr());
         if (gpiodPin) {
@@ -230,19 +232,22 @@ FPPOLEDUtils::InputAction* FPPOLEDUtils::configureGPIOPin(const std::string& pin
     if (gpiod_line_request(action->gpiodLine, &lineConfig, 0) == -1) {
         printf("Could not config line as input.  Line %d    Offset: %d   Value:%d\n", action->gpiodLine, gpiod_line_offset(action->gpiodLine), pin.getValue());
     }
-    gpiod_line_release(action->gpiodLine);
-    if (edge == "falling") {
-        lineConfig.request_type = GPIOD_LINE_REQUEST_EVENT_FALLING_EDGE;
-    } else if (edge == "rising") {
-        lineConfig.request_type = GPIOD_LINE_REQUEST_EVENT_RISING_EDGE;
-    } else {
-        lineConfig.request_type = GPIOD_LINE_REQUEST_EVENT_BOTH_EDGES;
+    if (readMethod != "Poll") {
+        gpiod_line_release(action->gpiodLine);
+        if (edge == "falling") {
+            lineConfig.request_type = GPIOD_LINE_REQUEST_EVENT_FALLING_EDGE;
+        } else if (edge == "rising") {
+            lineConfig.request_type = GPIOD_LINE_REQUEST_EVENT_RISING_EDGE;
+        } else {
+            lineConfig.request_type = GPIOD_LINE_REQUEST_EVENT_BOTH_EDGES;
+        }
+        lineConfig.flags = 0;
+        if (gpiod_line_request(action->gpiodLine, &lineConfig, 0) == -1) {
+            printf("Could not config line edge for line %d\n", action->gpiodLine);
+        }
+
+        action->file = gpiod_line_event_get_fd(action->gpiodLine);
     }
-    lineConfig.flags = 0;
-    if (gpiod_line_request(action->gpiodLine, &lineConfig, 0) == -1) {
-        printf("Could not config line edge for line %d\n", action->gpiodLine);
-    }
-    action->file = gpiod_line_event_get_fd(action->gpiodLine);
     action->kernelGPIO = pin.kernelGpio;
     action->gpioChipIdx = pin.gpioIdx;
     action->gpioChipLine = pin.gpio;
@@ -285,7 +290,7 @@ bool FPPOLEDUtils::parseInputActionFromGPIO(const std::string& file) {
                 std::string pinName = root[x]["pin"].asString();
                 std::string fallingAction = "";
                 std::string risingAction = "";
-                if (root[x].isMember("falling") && root[x]["falling"]["command"].asString() == "OLED Navigation") {
+                if (root[x].isMember("falling") && root[x]["falling"]["command"].asString() == "Old to be removed OLED Navigation") {
                     edge = "falling";
                     fallingAction = root[x]["falling"]["args"][0].asString();
                     readMethod = root[x]["falling"]["args"][1].asString();
@@ -294,7 +299,7 @@ bool FPPOLEDUtils::parseInputActionFromGPIO(const std::string& file) {
                     }
                     setInputFlag(fallingAction);
                 }
-                if (root[x].isMember("rising") && root[x]["rising"]["command"].asString() == "OLED Navigation") {
+                if (root[x].isMember("rising") && root[x]["rising"]["command"].asString() == "Old to be removed OLED Navigation") {
                     if (edge == "falling") {
                         edge = "both";
                     } else {
