@@ -92,7 +92,7 @@ $(document).ready(function(){
 
 extraCommands = [
 {
-    "name": "OLED Navigation",
+    "name": "Old to be removed OLED Navigation",
     "args": [
         {
             "description": "Action",

@@ -17,7 +17,7 @@
 #include "OLEDCommands.h"
 
 OLEDMenuCommand::OLEDMenuCommand() :
-    Command("Stuart Test OLED Navigation", "Sends actions to the OLED Menu") {
+    Command("OLED Navigation", "Sends actions to the OLED Menu") {
     args.push_back(CommandArg("action", "string", "Button Action").setContentListUrl("api/oled/action/options"));
     args.push_back(CommandArg("readMethod", "string", "GPIO Read Mode").setDefaultValue("Interrupt").setContentList({ "Poll", "Interrupt" }));
 }
