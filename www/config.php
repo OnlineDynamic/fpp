@@ -1,5 +1,7 @@
 <?php
 
+setlocale(LC_CTYPE, "en_US.UTF-8");
+
 $SUDO = "sudo";
 $debug = false;
 $fppRfsVersion = "Unknown";
@@ -285,7 +287,11 @@ if ($settings['Platform'] == "Raspberry Pi") {
         $settings['Logo'] = "beagle_logo.png";
     }
 } else if ($settings['Platform'] == "Debian" || $settings['Platform'] == "Ubuntu" || $settings['Platform'] == "Mint" || $settings['Platform'] == "Armbian" || $settings['Platform'] == "OrangePi") {
-    $settings['SubPlatform'] = trim(file_get_contents("/proc/device-tree/model"));
+    if (file_exists("/.dockerenv")) {
+        $settings['SubPlatform'] = "Docker";
+    } else {
+        $settings['SubPlatform'] = trim(file_get_contents("/proc/device-tree/model"));
+    }
     $settings['Variant'] = $settings['SubPlatform'];
     if (preg_match('/Orange/', $settings['SubPlatform'])) {
         $settings['Logo'] = "orangepi_logo.png";
@@ -622,21 +628,21 @@ function GetDirSetting($dir)
         return GetSettingValue('scriptDirectory');
     } else if ($dir == "logs") {
         return GetSettingValue('logDirectory');
-    } else if ($dir == "uploads") {
+    } else if ($dir == "uploads" || $dir == "upload") {
         return GetSettingValue('uploadDirectory');
     } else if ($dir == "docs") {
         return GetSettingValue('docsDirectory');
     } else if ($dir == "config") {
         return GetSettingValue('configDirectory');
-	} else if ($dir == "jsonbackups") {
-		return GetSettingValue('configDirectory') . "/backups";
-	} else if ($dir == "jsonbackupsalternate") {
-		//Folder Location on the alternate store under which the backups are stored
-		$fileCopy_BackupPath = 'Automatic_Backups';
+    } else if ($dir == "jsonbackups") {
+        return GetSettingValue('configDirectory') . "/backups";
+    } else if ($dir == "jsonbackupsalternate") {
+        //Folder Location on the alternate store under which the backups are stored
+        $fileCopy_BackupPath = 'Automatic_Backups';
 
-		//build out the path to the alternative location as it's slightly custom
-		return "/mnt/tmp/" . $fileCopy_BackupPath . "/config/backups";
-	} else if ($dir == 'tmp') {
+        //build out the path to the alternative location as it's slightly custom
+        return "/mnt/tmp/" . $fileCopy_BackupPath . "/config/backups";
+    } else if ($dir == 'tmp') {
         return GetSettingValue('mediaDirectory') . '/tmp';
     } else if ($dir == 'crashes') {
         return GetSettingValue('mediaDirectory') . '/crashes';
@@ -666,7 +672,7 @@ if (file_exists($pluginDirectory)) {
 
 /////////////////////////////////////////////////////////////////////////////
 
-// $skipJSsettings is only set in fppjson.php and fppxml.php
+// $skipJSsettings is set in a few places
 // to prevent this JavaScript from being printed
 //
 // HTTP discovery looks for the string "Falcon Player - FPP" in the resulting HTML

@@ -83,6 +83,9 @@
         //Called when the new color is changed
             change = function () {
                 var cal = $(this).parent().parent(), col;
+
+                if (!cal.data('colpick')) { return; }
+
                 if (this.parentNode.className.indexOf('_hex') > 0) {
                     cal.data('colpick').color = col = hexToHsb(fixHex(this.value));
                     fillRGBFields(col, cal.get(0));
@@ -153,6 +156,7 @@
                     cal: $(this).parent(),
                     y: $(this).offset().top
                 };
+                if (!current.cal.data('colpick')) { return false; }
                 $(document).on('mouseup touchend', current, upHue);
                 $(document).on('mousemove touchmove', current, moveHue);
 
@@ -166,6 +170,8 @@
                 return false;
             },
             moveHue = function (ev) {
+                if (!ev.data.cal.data('colpick')) { return false; }
+
                 var pageY = ((ev.type == 'touchmove') ? ev.originalEvent.changedTouches[0].pageY : ev.pageY );
                 change.apply(
                     ev.data.cal.data('colpick')
@@ -176,6 +182,8 @@
                 return false;
             },
             upHue = function (ev) {
+                if (!ev.data.cal.data('colpick')) { return false; }
+
                 fillRGBFields(ev.data.cal.data('colpick').color, ev.data.cal.get(0));
                 fillHexFields(ev.data.cal.data('colpick').color, ev.data.cal.get(0));
                 $(document).off('mouseup touchend', upHue);
@@ -189,6 +197,7 @@
                     cal: $(this).parent(),
                     pos: $(this).offset()
                 };
+                if (!current.cal.data('colpick')) { return false; }
                 current.preview = current.cal.data('colpick').livePreview;
 
                 $(document).on('mouseup touchend', current, upSelector);
@@ -213,6 +222,8 @@
                 return false;
             },
             moveSelector = function (ev) {
+                if (!ev.data.cal.data('colpick')) { return false; }
+
                 var pageX, pageY;
                 if (ev.type == 'touchmove') {
                     pageX = ev.originalEvent.changedTouches[0].pageX;
@@ -232,6 +243,8 @@
                 return false;
             },
             upSelector = function (ev) {
+                if (!ev.data.cal.data('colpick')) { return false; }
+
                 fillRGBFields(ev.data.cal.data('colpick').color, ev.data.cal.get(0));
                 fillHexFields(ev.data.cal.data('colpick').color, ev.data.cal.get(0));
                 $(document).off('mouseup touchend', upSelector);
@@ -262,12 +275,20 @@
                 var left = pos.left;
                 var viewPort = getViewport();
                 var calW = cal.width();
-                if (left + calW > viewPort.l + viewPort.w) {
-                    left -= calW;
+                var calH = cal.height();
+                var bottom = top + calH;
+                var right = left + calW;
+                if (right > viewPort.w) {
+                    left = (viewPort.w-calW) / 2;
+                }
+                if (bottom > viewPort.l) {
+                    top -= (calH + this.offsetHeight);
                 }
                 cal.css({left: left + 'px', top: top + 'px'});
                 if (cal.data('colpick').onShow.apply(this, [cal.get(0)]) != false) {
                     cal.show();
+                    // Hide the keyboard on mobile devices be deselecting the text box
+                    $(document.activeElement).filter(':input:focus').blur();
                 }
                 //Hide when user clicks outside
                 $('html').mousedown({cal: cal}, hide);
@@ -288,7 +309,7 @@
             getViewport = function () {
                 var m = document.compatMode == 'CSS1Compat';
                 return {
-                    l: window.pageXOffset || (m ? document.documentElement.scrollLeft : document.body.scrollLeft),
+                    l: window.innerHeight || (m ? document.documentElement.scrollLeft : document.body.scrollLeft),
                     w: window.innerWidth || (m ? document.documentElement.clientWidth : document.body.clientWidth)
                 };
             },
@@ -489,7 +510,21 @@
                 });
             },
             destroy: function () {
-                $('#' + $(this).data('colpickId')).remove();
+                var el = $(this);
+
+                $('#' + el.data('colpickId')).remove();
+
+                el.removeData('colpickId');
+
+                // unbind all events
+                var doc = $(document);
+                doc.off('mouseup touchend', upHue);
+                doc.off('mousemove touchmove', moveHue);
+                doc.off('mouseup touchend', upSelector);
+                doc.off('mousemove touchmove', moveSelector);
+                doc.off('mouseup', upIncrement);
+                doc.off('mousemove', moveIncrement);
+                $('html').off('mousedown', hide);
             }
         };
     }();

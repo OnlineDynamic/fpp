@@ -284,8 +284,9 @@ SetupFPPNetworkConfigViaSystemdNetworkd() {
     if [ "x${TetherEnabled}" == "x" ]; then
         TetherEnabled="";
     fi
-    
+
     rm -f /etc/wpa_supplicant-wl*.conf
+    rm -f /etc/wpa_supplicant/wpa_supplicant-wl*.conf
 
     ENABLEHOSTAPD="0"
     IP_FORWARD="0"
@@ -409,7 +410,7 @@ SetupFPPNetworkConfigViaSystemdNetworkd() {
             echo "ClientIdentifier=mac" >> $TMPFILE
             echo "" >> $TMPFILE
         fi
-        if [ "$ROUTEMETRIC" != "0" && "$PROTO" != "dhcp" ]; then
+        if [[ "$ROUTEMETRIC" != "0" && "$PROTO" != "dhcp" ]]; then
             echo "[DHCPv4]" >> $TMPFILE
         fi
         if [ "$ROUTEMETRIC" != "0" ]; then
@@ -445,7 +446,7 @@ SetupFPPNetworkConfigViaSystemdNetworkd() {
             fi
         fi
 
-        cp $TMPFILE /etc/systemd/network
+        cp -f $TMPFILE /etc/systemd/network
     done
     sysctl net.ipv4.ip_forward=${IP_FORWARD}
 
@@ -458,7 +459,9 @@ SetupFPPNetworkConfigViaSystemdNetworkd() {
     fi
 }
 SetupFPPNetworkConfig () {
-    rfkill unblock wifi; rfkill unblock all
+    if [ -f /sbin/rfkill ]; then
+        rfkill unblock wifi; rfkill unblock all
+    fi
     if [ -f /usr/bin/connmanctl ]; then
         SetupFPPNetworkConfigViaConnMann
         ENABLEROUTING=$(getSetting EnableRouting)
@@ -567,8 +570,11 @@ MaybeEnableTethering() {
     fi
 
     if [ "$TetherEnabled" == "0" ]; then
-        IPS="$(ip -o -4 addr | grep -v usb | grep -v 127.0)"
-        
+        # In a perfect world wlan0 would have no IP Address at this point, but in FPP 6.3
+        # on BBB, it has the tethering IP leftover on a wlan interface from the last boot,
+        # so ignore that when trying to work out if we're going to enable tether mode again.
+        IPS="$(ip -o -4 addr | grep -v usb | grep -v 127.0 | grep -v 'wlan. *inet 192.168.8.1')"
+
         ETHDEVICES=$(ls -d /sys/class/net/e*)
         HASLINK=""
         for d in $ETHDEVICES; do
@@ -774,7 +780,7 @@ populateCCACHE() {
     fi
 
     # set the CCache sizes/flags that we need to be able to successfully compile
-    sudo ccache -M 350M
+    sudo ccache -M 400M
     sudo ccache --set-config=temporary_dir=/tmp
     sudo ccache --set-config=sloppiness=pch_defines,time_macros,locale
     sudo ccache --set-config=pch_external_checksum=true
@@ -786,7 +792,7 @@ function ComputeMakeParallelism() {
     local CPUS=1
     if [ -f "/proc/cpuinfo" ]; then
         CPUS=$(grep "^processor" /proc/cpuinfo | wc -l)
-        
+
         if [[ ${CPUS} -gt 1 ]]; then
             MEMORY=$(grep MemTot /proc/meminfo | awk '{print $2}')
             if [[ ${MEMORY} -lt 425000 ]]; then
@@ -814,11 +820,14 @@ compileBinaries() {
     cleanCompiledBinaries
     populateCCACHE
 
-	# export CCACHE_LOGFILE=/tmp/cache.debug
-	export LANG=en_US.UTF-8
-	export TERM=linux
- 
+    # export CCACHE_LOGFILE=/tmp/cache.debug
+    export LANG=en_US.UTF-8
+    export TERM=linux
+
     CPUS=$(ComputeMakeParallelism)
+
+    # Need to unset HOME so that ccache will user /root instead of /home/fpp
+    unset HOME
 
     # Stop fppd on systems with really low memory
     MEMORY=$(grep MemTot /proc/meminfo | awk '{print $2}')
