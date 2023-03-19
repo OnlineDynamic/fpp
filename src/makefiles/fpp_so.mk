@@ -59,6 +59,7 @@ OBJECTS_fpp_so += \
  	NetworkMonitor.o \
 	ping.o \
 	Player.o \
+	OutputMonitor.o \
 	overlays/PixelOverlay.o \
     overlays/PixelOverlayEffects.o \
 	overlays/PixelOverlayModel.o \
@@ -92,6 +93,7 @@ OBJECTS_fpp_so += \
 	ScheduleEntry.o \
 	scripts.o \
 	sensors/Sensors.o \
+	sensors/ADS7828.o \
 	Sequence.o \
 	settings.o \
 	SunRise.o \

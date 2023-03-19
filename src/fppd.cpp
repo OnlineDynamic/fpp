@@ -25,6 +25,7 @@
 #include "gpio.h"
 #include "httpAPI.h"
 #include "mediadetails.h"
+#include "OutputMonitor.h"
 #include "channeloutput/ChannelOutputSetup.h"
 #include "channeloutput/channeloutputthread.h"
 #include "channeltester/ChannelTester.h"
@@ -425,6 +426,10 @@ static void initCapeFromFile(const std::string& f) {
     if (FileExists(f)) {
         Json::Value root;
         if (LoadJsonFromFile(f, root)) {
+            // if there are sources of sensor data, get them loaded first
+            if (root.isMember("sensorSources")) {
+                Sensors::INSTANCE.addSensorSources(root["sensorSources"]);
+            }
             Sensors::INSTANCE.addSensors(root["sensors"]);
         }
     }
@@ -797,6 +802,7 @@ void MainLoop(void) {
     APIServer apiServer;
     apiServer.Init();
 
+    OutputMonitor::INSTANCE.Initialize(callbacks);
     GPIOManager::INSTANCE.Initialize(callbacks);
     PluginManager::INSTANCE.addControlCallbacks(callbacks);
     NetworkMonitor::INSTANCE.Init(callbacks);

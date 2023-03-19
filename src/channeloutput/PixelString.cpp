@@ -14,6 +14,7 @@
 
 #include "PixelString.h"
 #include "overlays/PixelOverlay.h"
+#include "../OutputMonitor.h"
 
 /////////////////////////////////////////////////////////////////////////////
 
@@ -138,7 +139,7 @@ PixelString::~PixelString() {
 /*
  *
  */
-int PixelString::Init(Json::Value config) {
+int PixelString::Init(Json::Value config, Json::Value *pinConfig) {
     m_portNumber = config["portNumber"].asInt();
     m_outputChannels = 0;
 
@@ -221,6 +222,9 @@ int PixelString::Init(Json::Value config) {
         m_outputChannels = 0;
         m_virtualStrings.clear();
         AddVirtualString(VirtualString());
+    } 
+    if (pinConfig) {
+        OutputMonitor::INSTANCE.AddPortConfiguration("Port #" + std::to_string(m_portNumber + 1), *pinConfig, m_outputChannels > 0);
     }
 
     m_outputMap.resize(m_outputChannels);
