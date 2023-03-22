@@ -93,6 +93,7 @@ OBJECTS_fpp_so += \
 	Scheduler.o \
 	ScheduleEntry.o \
 	scripts.o \
+	sensors/IIOSensorSource.o \
 	sensors/Sensors.o \
 	sensors/ADS7828.o \
 	Sequence.o \
