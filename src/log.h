@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-/* 
+/*
  * Define the allowed levels of Logging
  */
 typedef enum {
@@ -25,8 +25,8 @@ typedef enum {
     LOG_EXCESSIVE
 } LogLevel;
 
-/* 
- * A Logger Instance. 
+/*
+ * A Logger Instance.
  * In the future, this could be adjusted to allow different Instances
  * to go to different files
  */
@@ -94,10 +94,10 @@ private:
 #define EXCESSIVE_LOG_LEVEL_WARNING "A Log Level is set to Excessive"
 #define DEBUG_LOG_LEVEL_WARNING "A Log Level is set to Debug"
 
-//extern int logLevel;
-//extern char logLevelStr[16];
-//extern int logMask;
-//extern char logMaskStr[1024];
+// extern int logLevel;
+// extern char logLevelStr[16];
+// extern int logMask;
+// extern char logMaskStr[1024];
 
 #define LogErr(facility, format, args...) _LogWrite(__FILE__, __LINE__, LOG_ERR, facility, format, ##args)
 #define LogInfo(facility, format, args...) _LogWrite(__FILE__, __LINE__, LOG_INFO, facility, format, ##args)
@@ -116,4 +116,4 @@ void logVersionInfo(void);
 bool SetLogLevel(const char* newLevel);
 bool SetLogLevelComplex(std::string& input);  /*parse debug:schedule,player;excess:mqtt*/
 bool SetLogLevelComplex(const char* input);   /*parse debug:schedule,player;excess:mqtt*/
-std::string LogLevelToString(LogLevel level); /* Convert Level to String Equivilanent */
+std::string LogLevelToString(LogLevel level); /* Convert Level to String Equivalent */

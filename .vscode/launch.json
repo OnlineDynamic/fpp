@@ -1,4 +1,3 @@
-
 {
     "version": "0.2.0",
     "configurations": [
@@ -7,7 +6,9 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "/opt/fpp/src/fppd",
-            "args": [ "-f"],
+            "args": [
+                "-f"
+            ],
             "stopAtEntry": false,
             "cwd": "/opt/fpp/src",
             "environment": [],
@@ -33,6 +34,13 @@
             "request": "launch",
             "name": "fppcapedetect(gdb)",
             "program": "/opt/fpp/src/fppcapedetect",
+            "cwd": "/opt/fpp/src"
+        }
+        {
+            "type": "by-gdb",
+            "request": "launch",
+            "name": "fppoled(gdb)",
+            "program": "/opt/fpp/src/fppoled",
             "cwd": "/opt/fpp/src"
         }
     ]

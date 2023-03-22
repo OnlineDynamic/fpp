@@ -36,6 +36,7 @@ OBJECTS_fpp_so += \
 	commands/PlaylistCommands.o \
     commands/EventCommands.o \
     commands/MediaCommands.o \
+	commands/OLEDCommands.o \
 	common.o \
 	e131bridge.o \
 	effects.o \

@@ -1,6 +1,6 @@
 /*
  * This file is part of the Falcon Player (FPP) and is Copyright (C)
- * 2013-2022 by the Falcon Player Developers.
+ * 2013-2023 by the Falcon Player Developers.
  *
  * The Falcon Player (FPP) is free software, and is covered under
  * multiple Open Source licenses.  Please see the included 'LICENSES'
@@ -16,6 +16,7 @@
 #include "MediaCommands.h"
 #include "MultiSync.h"
 #include "PlaylistCommands.h"
+#include "OLEDCommands.h"
 
 CommandManager CommandManager::INSTANCE;
 Command::Command(const std::string& n) :
@@ -123,6 +124,7 @@ void CommandManager::Init() {
     addCommand(new RunRemoteScriptEvent());
     addCommand(new StartRemoteFSEQEffectCommand());
     addCommand(new StartRemotePlaylistCommand());
+    addCommand(new OLEDMenuCommand());
 
     std::function<void(const std::string&, const std::string&)> f =
         [](const std::string& topic, const std::string& payload) {
@@ -166,6 +168,7 @@ void CommandManager::Init() {
         };
     Events::AddCallback("/set/command", f);
     Events::AddCallback("/set/command/#", f);
+
 }
 CommandManager::~CommandManager() {
     Cleanup();
