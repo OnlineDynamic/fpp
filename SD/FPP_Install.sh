@@ -50,7 +50,7 @@
 SCRIPTVER="7.0"
 FPPBRANCH=${FPPBRANCH:-"master"}
 FPPIMAGEVER="2023-02"
-FPPCFGVER="76"
+FPPCFGVER="77"
 FPPPLATFORM="UNKNOWN"
 FPPDIR=/opt/fpp
 FPPUSER=fpp
@@ -486,7 +486,7 @@ case "${OSVER}" in
                       vorbis-tools libgraphicsmagick++1-dev graphicsmagick-libmagick-dev-compat libmicrohttpd-dev \
                       git gettext apt-utils x265 libtheora-dev libvorbis-dev libx265-dev iputils-ping \
                       libmosquitto-dev mosquitto-clients mosquitto libzstd-dev lzma zstd gpiod libgpiod-dev libjsoncpp-dev libcurl4-openssl-dev \
-                      fonts-freefont-ttf flex bison pkg-config libasound2-dev mesa-common-dev \
+                      fonts-freefont-ttf flex bison pkg-config libasound2-dev mesa-common-dev qrencode libusb-1.0-0-dev \
                       flex bison pkg-config libasound2-dev python3-distutils libssl-dev libtool bsdextrautils iw"
 
         if [ "$FPPPLATFORM" == "Raspberry Pi" -o "$FPPPLATFORM" == "BeagleBone Black" ]; then
@@ -963,6 +963,7 @@ do
         sed -i -e "s/^user\ .*/user = ${FPPUSER}/" ${PHPDIR}/${FILE}
         sed -i -e "s/^group\ .*/group = ${FPPUSER}/" ${PHPDIR}/${FILE}
         sed -i -e "s/^pm.max_children.*/pm.max_children = 25/" ${PHPDIR}/${FILE}
+        sed -i -e "s+^;clear_env.*+clear_env = no+g" ${PHPDIR}/${FILE}
     fi
 done
 

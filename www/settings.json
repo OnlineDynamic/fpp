@@ -146,6 +146,7 @@
         "output": {
             "description": "Output Control",
             "settings": [
+                "AutoEnableOutputs",
                 "alwaysTransmit",
                 "E131BridgingInterval"
             ]
@@ -191,7 +192,6 @@
             "settings": [
                 "EnableTethering",
                 "TetherInterface",
-                "TetherTechnology",
                 "TetherSSID",
                 "TetherPSK"
             ]
@@ -446,6 +446,19 @@
                 "External": "External",
                 "Linux Kernel": "Kernel"
             }
+        },
+        "AutoEnableOutputs": {
+            "name": "AutoEnableOutputs",
+            "description": "Automatically turn on/off outputs",
+            "tip": "Some controllers can control the power to the pixel ports.  This setting allows FPP to automatically control the power to those ports when outputting data.",
+            "level": 1,
+            "gatherStats": true,
+            "restart": 2,
+            "reboot": 0,
+            "checkedValue": "1",
+            "uncheckedValue": "0",
+            "default": "1",
+            "type": "checkbox"
         },
         "alwaysTransmit": {
             "name": "alwaysTransmit",
@@ -2074,22 +2087,6 @@
             "size": 32,
             "maxlength": 32,
             "default": "FPP"
-        },
-        "TetherTechnology": {
-            "name": "TetherTechnology",
-            "description": "Tethering Technology",
-            "gatherStats": true,
-            "tip": "FPP WiFi tethering technology to use.",
-            "reboot": 1,
-            "default": 0,
-            "type": "select",
-            "checkFile": [
-                "/usr/bin/connmanctl"
-            ],
-            "options": {
-                "Hostapd": 0,
-                "ConnMan": 1
-            }
         },
         "TimeFormat": {
             "name": "TimeFormat",
