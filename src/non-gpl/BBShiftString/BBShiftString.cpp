@@ -180,13 +180,6 @@ int BBShiftStringOutput::Init(Json::Value config) {
     split0args.push_back("-DRUNNING_ON_PRU0");
     split1args.push_back("-DRUNNING_ON_PRU1");
 
-    if (config.isMember("pixelTiming")) {
-        int pixelTiming = config["pixelTiming"].asInt();
-        if (pixelTiming) {
-            args.push_back("-DPIXELTYPE_SLOW");
-        }
-    }
-
     std::string dirname = "bbb";
     std::string verPostf = "";
     if (getBeagleBoneType() == PocketBeagle) {
@@ -198,10 +191,7 @@ int BBShiftStringOutput::Init(Json::Value config) {
         LogErr(VB_CHANNELOUT, "Could not read pin configuration for %s%s\n", m_subType.c_str(), verPostf.c_str());
         return 0;
     }
-    m_licensedOutputs = 0;
-    if (CapeUtils::INSTANCE.getKeyId() == "dk") {
-        m_licensedOutputs = CapeUtils::INSTANCE.getLicensedOutputs();
-    }
+    m_licensedOutputs = CapeUtils::INSTANCE.getLicensedOutputs();
 
     config["base"] = root;
 
@@ -413,6 +403,10 @@ void BBShiftStringOutput::prepData(FrameData& d, unsigned char* channelData) {
     uint8_t* frame = NULL;
     uint8_t value;
 
+    PixelStringTester *tester = nullptr;
+    if (m_testType && m_testCycle >= 0) {
+        tester = PixelStringTester::getPixelStringTester(m_testType);
+    }
     for (int y = 0; y < MAX_PINS_PER_PRU; ++y) {
         uint8_t pinMask = 1 << y;
         for (int x = 0; x < NUM_STRINGS_PER_PIN; ++x) {
@@ -420,31 +414,14 @@ void BBShiftStringOutput::prepData(FrameData& d, unsigned char* channelData) {
             frame = out + x + (y * NUM_STRINGS_PER_PIN);
             if (idx != -1) {
                 ps = m_strings[idx];
-                bool output = true;
-                if (m_testType && m_testCycle >= 0) {
-                    PixelStringTester* tester = PixelStringTester::getPixelStringTester(m_testType);
-                    if (tester) {
-                        uint8_t* d = PixelStringTester::getPixelStringTester(m_testType)->createTestData(ps, m_testCycle, m_testPercent, channelData);
-                        uint8_t* d2 = d;
-                        int maxOut = ps->m_outputChannels;
-                        for (int p = 0; p < maxOut; p++) {
-                            *frame = *d2;
-                            frame += MAX_PINS_PER_PRU * NUM_STRINGS_PER_PIN;
-                            ++d2;
-                        }
-                        delete[] d;
-                        output = false;
-                    }
-                }
-                if (output) {
-                    for (auto& vs : ps->m_virtualStrings) {
-                        int* map = vs.chMap;
-                        uint8_t* brightness = vs.brightnessMap;
-                        for (int ch = 0; ch < vs.chMapCount; ch++) {
-                            *frame = brightness[channelData[map[ch]]];
-                            frame += MAX_PINS_PER_PRU * NUM_STRINGS_PER_PIN;
-                        }
-                    }
+                uint32_t newLen = 0;
+                uint8_t* d = tester 
+                    ? tester->createTestData(ps, m_testCycle, m_testPercent, channelData, newLen)
+                    : ps->prepareOutput(channelData);
+                for (int p = 0; p < ps->m_outputChannels; p++) {
+                    *frame = *d;
+                    frame += MAX_PINS_PER_PRU * NUM_STRINGS_PER_PIN;
+                    ++d;
                 }
             }
         }

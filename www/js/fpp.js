@@ -1097,9 +1097,12 @@ function psiDetailsData(name, value, units = '', hide = false) {
         style = " style='display: none;'";
 
     if (units == '') {
-        return "<div class='psiDetailsData field_" + name + "'" + style + ">" + value + "</div>";
+        return "<div class='psiDetailsData field_" + name + "'" + style + ">" + value.replace(/&/g, '&amp;').replace(/</g, '&lt;') + "</div>";
     }
 
+    if (typeof value === 'string' || value instanceof String) {
+        value = value.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    }
     return "<div class='psiDetailsData'><span class='field_" + name + "'" + style + ">" + value + "</span> " + units + "</div>";
 }
 
@@ -1192,6 +1195,8 @@ function psiDetailsForEntrySimple(entry, editMode) {
                             partialResult += ckeys[x];
                         }
                     }
+                } else if (typeof entry[a.name] === 'string' || entry[a.name] instanceof String) {
+                    partialResult += entry[a.name].replace(/&/g, '&amp;').replace(/</g, '&lt;');
                 } else {
                     partialResult += entry[a.name];
                 }
@@ -1766,7 +1771,8 @@ function SetPlaylistItemMetaData(row) {
             }
 
             if (type == 'both') {
-                var sDuration = GetSequenceDuration(row.find('.field_sequenceName').html(), false, row);
+                var seq = row.find('.field_sequenceName').text();
+                var sDuration = GetSequenceDuration(seq, false, row);
 
                 // Playlist/PlaylistEntryBoth.cpp ends whenever shortest item ends
                 if ((duration > sDuration) || (duration < 0))
@@ -1789,10 +1795,10 @@ function SetPlaylistItemMetaData(row) {
             row.find('.psiData').append('<div style="color: #FF0000; font-weight: bold;">ERROR: Media File "' + file + '" Not Found</div>');
 
             if (type == 'both')
-                GetSequenceDuration(row.find('.field_sequenceName').html(), false, row);
+                GetSequenceDuration(row.find('.field_sequenceName').text(), false, row);
         });
     } else if (type == 'sequence') {
-        GetSequenceDuration(row.find('.field_sequenceName').html(), true, row);
+        GetSequenceDuration(row.find('.field_sequenceName').text(), true, row);
     } else if (type == 'image') {
         let file = row.find('.field_imagePath').html();
         if (file.endsWith('/'))
@@ -1813,7 +1819,7 @@ function SetPlaylistItemMetaData(row) {
             }
         });
     } else if (type == 'playlist') {
-        let playlistName = row.find('.field_name').html();
+        let playlistName = row.find('.field_name').text();
         $.ajax({
             url: "api/playlist/" + playlistName,
             type: 'GET',
@@ -1922,7 +1928,7 @@ function AddPlaylistEntry(mode) {
             var inp = $('#playlistEntryOptions').find('.arg_' + a.name)
             var val = inp.val();
             if (val !== undefined) {
-                pe[a.name] = val.replace(/<\/?[^>]+(>|$)/g, "");
+                pe[a.name] = val;
             }
         } else {
             pe[a.name] = $('#playlistEntryOptions').find('.arg_' + a.name).html();
@@ -3238,7 +3244,7 @@ function GetFiles(dir) {
                     detail = f.playtimeSeconds;
                 }
 
-                var tableRow = "<tr class='fileDetails' id='fileDetail_" + i + "'><td class ='fileName'>" + f.name + "</td><td class='fileExtraInfo'>" + detail + "</td><td class ='fileTime'>" + f.mtime + "</td></tr>";
+                var tableRow = "<tr class='fileDetails' id='fileDetail_" + i + "'><td class ='fileName'>" + f.name.replace(/&/g, '&amp;').replace(/</g, '&lt;') + "</td><td class='fileExtraInfo'>" + detail + "</td><td class ='fileTime'>" + f.mtime + "</td></tr>";
                 $('#tbl' + dir).append(tableRow);
                 ++i;
             });
@@ -3255,9 +3261,10 @@ const WANT_DETAILS = true; //false; //TODO: maybe use config setting?
 function show_details(args) {
     if (!WANT_DETAILS || !args || !args.length) return "";
     if (typeof args[0] == "object" && args[0].responseText) {
-        return args[0].responseText; } //show most useful part
+        return args[0].responseText;
+    } //show most useful part
     const retval = [""];
-    args.forEach(function(arg) {
+    args.forEach(function (arg) {
         var js = JSON.stringify(arg);
         if (js.length > 200) {
             js = js.substr(0, 200) + " ...";
@@ -3644,7 +3651,17 @@ function parseStatus(jsonStatus) {
             } else if (fppStatus == STATUS_STOPPING_GRACEFULLY_AFTER_LOOP) {
                 playerStatusText += " - Stopping Gracefully After Loop";
             }
-
+            txtPlayerStatusLabel = "Player Status";
+            if (Array.isArray(jsonStatus["breadcrumbs"]) && jsonStatus.breadcrumbs.length > 0) {
+                txtPlayerStatusLabel += " (";
+                jsonStatus.breadcrumbs.forEach(function (r) {
+                    txtPlayerStatusLabel += r + " -> ";
+                });
+                txtPlayerStatusLabel += jsonStatus.current_playlist.playlist;
+                txtPlayerStatusLabel += ")";
+            }
+            txtPlayerStatusLabel += ":";
+            $('#txtPlayerStatusLabel').html(txtPlayerStatusLabel);
             $('#txtPlayerStatus').html(playerStatusText);
             $('#playerTime').show();
             $('#txtTimePlayed').html(jsonStatus.time_elapsed);
@@ -4005,7 +4022,7 @@ function SetSetting(key, value, restart, reboot, hideChange = false, isBool = nu
                 if (typeof callback === 'function') {
                     callback();
                 }
-            }    
+            }
             if (restart > 0 && restart != settings['restartFlag']) {
                 SetRestartFlag(restart);
             }
@@ -5713,20 +5730,20 @@ function PrintArgInputs(tblCommand, configAdjustable, args, startCount = 1) {
                 success: function (data) {
                     if (Array.isArray(data)) {
                         $.each(data, function (key, v) {
-                            var line = '<option value="' + v + '"'
+                            var line = '<option value="' + v.replace('"', "&quot;") + '"'
                             if (v == dv) {
                                 line += " selected";
                             }
-                            line += ">" + v + "</option>";
+                            line += ">" + v.replace(/&/g, '&amp;').replace(/</g, '&lt;') + "</option>";
                             $(selId).append(line);
                         })
                     } else {
                         $.each(data, function (key, v) {
-                            var line = '<option value="' + key + '"'
+                            var line = '<option value="' + key.replace('"', "&quot;") + '"'
                             if (key == dv) {
                                 line += " selected";
                             }
-                            line += ">" + v + "</option>";
+                            line += ">" + v.replace(/&/g, '&amp;').replace(/</g, '&lt;') + "</option>";
                             $(selId).append(line);
                         })
                     }
@@ -5836,7 +5853,7 @@ function PopulateExistingCommand(json, commandSelect, tblCommand, configAdjustab
                     inp.prop("checked", checked);
                 } else if (typeof multattr !== typeof undefined && multattr !== false) {
                     var split = v.split(",");
-                    console.log(inp.attr('type') + "  " + inp.attr('multiple') + "  " + v + "  " + split + " " + split.length + "\n");
+                    //console.log(inp.attr('type') + "  " + inp.attr('multiple') + "  " + v + "  " + split + " " + split.length + "\n");
 
                     $("#" + tblCommand + "_arg_" + count + " option").prop("selected", function () {
                         return ~$.inArray(this.text, split);
@@ -5880,12 +5897,6 @@ function fppCommandColorPicker() {
             if ($('.modal-body').is(":visible") === true) {
                 fppCommandColorPicker_fppDialogIsOpen = true;
 
-                //Do some cleanup of the old pickers
-                //When the modal content is hidden, Destroy the colorpicker using it's built in function
-                $('.fppCommandColor').colpickDestroy();
-                //Unbind events from our picker inputs
-                $('.fppCommandColor').off();
-
                 // Destroy existing colour pickers
                 $('div[id*="collorpicker_"]').remove();
 
@@ -5905,29 +5916,8 @@ function fppCommandColorPicker() {
                     if ($('.modal-footer').length === 0) {
                         appendToElement = ".modal-header"
                     }
-
-                    //Add the pickers again
-                    $('.fppCommandColor').colpick({
-                        layout: 'rgbhex',
-                        color: 'auto',
-                        submit: false,
-                        appendTo: appendToElement,
-                        styles: {marginLeft: modalDialog_LeftOffset, marginTop: colpickNewTopMargin + "px"},
-                        onChange: function (hsb, hex, rgb, el, bySetColor) {
-                            $(el).css('background-color', '#' + hex);
-                            $(el).attr('value', '#' + hex);
-                            // if (!bySetColor) {
-                            //
-                            // }
-                        },
-                        onBeforeShow: function () {
-                            if (typeof (this.value !== 'undefined')) {
-                                $(this).colpickSetColor(this.value);
-                            }
-                        }
-                    });
                 }
-            }else{
+            } else {
                 //Not found yet so keep looping
                 fppCommandColorPicker_fppDialogIsOpen = false;
             }

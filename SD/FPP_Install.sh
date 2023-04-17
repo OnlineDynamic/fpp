@@ -47,9 +47,8 @@
 #       hardware which does not support Bullseye may have issues.
 #
 #############################################################################
-SCRIPTVER="7.0"
 FPPBRANCH=${FPPBRANCH:-"master"}
-FPPIMAGEVER="2023-02"
+FPPIMAGEVER="2023-04"
 FPPCFGVER="77"
 FPPPLATFORM="UNKNOWN"
 FPPDIR=/opt/fpp
@@ -232,6 +231,11 @@ while [ -n "$1" ]; do
             isimage=false
             shift
             ;;
+        --branch)
+            FPPBRANCH=$2
+            shift
+            shift
+            ;;
         *)
             echo "Unknown option $1" >&2
             exit 1
@@ -243,8 +247,6 @@ checkTimeAgainstUSNO
 
 #############################################################################
 echo "============================================================"
-echo "$0 v${SCRIPTVER}"
-echo ""
 echo "FPP Image Version: v${FPPIMAGEVER}"
 echo "FPP Directory    : ${FPPDIR}"
 echo "FPP Branch       : ${FPPBRANCH}"
@@ -427,14 +429,6 @@ case "${OSVER}" in
 		echo "FPP - Removing anything left that wasn't explicity removed"
 		apt-get -y --purge autoremove
 
-        if [ "$FPPPLATFORM" == "BeagleBone Black" ]; then
-            echo "FPP - Enable backports"
-            echo "#Backports" >> /etc/apt/sources.list
-            echo "deb http://deb.debian.org/debian bullseye-backports main contrib non-free" >> /etc/apt/sources.list
-            echo "deb-src http://deb.debian.org/debian bullseye-backports main contrib non-free" >> /etc/apt/sources.list
-            apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 648ACFD622F3D138 0E98404D386FA1D9
-        fi
-
 		echo "FPP - Updating package list"
 		apt-get update
 
@@ -583,6 +577,10 @@ case "${OSVER}" in
 
             if [ "$FPPPLATFORM" == "Raspberry Pi" ]; then
                 echo "FPP - Applying updates to allow optional boot from USB on Pi 4 (and up)"
+
+                # make sure the label on p1 is "boot" and p2 is rootfs
+                fatlabel /dev/mmcblk0p1 boot
+                fatlabel /dev/mmcblk0p2 rootfs
 
                 # Update /etc/fstab to use PARTUUID for / and /boot
                 BOOTLINE=$(grep "^[^#].* /boot " /etc/fstab | sed -e "s;^[^#].* /boot ;LABEL=boot /boot ;")
@@ -1216,10 +1214,12 @@ cat /opt/fpp/etc/apache2.site > /etc/apache2/sites-enabled/000-default.conf
 a2dismod php${ACTUAL_PHPVER}
 a2dismod mpm_prefork
 a2enmod mpm_event
+a2enmod http2
 a2enmod cgi
 a2enmod rewrite
 a2enmod proxy
 a2enmod proxy_http
+a2enmod proxy_http2
 a2enmod proxy_html
 a2enmod headers
 a2enmod proxy_fcgi setenvif

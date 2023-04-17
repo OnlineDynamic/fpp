@@ -124,7 +124,8 @@ PixelString::PixelString(bool supportSmart) :
     m_channelOffset(0),
     m_outputChannels(0),
     m_isSmartReceiver(supportSmart),
-    m_brightnessMaps(nullptr) {
+    m_brightnessMaps(nullptr),
+    m_outputBuffer(nullptr) {
 }
 
 /*
@@ -133,6 +134,9 @@ PixelString::PixelString(bool supportSmart) :
 PixelString::~PixelString() {
     if (m_brightnessMaps) {
         free(m_brightnessMaps);
+    }
+    if (m_outputBuffer) {
+        free(m_outputBuffer);
     }
 }
 
@@ -256,6 +260,12 @@ int PixelString::Init(Json::Value config, Json::Value *pinConfig) {
     if (m_outputChannels) {
         m_gpioCommands.push_back(GPIOCommand(m_portNumber, m_outputChannels));
     }
+
+    //certain testing capabilities (like pixel counting) may require a 
+    //buffer larger than the number of pixels configured
+    int obs = std::max(2400, m_outputChannels);
+    m_outputBuffer = (uint8_t*)calloc(obs, 1);
+
     return 1;
 }
 
@@ -564,7 +574,13 @@ void PixelString::DumpConfig(void) {
             LogDebug(VB_CHANNELOUT, "        pixel count   : %d\n", vs.pixelCount);
             LogDebug(VB_CHANNELOUT, "        group count   : %d\n", vs.groupCount);
             LogDebug(VB_CHANNELOUT, "        reverse       : %d\n", vs.reverse);
-            LogDebug(VB_CHANNELOUT, "        color order   : %s\n", ColorOrderToString(vs.colorOrder).c_str());
+            if (vs.whiteOffset == 0) {
+                LogDebug(VB_CHANNELOUT, "        color order   : W%s\n", ColorOrderToString(vs.colorOrder).c_str());
+            } else if (vs.whiteOffset == 0) {
+                LogDebug(VB_CHANNELOUT, "        color order   : %sW\n", ColorOrderToString(vs.colorOrder).c_str());
+            } else {
+                LogDebug(VB_CHANNELOUT, "        color order   : %s\n", ColorOrderToString(vs.colorOrder).c_str());
+            }
             LogDebug(VB_CHANNELOUT, "        start nulls   : %d\n", vs.startNulls);
             LogDebug(VB_CHANNELOUT, "        end nulls     : %d\n", vs.endNulls);
             LogDebug(VB_CHANNELOUT, "        zig zag       : %d\n", vs.zigZag);
@@ -641,4 +657,16 @@ void PixelString::AutoCreateOverlayModels(const std::vector<PixelString*>& strin
             }
         }
     }
+}
+
+uint8_t *PixelString::prepareOutput(uint8_t *channelData) {
+    int idx = 0;
+    for (auto& vs : m_virtualStrings) {
+        int* map = vs.chMap;
+        uint8_t* brightness = vs.brightnessMap;
+        for (int ch = 0; ch < vs.chMapCount; ch++) {
+            m_outputBuffer[idx++] = brightness[channelData[map[ch]]];
+        }
+    }
+    return m_outputBuffer;
 }
