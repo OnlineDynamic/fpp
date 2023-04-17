@@ -344,6 +344,13 @@ function pixelOutputTableInputOrderOption(colorOrder, selectedColorOrder)
 function pixelOutputTableInputOrder(colorOrder)
 {
     var result = "";
+    <?if ($settings['Platform'] == "BeagleBone Black") {?>
+    var isChannelBased = true;
+    <?} else {?>
+        var outtype = $('#PixelStringSubType').val();
+        var driver = MapPixelStringType(outtype);
+        var isChannelBased = (driver == 'DPIPixels') || (driver == 'RPIWS281X');
+    <?}?>
 
     result += "<td>";
     result += "<select class='vsColorOrder' onChange='updateItemEndChannel(this);'>";
@@ -354,9 +361,7 @@ function pixelOutputTableInputOrder(colorOrder)
     result += pixelOutputTableInputOrderOption('BGR', colorOrder);
     result += pixelOutputTableInputOrderOption('BRG', colorOrder);
 
-    <?
-if ($settings['Platform'] == "BeagleBone Black") {
-    ?>
+    if (isChannelBased) {
         result += pixelOutputTableInputOrderOption('RGBW', colorOrder);
         result += pixelOutputTableInputOrderOption('RBGW', colorOrder);
         result += pixelOutputTableInputOrderOption('GBRW', colorOrder);
@@ -371,10 +376,7 @@ if ($settings['Platform'] == "BeagleBone Black") {
         result += pixelOutputTableInputOrderOption('WBGR', colorOrder);
         result += pixelOutputTableInputOrderOption('WBRG', colorOrder);
         result += pixelOutputTableInputOrderOption('W', colorOrder);
-    <?
-}
-?>
-
+    }
     result += "</select>";
     result += "</td>";
 
@@ -1399,6 +1401,11 @@ function populatePixelStringOutputs(data) {
                     $('#BBPixelTiming').show();
                 } else {
                     $('#BBPixelTiming').hide();
+                }
+                if ((type == 'BBB48String') || (type == 'DPIPixels') || (type == 'BBShiftString') || (type == 'RPIWS281X')) {
+                    $('#PixelTestPatternDiv').show();
+                } else {
+                    $('#PixelTestPatternDiv').hide();
                 }
 
                 if (document.getElementById("PixelStringSubType").length == 1) {
@@ -2526,34 +2533,31 @@ title="<?=$settings['cape-info']['capeTypeTip']?>"
                         </select>
                     </div>
                 </div>
-                <div class="col-md-auto form-inline mr-auto" id="BBPixelTiming"
-<?if ($settings['Platform'] != "BeagleBone Black") {?>
-style="display: none;"
-<?}?>
->
-                    <div><b>Pixel Timing:</b></div>
-                    <div colspan="3"><select id='PixelStringPixelTiming'>
-                        <option value="0">Normal (ws281x)</option>
-                        <option value="1">Slow (1903)</option>
+                <div class="col-md-auto form-inline mr-auto">
+                    <div  id="BBPixelTiming">
+                        <b>Pixel Timing:</b>
+                        <select id='PixelStringPixelTiming'>
+                            <option value="0">Normal (ws281x)</option>
+                            <option value="1">Slow (1903)</option>
                         </select>
                     </div>
                 </div>
 
-                <?if ($settings['Platform'] == "BeagleBone Black") {?>
-                <div class="col-md-auto form-inline" id="PixelTestPatternDiv">
-                   <div><b>Testing:</b></div>
-                    <select id='PixelTestPatternType' onchange='SetPixelTestPattern();'>
-                    <option value='0'>Off</option>
-                    <option value='1'>Port Number</option>
-                    <option value='2'>Pixel Count by Port</option>
-                    <option value='3'>Pixel Count by String</option>
-                    <option value='4'>Red Fade</option>
-                    <option value='5'>Green Fade</option>
-                    <option value='6'>Blue Fade</option>
-                    <option value='7'>White Fade</option>
-                    </select>
+                <div class="col-md-auto form-inline">
+                    <div id="PixelTestPatternDiv">
+                        <b>Testing:</b>
+                        <select id='PixelTestPatternType' onchange='SetPixelTestPattern();'>
+                        <option value='0'>Off</option>
+                        <option value='1'>Port Number</option>
+                        <option value='2'>Pixel Count by Port</option>
+                        <option value='3'>Pixel Count by String</option>
+                        <option value='4'>Red Fade</option>
+                        <option value='5'>Green Fade</option>
+                        <option value='6'>Blue Fade</option>
+                        <option value='7'>White Fade</option>
+                        </select>
+                    </div>
                 </div>
-                <?}?>
             </div>
         </div>
             <div id='divPixelStringData' class='capeTypeRow' <?if (!isset($settings['cape-info'])) {

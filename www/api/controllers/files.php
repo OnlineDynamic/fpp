@@ -212,11 +212,30 @@ function GetFileImpl($dir, $filename, $lines, $play, $attach)
     }
 }
 
+function findFile($dir, $filename)
+{
+    if (file_exists($dir . "/" . $filename)) {
+        return $filename;
+    }
+    if (file_exists($dir . "/" . urldecode($filename))) {
+        return urldecode($filename);
+    }
+    $tempFile = sanitizeFilename($filename);
+    if (file_exists($dir . "/" . $tempFile)) {
+        return $tempFile;
+    }
+    if (file_exists($dir . "/" . urldecode($tempFile))) {
+        return urldecode($tempFile);
+    }
+    return $filename;
+}
+
 function MoveFile()
 {
     global $mediaDirectory, $uploadDirectory, $musicDirectory, $sequenceDirectory, $videoDirectory, $effectDirectory, $scriptDirectory, $imageDirectory, $configDirectory, $SUDO;
 
-    $file = urldecode(params("fileName"));
+    $file = findFile($uploadDirectory, params("fileName"));
+
 
     // Fix double quote uploading by simply moving the file first, if we find it with URL encoding
     if (strstr($file, '"')) {
@@ -473,9 +492,9 @@ function DeleteFile()
 {
     $status = "File not found";
     $dirName = params("DirName");
-    $fileName = urldecode(params("Name"));
-
     $dir = GetDirSetting($dirName);
+    $fileName = findFile($dir, params("Name"));
+
     $fullPath = "$dir/$fileName";
 
     if ($dir == "") {
@@ -560,7 +579,7 @@ function PatchFile()
     fclose($patch_handle);
 
     $size = 0;
-    $patch = glob($fullPath . '.patch.*');
+    $patch = glob(escapeshellcmd($fullPath) . '.patch.*');
     foreach ($patch as $fn) {
         $fileLen = real_filesize($fn);
         $size = bcadd($size, $fileLen, 0);
@@ -608,7 +627,7 @@ function PostFile()
 {
     $status = "OK";
     $dirName = params("DirName");
-    $fileName = urldecode(params("Name"));
+    $fileName = params("Name");
 
     $dir = GetDirSetting($dirName);
     $fullPath = "$dir/$fileName";

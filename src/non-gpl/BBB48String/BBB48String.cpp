@@ -437,14 +437,6 @@ int BBB48StringOutput::Init(Json::Value config) {
     createOutputLengths(m_gpioData, "", split1args);
     createOutputLengths(m_gpio0Data, "GPIO0_", split0args);
 
-    //set the total data length (bytes, pixels * 3)
-    v = "-DDATA_LEN=";
-    v += std::to_string(m_gpioData.maxStringLen);
-    split1args.push_back(v);
-    v = "-DDATA_LEN=";
-    v += std::to_string(m_gpio0Data.maxStringLen);
-    split0args.push_back(v);
-
     compilePRUCode(args, split0args, split1args, !hasSerial);
     if (!StartPRU(!hasSerial)) {
         WarningHolder::AddWarning("BBB48String: Could not start PRU");
@@ -452,13 +444,13 @@ int BBB48StringOutput::Init(Json::Value config) {
     }
 
     // give each area two chunks (frame flipping) of DDR memory
-    m_gpioData.frameSize = m_gpioData.gpioStringMap.size() * m_gpioData.maxStringLen;
+    m_gpioData.frameSize = m_gpioData.gpioStringMap.size() * std::max(2000, m_gpioData.maxStringLen);
     m_gpioData.curData = m_pru->ddr;
     // leave a full memory page between to avoid conflicts
     int offset = ((m_gpioData.frameSize / 4096) + 2) * 4096;
     m_gpioData.lastData = m_gpioData.curData + offset;
 
-    m_gpio0Data.frameSize = m_gpio0Data.gpioStringMap.size() * m_gpio0Data.maxStringLen;
+    m_gpio0Data.frameSize = m_gpio0Data.gpioStringMap.size() * std::max(2000, m_gpio0Data.maxStringLen);
     m_gpio0Data.curData = m_gpioData.lastData + offset;
     offset = ((m_gpio0Data.frameSize / 4096) + 2) * 4096;
     m_gpio0Data.lastData = m_gpio0Data.curData + offset;
@@ -495,10 +487,10 @@ int BBB48StringOutput::StartPRU(bool both) {
 void BBB48StringOutput::StopPRU(bool wait) {
     // Send the stop command
     m_pruData->response = 0;
-    m_pruData->command = 0xFF;
+    m_pruData->command = 0xFFFF;
     if (m_pru0Data) {
         m_pru0Data->response = 0;
-        m_pru0Data->command = 0xFF;
+        m_pru0Data->command = 0xFFFF;
     }
     __asm__ __volatile__("" ::
                              : "memory");
@@ -576,38 +568,30 @@ void BBB48StringOutput::prepData(FrameData& d, unsigned char* channelData) {
     PixelString* ps = NULL;
     uint8_t* c = NULL;
 
+    PixelStringTester *tester = nullptr;
+    if (m_testType && m_testCycle >= 0) {
+        tester = PixelStringTester::getPixelStringTester(m_testType);
+    }
     int numStrings = d.gpioStringMap.size();
+    uint32_t newMaxLen = 0;
     for (int s = 0; s < numStrings; s++) {
         int idx = d.gpioStringMap[s];
         if (idx >= 0) {
             ps = m_strings[idx];
             c = out + s;
-
-            bool output = true;
-            if (m_testType && m_testCycle >= 0) {
-                PixelStringTester* tester = PixelStringTester::getPixelStringTester(m_testType);
-                if (tester) {
-                    uint8_t* d = PixelStringTester::getPixelStringTester(m_testType)->createTestData(ps, m_testCycle, m_testPercent, channelData);
-                    uint8_t* d2 = d;
-                    for (int p = 0; p < ps->m_outputChannels; p++) {
-                        *c = *d2;
-                        c += numStrings;
-                        ++d2;
-                    }
-                    delete[] d;
-                    output = false;
-                }
-            }
-            if (output) {
-                for (int p = 0; p < ps->m_outputChannels; p++) {
-                    int cn = ps->m_outputMap[p];
-                    uint8_t* brightness = ps->m_brightnessMaps[p];
-                    *c = brightness[channelData[cn]];
-                    c += numStrings;
-                }
+            uint32_t newLen = ps->m_outputChannels;
+            uint8_t* d = tester 
+                ? tester->createTestData(ps, m_testCycle, m_testPercent, channelData, newLen)
+                : ps->prepareOutput(channelData);
+            newMaxLen = std::max(newLen, newMaxLen);
+            for (int p = 0; p < newLen; p++) {
+                *c = *d;
+                c += numStrings;
+                ++d;
             }
         }
     }
+    d.outputStringLen = newMaxLen;
 }
 
 /*
@@ -689,9 +673,8 @@ int BBB48StringOutput::SendData(unsigned char* channelData) {
     }
 
     sendData(m_gpioData, &m_pruData->address_dma);
-    sendData(m_gpio0Data, &m_pruData->address_dma_gpio0);
     if (m_pru0Data) {
-        m_pru0Data->address_dma = m_pruData->address_dma_gpio0;
+        sendData(m_gpio0Data, &m_pru0Data->address_dma);
     }
 
     //make sure memory is flushed before command is set to 1
@@ -699,9 +682,15 @@ int BBB48StringOutput::SendData(unsigned char* channelData) {
                              : "memory");
 
     // Send the start command
-    m_pruData->command = 1;
-    if (m_pru0Data)
-        m_pru0Data->command = 1;
+    uint32_t flag = 0;
+    if (m_testType == 999) {
+        //pixel counting needs the GPIO commands and such turned off
+        flag = 0x8000;
+    }
+    m_pruData->command = m_gpioData.outputStringLen | flag;
+    if (m_pru0Data) {
+        m_pru0Data->command = m_gpio0Data.outputStringLen | flag;
+    }
 
     return m_channelCount;
 }
