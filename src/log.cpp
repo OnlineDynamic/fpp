@@ -186,8 +186,14 @@ void _LogWrite(const char* file, int line, int level, FPPLoggerInstance& facilit
     localtime_r(&tv.tv_sec, &tm);
     int ms = tv.tv_usec / 1000;
 
+    uint64_t tid;
+#ifdef PLATFORM_OSX
+    pthread_threadid_np(NULL, &tid);
+#else
+    tid = gettid();
+#endif
     int size = snprintf(timeStr, sizeof(timeStr),
-                        "%4d-%.2d-%.2d %.2d:%.2d:%.2d.%.3d (%ld) [%s] %s:%d: %s",
+                        "%4d-%.2d-%.2d %.2d:%.2d:%.2d.%.3d (%llu) [%s] %s:%d: %s",
                         1900 + tm.tm_year,
                         tm.tm_mon + 1,
                         tm.tm_mday,
@@ -195,7 +201,7 @@ void _LogWrite(const char* file, int line, int level, FPPLoggerInstance& facilit
                         tm.tm_min,
                         tm.tm_sec,
                         ms,
-                        syscall(SYS_gettid), facility.name.c_str(), file, line, format);
+                        tid, facility.name.c_str(), file, line, format);
 
     if (logFileName[0]) {
         FILE* logFile;
