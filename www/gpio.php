@@ -142,10 +142,11 @@ include 'menu.inc';?>
           <div >
 
             <div class="row tablePageHeader">
-                <div class="col-md-auto ml-lg-auto">
-                    <div class="form-actions">
+                <div class="col-md">
+                    <h2>GPIO Input Triggers</h2>
+                </div>
+                <div class="col-md-auto ms-lg-auto">
                      <input type="button" value="Save" class="buttons btn-success" onClick="SaveGPIOInputs();"></input>
-                    </div>
                 </div>
             </div>
             <hr>

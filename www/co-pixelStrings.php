@@ -177,11 +177,6 @@ function cancelVirtualEEPROMSelect() {
     reloadPage();
 }
 
-function CloseUpgradeDialog(reload = false) {
-    $('#upgradePopup').fppDialog('close');
-    if (reload)
-        location.reload();
-}
 
 function RemoveVirtualEEPROM() {
     DeleteFile("config", null, "cape-eeprom.bin", true);
@@ -192,18 +187,24 @@ function RemoveVirtualEEPROM() {
     reloadPage();
 }
 
+function UpgradeDone() {
+    EnableModalDialogCloseButton("InstallVirtualEEPROM");
+    $("#InstallVirtualEEPROMCloseButton").prop("disabled", false);
+}
 function InstallFirmwareDone() {
-    var txt = $('#upgradeText').val();
+    var txt = $('#InstallVirtualEEPROMText').val();
     if (txt.includes("Cape does not match new firmware")) {
         var arrayOfLines = txt.match(/[^\r\n]+/g);
         var msg = "Are you sure you want to install the virtual firmware for cape:\n" + arrayOfLines[2] + "\n\nWith the virtual firmware for: \n" + arrayOfLines[3] + "\n";
         if (confirm(msg)) {
             var filename = $('#virtualEEPROM').val();
             $('#upgradeText').html('');
-            StreamURL('upgradeCapeFirmware.php?force=true&filename=' + filename, 'upgradeText', 'UpgradeDone', 'UpgradeDone', 'GET', null, false, false);
+            StreamURL('upgradeCapeFirmware.php?force=true&filename=' + filename, 'InstallVirtualEEPROMText', 'UpgradeDone', 'UpgradeDone', 'GET', null, false, false);
+        } else {
+            reloadPage();
         }
     }
-    $('#closeDialogButton').show();
+    UpgradeDone();
 }
 
 function InstallFirmware() {
@@ -214,11 +215,8 @@ function InstallFirmware() {
         return;
     }
 
-    $('.dialogCloseButton').hide();
-    $('#upgradePopup').fppDialog({ height: 600, width: 900, title: "Install Cape Firmware", dialogClass: 'no-close' });
-    $('#upgradePopup').fppDialog( "moveToTop" );
-    $('#upgradeText').html('');
-    StreamURL('upgradeCapeFirmware.php?filename=' + filename, 'upgradeText', 'InstallFirmwareDone', 'InstallFirmwareDone', 'GET', null, false, false);
+    DisplayProgressDialog("InstallVirtualEEPROM", "Install Cape Firmware");
+    StreamURL('upgradeCapeFirmware.php?filename=' + filename, 'InstallVirtualEEPROMText', 'InstallFirmwareDone', 'InstallFirmwareDone', 'GET', null, false, false);
 }
 
 function MapPixelStringType(type) {
@@ -481,21 +479,21 @@ function pixelOutputTableRow(type, protocols, protocol, oid, port, sid, descript
     }
     if (sid)
     {
-        result += "<td>&nbsp;<span style='display: none;' class='vsPortLabel'>" + hwLabel + "" + portPfx + ")</span></td>";
+        result += "<td>&nbsp;<span style='display: none;' data-bs-html='true' class='vsPortLabel'>" + hwLabel + "" + portPfx + ")</span></td>";
         result += "<td><input type='hidden' class='vsProtocol' value='" + protocol + "'</td>";
         result += "<td><button ";
         result += "class='circularButton circularButton-sm circularVirtualStringButton circularDeleteButton' onClick='removeVirtualString(this);'></button></td>";
     }
     else
     {
-        result += "<td class='vsPortLabel' align='center' title=''>" + hwLabel + "" + portPfx + ")</td>";
+        result += "<td class='vsPortLabel' align='center' data-bs-html='true' title=''>" + hwLabel + "" + portPfx + ")</td>";
         result += "<td>" + pixelOutputProtocolSelect(protocols, protocol) + "</td>";
         result += "<td ><button ";
         result += "class='circularButton circularButton-sm circularButton-visible circularVirtualStringButton circularAddButton' onClick='addVirtualString(this);'></button></td>";
     }
 
     result += "<td><input type='text' class='vsDescription' size='25' maxlength='60' value='" + description + "'></td>";
-    result += "<td><input type='number' class='vsStartChannel' size='7' value='" + startChannel + "' min='1' max='<?echo FPPD_MAX_CHANNELS; ?>' onkeypress='preventNonNumericalInput(event)' onChange='updateItemEndChannel(this); sanityCheckOutputs();' onkeypress='this.onchange();' onpaste='this.onchange();' oninput='this.onchange();'></td>";
+    result += "<td><input type='number' class='vsStartChannel' data-bs-html='true' size='7' value='" + startChannel + "' min='1' max='<?echo FPPD_MAX_CHANNELS; ?>' onkeypress='preventNonNumericalInput(event)' onChange='updateItemEndChannel(this); sanityCheckOutputs();' onkeypress='this.onchange();' onpaste='this.onchange();' oninput='this.onchange();'></td>";
     result += "<td><input type='number' class='vsPixelCount' size='4' min='0' max='1600' onkeypress='preventNonNumericalInput(event)' value='" + pixelCount + "' onChange='updateItemEndChannel(this); sanityCheckOutputs();' onkeypress='this.onchange();' onpaste='this.onchange();' oninput='this.onchange();'></td>";
     result += "<td><input type='number' class='vsGroupCount' size='3' value='" + groupCount + "' min='1' max='1000' onkeypress='preventNonNumericalInput(event)' onChange='updateItemEndChannel(this); sanityCheckOutputs();'></td>";
     if (groupCount == 0) {
@@ -1638,8 +1636,12 @@ function populatePixelStringOutputs(data) {
                         selectedPixelStringRowId = "NothingSelected";
                     }
                 });
-
+                $('.vsPortLabel').tooltip();
                 setTimeout(function() {
+                    $('.vsPortLabel').attr("data-bs-html", "true");
+                    $('.vsPortLabel').attr("data-bs-original-title", selected_string_details($('.vsPortLabel').parent()));
+
+                    /*
                     $('.vsPortLabel').tooltip({
                         content: function() {
                             var tip = selected_string_details($(this).parent());
@@ -1647,6 +1649,7 @@ function populatePixelStringOutputs(data) {
                         },
                         hide: { delay: 100 }
                     });
+                    */
                 }, 250);
 
                 //setTimeout(pinTableHeader, 500);
@@ -1849,8 +1852,8 @@ function sanityCheckOutputs() {
 
             labels[r] = tRow.find('.vsPortLabel').html().replace(')', '');
 
-            pcNodes[r].attr('title', '');
-            scNodes[r].attr('title', '');
+            pcNodes[r].attr("data-bs-original-title", '');
+            scNodes[r].attr("data-bs-original-title", '');
         }
     }
 
@@ -1955,8 +1958,11 @@ function sanityCheckOutputs() {
 
     for (r = 0; r < rowCount; r++) {
         if (startChannels[r] && endChannels[r]) {
-            pcNodes[r].attr('title', pcTitles[r]);
-            scNodes[r].attr('title', scTitles[r]);
+            pcNodes[r].tooltip();
+            scNodes[r].tooltip();
+            pcNodes[r].attr("data-bs-original-title", pcTitles[r]);
+            scNodes[r].attr("data-bs-original-title", scTitles[r]);
+
         }
     }
 
@@ -2665,10 +2671,4 @@ title="<?=$settings['cape-info']['capeTypeTip']?>"
 <span class='capeNotes capeTypeRow' style='display: none;'><b>Cape Configuration Notes:</b><br></span>
 <span class='capeNotes capeTypeRow' id='capeNotes' style='display: none;'></span>
 
-<div id='upgradePopup' title='FPP Upgrade' style="display: none">
-    <textarea style='width: 99%; height: 500px;' disabled id='upgradeText'>
-    </textarea>
-    <input id='closeDialogButton' type='button' class='buttons dialogCloseButton' value='Close' onClick='CloseUpgradeDialog(true);' style='display: none;'>
-    <input id='errorDialogButton' type='button' class='buttons dialogCloseButton' value='Close' onClick='CloseUpgradeDialog(false);' style='display: none;'>
-</div>
 
