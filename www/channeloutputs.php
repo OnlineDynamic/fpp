@@ -5,7 +5,11 @@
 require_once "common.php";
 require_once 'config.php';
 require_once 'universeentry.php';
-require_once 'fppdefines.php';
+if (file_exists(__DIR__ . "/fppdefines.php")) {
+    include_once __DIR__ . '/fppdefines.php';
+} else {
+    include_once __DIR__ . '/fppdefines_unknown.php';
+}
 include 'common/menuHead.inc';
 
 //$settings['Platform'] = "Raspberry Pi"; // Uncomment for testing
@@ -226,7 +230,7 @@ if ($e131TabStyle == "") {
 
 			<ul class="nav nav-pills pageContent-tabs" id="channelOutputTabs" role="tablist">
               <li class="nav-item <?=$e131TabStyle?>" id="tab-e131-LI">
-                <a class="nav-link <?=$e131TabStyleActive?>" id="tab-e131-tab" tabType='UDP' data-toggle="pill" href="#tab-e131" role="tab" aria-controls="tab-e131" aria-selected="true">
+                <a class="nav-link <?=$e131TabStyleActive?>" id="tab-e131-tab" tabType='UDP' data-bs-toggle="pill" href="#tab-e131" role="tab" aria-controls="tab-e131" aria-selected="true">
 					E1.31 / ArtNet / DDP / KiNet
 				</a>
               </li>
@@ -249,7 +253,7 @@ if ($settings['Platform'] == "BeagleBone Black" || $settings['Platform'] == "Ras
     }
     ?>
                 <li class="nav-item <?=$stringTabStyle?>" id="tab-strings-LI" >
-                    <a class="nav-link <?=$stringTabStyleActive?>" id="stringTab-tab" tabType='strings' data-toggle="pill" href='#stringTab' role="tab" aria-controls="stringTab">
+                    <a class="nav-link <?=$stringTabStyleActive?>" id="stringTab-tab" tabType='strings' data-bs-toggle="pill" href='#stringTab' role="tab" aria-controls="stringTab">
                         <?echo $stringTabText; ?>
                     </a>
                 </li>
@@ -259,7 +263,7 @@ if ($settings['Platform'] == "Raspberry Pi") {
     if (in_array('fpd', $currentCapeInfo["provides"])) {
         ?>
 						<li class="nav-item">
-							<a class="nav-link" id="tab-fpd-tab" tabType='FPD' data-toggle="pill" href='#tab-fpd' role="tab" aria-controls="tab-fpd">
+							<a class="nav-link" id="tab-fpd-tab" tabType='FPD' data-bs-toggle="pill" href='#tab-fpd' role="tab" aria-controls="tab-fpd">
 								Falcon Pixelnet/DMX
 							</a>
 						</li>
@@ -279,12 +283,12 @@ if ((isset($settings['cape-info'])) &&
 }
 ?>
 						<li class="nav-item <?=$lpTabStyle?>" id="tab-LEDPanels-LI">
-							<a class="nav-link <?=$lpTabStyleActive?>" id="tab-LEDPanels-tab" tabType='panels' data-toggle="pill" href='#tab-LEDPanels' role="tab" aria-controls="tab-LEDPanels">
+							<a class="nav-link <?=$lpTabStyleActive?>" id="tab-LEDPanels-tab" tabType='panels' data-bs-toggle="pill" href='#tab-LEDPanels' role="tab" aria-controls="tab-LEDPanels">
                                 <?echo $ledTabText; ?>
 							</a>
 						</li>
 						<li class="nav-item">
-							<a class="nav-link" id="tab-other-tab" tabType='other' data-toggle="pill" href='#tab-other' role="tab" aria-controls="tab-other">
+							<a class="nav-link" id="tab-other-tab" tabType='other' data-bs-toggle="pill" href='#tab-other' role="tab" aria-controls="tab-other">
 								Other
 							</a>
 						</li>

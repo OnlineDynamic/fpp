@@ -588,11 +588,11 @@ if ((isset($settings['MultiSyncAdvancedView'])) &&
 
 	    //Expert View Rows
 	    if( data.hasOwnProperty('advancedView') && data.status_name !== 'unknown' && data.status_name !== 'unreachable' && data.status_name !== 'password') {
-		if (data.advancedView.hasOwnProperty('Platform')) {
-			$('#' + rowID + '_platform').html(data.advancedView.Platform);
+		    if (data.advancedView.hasOwnProperty('Platform')) {
+			    $('#' + rowID + '_platform').html(data.advancedView.Platform);
 	        }
-		if (data.advancedView.hasOwnProperty('Variant') && (data.advancedView.Variant != '')) {
-			$('#' + rowID + '_variant').html(data.advancedView.Variant);
+		    if (data.advancedView.hasOwnProperty('Variant') && (data.advancedView.Variant != '')) {
+			    $('#' + rowID + '_variant').html(data.advancedView.Variant);
 	        }
 
                 var updatesAvailable = 0;
@@ -603,8 +603,14 @@ if ((isset($settings['MultiSyncAdvancedView'])) &&
                     (data.advancedView.RemoteGitVersion !== data.advancedView.LocalGitVersion)) {
                     updatesAvailable = 1;
                 }
-
-               if (data.advancedView.hasOwnProperty("RemoteGitVersion")) {
+                if (data.advancedView.hasOwnProperty("backgroundColor") && data.advancedView.backgroundColor != "") {
+                    $('#' + rowID).css('background', "#" + data.advancedView.backgroundColor);
+                    $('#' + rowID + "_warnings").css('background', "#" + data.advancedView.backgroundColor);
+                    $('#' + rowID).css('color', "#FFF");
+                    $('#' + rowID + " a").css('color', "#989898");
+                    $('#' + rowID + "_warnings .warning-text").css('color', "#FF8080");
+                }
+                if (data.advancedView.hasOwnProperty("RemoteGitVersion")) {
                     var u = "<table class='multiSyncVerboseTable'>";
                     u += "<tr><td>Local:</td><td id='" + rowID + "_localgitvers'>";
                     u += getLocalVersionLink(ip, data);
@@ -695,18 +701,20 @@ if ((isset($settings['MultiSyncAdvancedView'])) &&
 
                        }
                        u += "<tr><td>Up:&nbsp;</td><td>" + ut
-                       u += ' <span class="multisync-utilization-more" data-html="true" title="' + diskHtml + '<br><b>Uptime:</b> ' + ut;
-                       u += '">...</td></tr>'
+                       u += ' <span class="multisync-utilization-more" data-bs-html="true" title="<span class=\'tooltipSpan\'>' + diskHtml + '<br><b>Uptime:</b> ' + ut;
+                       u += '</span>">...</td></tr>'
                     }
                }
                u += "</table>";
 
                 $('#advancedViewUtilization_' + rowID).html(u);
+                SetupToolTips();
             }
             });
 
             if ($('.logRow:visible').length == 0)
                 $('#fppSystems').trigger('update', true);
+
 		}).always(function() {
 			if (Array.isArray(ipAddresses) && $('#MultiSyncRefreshStatus').is(":checked")) {
 				refreshTimer = setTimeout(function() {getFPPSystemStatus(ipAddresses, true);}, 2000);
@@ -2020,11 +2028,11 @@ include 'menu.inc';?>
 
         <div class="multisyncAdvancedFormActions row">
             <div class="form-actions col-md">
-            <button class="fppSystemsUiSettingsToggle buttons dropdown-toggle"  type="button"data-toggle="collapse" data-target="#fppSystemsUiSettingsDrawer" aria-expanded="false" aria-controls="fppSystemsUiSettingsDrawer">
+            <button class="fppSystemsUiSettingsToggle buttons dropdown-toggle"  type="button"data-bs-toggle="collapse" data-bs-target="#fppSystemsUiSettingsDrawer" aria-expanded="false" aria-controls="fppSystemsUiSettingsDrawer">
             <i class="fas fa-cog"></i> More Settings</button>
             <button id='exportStatsButton' type='button' class='buttons' value='Export' onClick='exportMultisync();'><i class="fas fa-scroll"></i> Export </button>
             <button id='refreshStatsButton' type='button' class='buttons' value='Refresh Stats' onClick='clearRefreshTimers(); RefreshStats();'><i class="fas fa-redo"></i> Refresh Stats</button>
-            <div class="ml-2">
+            <div class="ms-2">
             </div>
             </div>
             <div class="col-md-auto">
