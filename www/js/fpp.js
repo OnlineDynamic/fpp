@@ -911,27 +911,17 @@ function ProcessStreamedScript(str, allowEmpty = false) {
     if (str.length == 0)
         return;
 
+    StreamScript += str;
     if ((StreamScript != '') || (allowEmpty == true)) {
-        var i = str.indexOf(StreamScriptEnd);
-        if (i >= 0) {
-            // this packet contains the end of the script
-            StreamScript += str.substr(0, i);
-            eval(StreamScript);
-            StreamScript = '';
-
-            var remaining = str.length - i - StreamScriptEnd.length;
-            if (remaining > 0)
-                ProcessStreamedScript(str.substr(i + 1, remaining));
-        } else {
-            // script is continued on in next data packet
-            StreamScript += str;
-        }
-    } else {
-        var i = str.indexOf(StreamScriptStart);
-        if (i >= 0) {
-            var remaining = str.length - i - StreamScriptStart.length;
-            if (remaining > 0)
-                ProcessStreamedScript(str.substr(i + StreamScriptStart.length, remaining), true);
+        var is = StreamScript.indexOf(StreamScriptStart);
+        var ie = StreamScript.indexOf(StreamScriptEnd);
+        if (is >= 0 && ie >= 0 && is < ie) {
+            // this packet contains the script
+            var script = StreamScript.substring(is + StreamScriptStart.length, ie);
+            eval(script);
+            script = StreamScript.substring(ie + StreamScriptEnd.length);
+            StreamScript = "";
+            ProcessStreamedScript(script, true);
         }
     }
 }
@@ -1751,6 +1741,7 @@ function SetButtonState(button, state) {
     if (state == 'enable') {
         $(button).addClass('buttons').addClass($(button).data('btn-enabled-class'));
         $(button).removeClass('disableButtons');
+        $(button).removeClass('disabled');
         $(button).removeAttr("disabled");
     }
     else {
@@ -4845,9 +4836,24 @@ function DisplayHelp() {
 }
 
 function GetGitOriginLog() {
-    $('#logText').html('Loading list of changes from github. <div class="ajax-loading-60px"></div>');
-    $('#logViewer').fppDialog({ height: 600, width: 800, title: "Git Changes" });
-    $('#logViewer').fppDialog("moveToTop");
+
+    DoModalDialog({
+        id: "GitOriginLogView",
+        title: "Git Changes",
+        backdrop: true,
+        keyboard: true,
+        body: "<div id='GitOriginLogViewText'>Loading........</div>",
+        class: "modal-dialog-scrollable",
+        buttons: {
+            "Close": {
+                id: "GitOriginLogViewCloseButton",
+                click: function () {
+                    CloseModalDialog("GitOriginLogView");
+                }
+            }
+        }
+    });
+
     $.get({
         url: "api/git/originLog",
         data: "",
@@ -4865,7 +4871,7 @@ function GetGitOriginLog() {
                     html.push('</td></tr>');
                 });
                 html.push('</table>');
-                $('#logText').html(html.join(''));
+                $('#GitOriginLogViewText').html(html.join(''));
             }
         }
     });
@@ -6328,7 +6334,7 @@ function RefreshHeaderBar() {
                 }
             }
             tooltip += '<b>' + e.label + '</b>' + val + '<br/>';
-            row = '<span class="sensorSpan" onclick="RotateHeaderSensor(' + (sensors.length + 1) + ')" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true" data-sensorcount="' + sensors.length + '" class="hiddenSensor" data-bs-title="TOOLTIP_DETAILS"><i class="fas fa-' + icon + '"></i><small>' + e.label + val + '</small></span>';
+            row = '<span class="sensorSpan hiddenSensor" onclick="RotateHeaderSensor(' + (sensors.length + 1) + ')" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true" data-sensorcount="' + sensors.length + '" class="hiddenSensor" data-bs-title="TOOLTIP_DETAILS"><i class="fas fa-' + icon + '"></i><small>' + e.label + val + '</small></span>';
             sensors.push(row);
         });
         var sensorsJoined = sensors.join("");

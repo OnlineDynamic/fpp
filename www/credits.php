@@ -34,12 +34,15 @@ include 'menu.inc';?><div class="container">
         Chris Pinkham (CaptainMurdoch)<br/>
         Dan Kulp (dkulp)<br/>
         Greg Hormann (ghormann)<br/>
+        Scott Hanson (computergeek1507/scooter_seh)<br/>
+        Daryl Collins (darylc)<br/>
         Andrew Ayton (drew8n) - UI<br/>
         Adam Coulombe (wzadz1) - UI<br/>
         Justin J. Novack - UI<br/>
         Pat Delaney (patdelaney) - QA<br/>
         Rick Harris (Poporacer) - Manual/QA<br/>
         Mark Amber (pixelpuppy) - Manual/QA<br/>
+        Ron Armstrong (bloojoop) - QA<br/>
         <br/>
         For a full list of code contributors, visit the <a href='https://github.com/FalconChristmas/fpp/graphs/contributors' target='_blank'>contributors page</a> on github.<br/>
     </div>

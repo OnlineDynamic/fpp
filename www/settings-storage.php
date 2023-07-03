@@ -80,19 +80,41 @@ function checkFormatStorage()
 <?php
 if ($settings['Platform'] == "BeagleBone Black") {
 ?>
+function flashEMMCDone() {
+    $('#flashEMMCProgressCloseButton').prop("disabled", false);
+    EnableModalDialogCloseButton("flashEMMCProgress");
+}
 function flashEMMC() {
     DisplayConfirmationDialog("flashEMMC", "Flash to eMMC", $("#dialog-confirm-emmc"), function() {
-        window.location.href="flashbbbemmc.php";
+        DisplayProgressDialog("flashEMMCProgress", "Flash to eMMC");
+        StreamURL("flashbbbemmc.php", 'flashEMMCProgressText', 'flashEMMCDone', 'flashEMMCDone');
     });
 }
 function flashEMMCBtrfs() {
     DisplayConfirmationDialog("flashEMMC", "Flash to eMMC", $("#dialog-confirm-emmc"), function() {
-        window.location.href="flashbbbemmc-btrfs.php";
+        DisplayProgressDialog("flashEMMCProgress", "Flash to eMMC");
+        StreamURL("flashbbbemmc-btrfs.php", 'flashEMMCProgressText', 'flashEMMCDone', 'flashEMMCDone');
     });
 }
 <?php
 }
 ?>
+function flashUSBDone() {
+    $('#flashUSBProgressCloseButton').prop("disabled", false);
+    EnableModalDialogCloseButton("flashUSBProgress");
+}
+function flashUSB(device) {
+    DisplayConfirmationDialog("flashUSB", "Flash to USB/SD", $("#dialog-confirm-usb"), function() {
+        DisplayProgressDialog("flashUSBProgress", "Flash to USB/SD");
+        StreamURL("flash-pi-usb.php?cone=false&dev=" + device, 'flashUSBProgressText', 'flashUSBDone', 'flashUSBDone');
+    });
+}
+function cloneUSB(device) {
+    DisplayConfirmationDialog("flashUSB", "Clone to USB/SD", $("#dialog-confirm-usb"), function() {
+        DisplayProgressDialog("flashUSBProgress", "Clone to USB/SD");
+        StreamURL("flash-pi-usb.php?clone=true&dev=" + device, 'flashUSBProgressText', 'flashUSBDone', 'flashUSBDone');
+    });
+}
 </script>
 
 <?php
@@ -201,29 +223,13 @@ function PrintStorageDeviceSelect($platform)
 	PrintSettingSelect('StorageDevice', 'storageDevice', 0, 1, $storageDevice, $values, "", "checkFormatStorage");
 }
     
-?>
-
-    
-<?php
-if ($settings['Platform'] != "Docker" ) { ?>
-    <b>Storage Device:</b> &nbsp;<? PrintStorageDeviceSelect($settings['Platform']); ?>
-    
-    <div class="callout callout-warning">
-    Changing the storage device to anything other than the SD card is strongly discouraged.   There are all kinds of problems that using USB storage introduce into the system which can easily result in various problems include network lag, packet drops, audio clicks/pops, high CPU usage, etc...  Using USB storage also results in longer bootup time.   In addition, many advanced features and various capes/hats are known to NOT work when using USB storage.
-<br><br>
-In addition to the above, since it is not recommended, using USB storage is not tested nearly as extensively by the FPP developers.   Thus, upgrades (even "patch" upgrades) have a higher risk of unexpected problems.   By selecting a USB storage device, you assume much higher risk of problems and issues than when selecting an SD partition.
-   
-    </div>
-
-<?
-}
 
 $addnewfsbutton = false;
 $addflashbutton = false;
 exec('findmnt -n -o SOURCE / | colrm 1 5', $output, $return_val);
 $rootDevice = $output[0];
 if ($rootDevice == 'mmcblk0p1' || $rootDevice == 'mmcblk0p2') {
-    if (isset($settings["LastBlock"]) && $settings['LastBlock'] < 8000000) {
+    if (isset($settings["LastBlock"]) && $settings['LastBlock'] < 8000000 && $settings['LastBlock'] > 0) {
         $addnewfsbutton = true;
     }
     if ($settings['Platform'] == "BeagleBone Black") {
@@ -231,6 +237,11 @@ if ($rootDevice == 'mmcblk0p1' || $rootDevice == 'mmcblk0p2') {
             $addflashbutton = true;
         }
     }
+    if ((strpos($settings['SubPlatform'], "Raspberry Pi 4") !== false) && (file_exists("/dev/sda"))) {
+        $addflashbutton = true;
+    }
+} else if ((strpos($settings['SubPlatform'], "Raspberry Pi 4") !== false) && $rootDevice == 'sda2' && (file_exists("/dev/mmcblk0"))) {
+    $addflashbutton = true;
 }
 if ($addnewfsbutton) {
 ?>
@@ -253,8 +264,8 @@ if ($addnewfsbutton) {
 <?php
 }
 if ($addflashbutton) {
+    if ($settings['Platform'] == "BeagleBone Black") {
 ?>
-
 <h3>eMMC Actions:</h3>
 
     <div class="row">
@@ -266,17 +277,66 @@ if ($addflashbutton) {
         <div class="col-auto"><input style='width:13em;' type='button' class='buttons' value='Flash to eMMC' onClick='flashEMMCBtrfs();'></div>
         <div class="col-auto"><i class='fas fa-fw fa-graduation-cap ui-level-1'></i>&nbsp;This will copy FPP to the internal eMMC, but use BTRFS for the root filesystem.<br>BTRFS uses compression to save a lot of space on the eMMC, but at the expense of extra CPU usage.</div>
     </div>
-<?php
+<?
    }
+} else if ($settings['Platform'] == "Raspberry Pi") {
+?>
+<?  if ($rootDevice == 'mmcblk0p2') { ?>
+    <h3>USB Actions:</h3>
+    <div class="row">
+        <div class="col-auto"><input style='width:13em;' type='button' class='buttons' value='Flash to USB' onClick='flashUSB("sda");'></div>
+        <div class="col-auto">&nbsp;This will flash FPP to the USB device.  See note below for more information.</div>
+    </div>    
+    <div class="row">
+        <div class="col-auto"><input style='width:13em;' type='button' class='buttons' value='Clone to USB' onClick='cloneUSB("sda");'></div>
+        <div class="col-auto">&nbsp;This will copy FPP, media, sequences, settings, etc... to the USB device.  See note below for more information.</div>
+    </div>    
+<? } else { ?>
+    <h3>SD Card Actions:</h3>
+    <div class="row">
+        <div class="col-auto"><input style='width:13em;' type='button' class='buttons' value='Flash to SD' onClick='flashUSB("mmcblk0");'></div>
+        <div class="col-auto">&nbsp;This will flash FPP to the SD Card.</div>
+    </div>    
+    <div class="row">
+        <div class="col-auto"><input style='width:13em;' type='button' class='buttons' value='Clone to SD' onClick='cloneUSB("mmcblk0");'></div>
+        <div class="col-auto">&nbsp;This will copy FPP, media, sequences, settings, etc... to the SD Card.</div>
+    </div>    
+<?
+}
+}
+}
+
+if ($settings['Platform'] != "Docker" ) { ?>
+<br><br>
+    <b>Storage Device:</b> &nbsp;<? PrintStorageDeviceSelect($settings['Platform']); ?>
+
+<? if (strpos($settings['SubPlatform'], "Raspberry Pi 4") === false) { ?>
+
+    <div class="callout callout-warning">
+    Changing the storage device to anything other than the SD card is strongly discouraged.   There are all kinds of problems that using USB storage introduce into the system which can easily result in various problems include network lag, packet drops, audio clicks/pops, high CPU usage, etc...  Using USB storage also results in longer bootup time.   In addition, many advanced features and various capes/hats are known to NOT work when using USB storage.
+<br><br>
+In addition to the above, since it is not recommended, using USB storage is not tested nearly as extensively by the FPP developers.   Thus, upgrades (even "patch" upgrades) have a higher risk of unexpected problems.   By selecting a USB storage device, you assume much higher risk of problems and issues than when selecting an SD partition.   
+    </div>
+<? } else { ?>
+    <div class="callout callout-warning">
+        If using a USB storage device, it is STRONGLY recommended that the device be a USB 3.0 SATA/SSD device or other fast storage and not a generic USB Thumb drive.   Older USB devices, even on the USB 3.0 ports, are known to cause all kinds of problems including network lag, packet drops, audio clicks/pops, high CPU usage, etc...
+        <br><br>
+        In addition, a good cooling solution, particularly for the USB HUB chips on the Pi, is critical.  It is recommended to have a cooling fan and heat syncs on the Pi4 chips to keep everything cool.  When the chips get too hot, the entire system is throttled which introduces latency and lag.
+    </div>
+    <br>
+<?
+}
 }
 ?>
-
 
 <div id="dialog-confirm" class="hidden">
 <p><span class="ui-icon ui-icon-alert" style="flat:left; margin: 0 7px 20px 0;"></span>Growing the filesystem will require a reboot to take effect.  Do you wish to proceed?</p>
 </div>
 <div id="dialog-confirm-emmc" class="hidden">
 <p><span class="ui-icon ui-icon-alert" style="flat:left; margin: 0 7px 20px 0;"></span>Flashing the eMMC can take a long time.  Do you wish to proceed?</p>
+</div>
+<div id="dialog-confirm-usb" class="hidden">
+<p><span class="ui-icon ui-icon-alert" style="flat:left; margin: 0 7px 20px 0;"></span>Flashing the USB/SD can take a long time and will destroy all content on the target device.  Do you wish to proceed?</p>
 </div>
 <div id="dialog-confirm-newpartition" class="hidden">
 <p><span class="ui-icon ui-icon-alert" style="flat:left; margin: 0 7px 20px 0;"></span>Creating a new partition in the unused space will require a reboot to take effect.  Do you wish to proceed?</p>
