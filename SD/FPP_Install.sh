@@ -48,7 +48,7 @@
 #
 #############################################################################
 FPPBRANCH=${FPPBRANCH:-"master"}
-FPPIMAGEVER="2023-04"
+FPPIMAGEVER="2023-06"
 FPPCFGVER="77"
 FPPPLATFORM="UNKNOWN"
 FPPDIR=/opt/fpp
@@ -409,6 +409,11 @@ case "${OSVER}" in
             # Need to make sure there is configuration for eth0 or uninstalling dhcpclient will cause network to drop
             rm -f /etc/systemd/network/50-default.network
             wget -O /etc/systemd/network/50-default.network https://raw.githubusercontent.com/FalconChristmas/fpp/master/etc/systemd/network/50-default.network
+            if [ "$FPPPLATFORM" == "BeagleBone Black" ]; then
+                sed -e 's/LinkLocalAddressing=fallback/LinkLocalAddressing=yes/' /etc/systemd/network/50-default.network
+            fi
+            
+            
             systemctl reload systemd-networkd
             apt-get remove -y --purge --autoremove --allow-change-held-packages ${PACKAGE_REMOVE}
             
@@ -576,6 +581,10 @@ case "${OSVER}" in
             apt-get remove -y --purge --autoremove --allow-change-held-packages pocketsphinx-en-us
 
             if [ "$FPPPLATFORM" == "Raspberry Pi" ]; then
+                echo "FPP - Fixing haveged"
+                mkdir -p /etc/systemd/system/haveged.service.d
+                echo -e '[Service]\nSystemCallFilter=uname' > /etc/systemd/system/haveged.service.d/syscall.conf
+            
                 echo "FPP - Applying updates to allow optional boot from USB on Pi 4 (and up)"
 
                 # make sure the label on p1 is "boot" and p2 is rootfs
@@ -644,7 +653,7 @@ if [ ! -f "/usr/include/SDL2/SDL.h" ]; then
     mkdir deb
     dpkg-deb -R ./libsdl2*.deb  deb
     sed -i -e "s/Version\(.*\)+\(.*\)/Version\1~fpp/g" deb/DEBIAN/control
-    sed -i -e "s/Depends: \(.*\)/Depends: libsdl2-2.0-0, libasound2-dev, libdbus-1-dev, libsndio-dev, libudev-dev/g" deb/DEBIAN/control
+    sed -i -e "s/Depends: \(.*\)/Depends: libsdl2-2.0-0, libasound2-dev, libdbus-1-dev, libsndio-dev/g" deb/DEBIAN/control
     dpkg-deb -b deb ./libsdl2-dev.deb
     apt -y install ./libsdl2-dev.deb
     apt-mark hold libsdl2-dev
