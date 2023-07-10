@@ -38,6 +38,7 @@ OBJECTS_fpp_so += \
     commands/MediaCommands.o \
 	commands/OLEDCommands.o \
 	common.o \
+	CurlManager.o \
 	e131bridge.o \
 	effects.o \
 	Events.o \
