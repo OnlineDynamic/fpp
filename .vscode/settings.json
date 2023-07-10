@@ -125,8 +125,7 @@
         "__verbose_abort": "cpp"
     },
     "editor.formatOnSave": true,
-
     "cmake.configureOnOpen": false,
-    "clang-format.executable": "/root/.vscode-server/extensions/ms-vscode.cpptools-1.14.3-linux-armhf/LLVM/bin/clang-format"
+    "clang-format.executable": "/root/.vscode-server/extensions/ms-vscode.cpptools-1.16.3-linux-armhf/LLVM/bin/clang-format",
+    "cmake.sourceDirectory": "/opt/fpp/external/rpi_ws281x"
 }
-
