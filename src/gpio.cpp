@@ -12,15 +12,21 @@
 
 #include "fpp-pch.h"
 
-#include "Plugins.h"
+#include <array>
+#include <httpserver.hpp>
+#include <list>
+#include <map>
+#include <string.h>
+#include <string>
+#include <vector>
 
-#include <pwd.h>
-#include <stdarg.h>
-#include <stdbool.h>
-#include <strings.h>
+#include "common.h"
+#include "log.h"
+#include "settings.h"
+#include "commands/Commands.h"
+#include "util/GPIOUtils.h"
 
 #include "gpio.h"
-#include "util/GPIOUtils.h"
 
 #define GPIO_DEBOUNCE_TIME 100000
 
@@ -270,7 +276,7 @@ void GPIOManager::SetupGPIOInput(std::map<int, std::function<bool(int)>>& callba
     }
 #endif
 }
-void GPIOManager::AddGPIOCallback(const PinCapabilities* pin, const std::function<bool(int)> &cb) {
+void GPIOManager::AddGPIOCallback(const PinCapabilities* pin, const std::function<bool(int)>& cb) {
     GPIOState state;
     state.pin = pin;
     state.callback = cb;
@@ -278,7 +284,7 @@ void GPIOManager::AddGPIOCallback(const PinCapabilities* pin, const std::functio
     addState(state);
 }
 
-void GPIOManager::addState(GPIOState &state) {
+void GPIOManager::addState(GPIOState& state) {
     // Set the time immediately to utilize the debounce code
     // from triggering our GPIOs on startup.
     state.lastTriggerTime = GetTime();
@@ -335,9 +341,7 @@ void GPIOManager::addState(GPIOState &state) {
 #endif
         pollStates.push_back(state);
     }
-
 }
-
 
 void GPIOManager::GPIOState::doAction(int v) {
     LogDebug(VB_GPIO, "GPIO %s triggered.  Value:  %d\n", pin->name.c_str(), v);

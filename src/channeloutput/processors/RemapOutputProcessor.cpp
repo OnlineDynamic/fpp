@@ -12,6 +12,8 @@
 
 #include "fpp-pch.h"
 
+#include "../../log.h"
+
 #include "RemapOutputProcessor.h"
 
 RemapOutputProcessor::RemapOutputProcessor(const Json::Value& config) {
@@ -26,7 +28,7 @@ RemapOutputProcessor::RemapOutputProcessor(const Json::Value& config) {
             sourceChannel, sourceChannel + count - 1,
             destChannel, destChannel + (count * loops) - 1, (count * loops), loops);
 
-    //channel numbers need to be 0 based
+    // channel numbers need to be 0 based
     --destChannel;
     --sourceChannel;
 }

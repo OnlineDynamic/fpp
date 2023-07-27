@@ -12,6 +12,13 @@
 
 #include "fpp-pch.h"
 
+#include <thread>
+
+#include "../common.h"
+#include "../log.h"
+
+#include "../Events.h"
+
 #include "EventCommands.h"
 #include "MediaCommands.h"
 #include "MultiSync.h"
@@ -94,8 +101,8 @@ void CommandManager::Init() {
      *
      * ./include/vlc_atomic.h:64: vlc_atomic_rc_dec: Assertion `prev' failed.
      */
-    //addCommand(new StopMediaCommand());
-    //addCommand(new StopAllMediaCommand());
+    // addCommand(new StopMediaCommand());
+    // addCommand(new StopAllMediaCommand());
 #endif
     addCommand(new PlaylistPauseCommand());
     addCommand(new PlaylistResumeCommand());

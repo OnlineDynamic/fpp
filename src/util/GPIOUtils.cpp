@@ -15,6 +15,7 @@
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <fcntl.h>
+#include <thread>
 
 #include "GPIOUtils.h"
 #include "commands/Commands.h"

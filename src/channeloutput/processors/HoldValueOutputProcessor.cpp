@@ -12,6 +12,8 @@
 
 #include "fpp-pch.h"
 
+#include "../../log.h"
+
 #include "HoldValueOutputProcessor.h"
 
 HoldValueOutputProcessor::HoldValueOutputProcessor(const Json::Value& config) {
@@ -22,7 +24,7 @@ HoldValueOutputProcessor::HoldValueOutputProcessor(const Json::Value& config) {
     LogInfo(VB_CHANNELOUT, "Hold Channel Values:   %d-%d\n",
             start, start + count - 1);
 
-    //channel numbers need to be 0 based
+    // channel numbers need to be 0 based
     --start;
 
     lastValues = new unsigned char[count];

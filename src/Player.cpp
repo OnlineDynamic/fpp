@@ -12,9 +12,19 @@
 
 #include "fpp-pch.h"
 
-#include "Player.h"
+#include <cstdlib>
+#include <ctime>
+#include <functional>
+#include <httpserver.hpp>
+#include <string>
+#include <vector>
+
+#include "Events.h"
 #include "common.h"
 #include "log.h"
+#include "commands/Commands.h"
+
+#include "Player.h"
 
 Player Player::INSTANCE;
 
@@ -34,7 +44,6 @@ Player::~Player() {
 }
 
 void Player::Init() {
-
     /*
    * Start Playlist Callback
    */

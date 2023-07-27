@@ -12,6 +12,11 @@
 
 #include "fpp-pch.h"
 
+#include <math.h>
+#include <stdio.h>
+
+#include "../../log.h"
+
 #include "BrightnessOutputProcessor.h"
 
 BrightnessOutputProcessor::BrightnessOutputProcessor(const Json::Value& config) {
@@ -39,7 +44,7 @@ BrightnessOutputProcessor::BrightnessOutputProcessor(const Json::Value& config) 
         table[x] = round(f);
     }
 
-    //channel numbers need to be 0 based
+    // channel numbers need to be 0 based
     --start;
 }
 
