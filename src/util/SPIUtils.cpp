@@ -12,13 +12,16 @@
 
 #include "fpp-pch.h"
 
+#include <fcntl.h>
+#include <thread>
+#include <unistd.h>
+
 #include "../config.h"
 
 #ifdef HAS_SPI
 #include <linux/spi/spidev.h>
 #endif
 #include <sys/ioctl.h>
-#include <fcntl.h>
 
 #include "SPIUtils.h"
 
@@ -37,7 +40,7 @@ SPIUtils::SPIUtils(int c, int baud) {
         ioctl(file, SPI_IOC_WR_BITS_PER_WORD, &bitsPerWord);
         ioctl(file, SPI_IOC_WR_MAX_SPEED_HZ, &speed);
     }
-#endif        
+#endif
 }
 SPIUtils::~SPIUtils() {
     if (file != -1) {

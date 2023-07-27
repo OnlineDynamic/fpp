@@ -2043,7 +2043,9 @@ function PrintToolTip($setting)
     if ((isset($settingInfos[$setting])) &&
         (isset($settingInfos[$setting]['tip']))) {
         $tip = $settingInfos[$setting]['tip'];
-        echo "<img id='$setting" . "_img' title='$tip' src='images/redesign/help-icon.svg' class='icon-help'><span id='$setting" . "_tip' class='tooltip' style='display: none'>" . $tip . "</span>\n";
+        echo "<span id='" . $setting ."_tip' data-bs-toggle='tooltip' data-bs-html='true' data-bs-placement='auto' data-bs-title='" . $tip . "'>";
+        echo "<img id='$setting" . "_img' src='images/redesign/help-icon.svg' class='icon-help'>";
+        echo "</span>";
     }
 }
 
@@ -2616,6 +2618,71 @@ function GenerateBackupComment($setting_name, $setting_value)
     }
 
     return $backup_comment;
+}
+
+/**
+ * Returns available USB devices attached to the system
+ *
+ * @param $all bool Optional - If set to true then both usable and unusable devices are returned
+ * @return array
+ */
+function GetAvailableBackupsDevices($all=false)
+{
+	global $SUDO;
+	$devices = array();
+
+	foreach (scandir("/dev/") as $deviceName) {
+		if (preg_match("/^sd[a-z][0-9]/", $deviceName)) {
+			exec($SUDO . " sfdisk -s /dev/$deviceName", $output, $return_val);
+			$GB = round(intval($output[0]) / 1024.0 / 1024.0, 1);
+			unset($output);
+
+			if ($GB <= 0.1)
+				continue;
+
+			if (!$all) {
+				$unusable = CheckIfDeviceIsUsable($deviceName);
+				if ($unusable != '')
+					continue;
+			}
+
+			$baseDevice = preg_replace('/[0-9]*$/', '', $deviceName);
+
+			$device = array();
+			$device['name'] = $deviceName;
+			$device['size'] = $GB;
+			$device['model'] = exec("cat /sys/block/$baseDevice/device/model");
+			$device['vendor'] = exec("cat /sys/block/$baseDevice/device/vendor");
+
+			array_push($devices, $device);
+		}
+	}
+
+	return $devices;
+}
+
+/**
+ * Checks if supplied device name is usable e.g not mounted or in use at all
+ *
+ * @param $deviceName
+ * @return string
+ */
+function CheckIfDeviceIsUsable($deviceName)
+{
+	global $SUDO;
+
+	// Check if in use / Mount / List / Unmount
+	$mountPoint = exec($SUDO . " lsblk /dev/$deviceName");
+	$mountPoint = preg_replace('/.*disk ?/', '', $mountPoint);
+	$mountPoint = preg_replace('/.*part ?/', '', $mountPoint);
+	if (preg_match('/[a-z0-9\/]/', $mountPoint))
+		return "ERROR: Partition is mounted on: $mountPoint";
+
+	$isSwap = exec("grep /dev/$deviceName /proc/swaps");
+	if ($isSwap != "")
+		return "ERROR: $deviceName is a swap partition";
+
+	return "";
 }
 
 ?>

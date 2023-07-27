@@ -583,7 +583,24 @@ function TogglePasswordHideShow(setting) {
         $('#' + setting + 'VerifyHideShow').addClass('fa-eye-slash');
     }
 }
-
+function scrollIntoViewIfNeeded($target) {
+    if ($target.offset()) {
+        if ($target.offset().top < jQuery(window).scrollTop()){
+            //scroll up
+            $('html,body').animate({scrollTop: $target.offset().top});
+        }
+        else if ($target.offset().top + $target.height() >
+            $(window).scrollTop() + (
+                window.innerHeight || document.documentElement.clientHeight
+            )) {
+            //scroll down
+            $('html,body').animate({scrollTop: $target.offset().top -
+                (window.innerHeight || document.documentElement.clientHeight)
+                    + $target.height() + 15}
+            );
+        }
+    }
+}
 function ConfirmPasswordEnable() {
     var password = $('#password').val();
     var value = $('#passwordEnable').val();
@@ -3928,6 +3945,9 @@ function UpdateCurrentEntryPlaying(index, lastIndex) {
     $('#tblPlaylistDetails td').removeClass('PlaylistPlayingIcon');
 
     if ((index >= 0) && ($('#playlistRow' + index).length)) {
+        if (!$("#playlistRow" + index).hasClass( "PlaylistRowPlaying" )) {
+            scrollIntoViewIfNeeded($("#playlistRow" + index));
+        }
         $("#colEntryNumber" + index).addClass("PlaylistPlayingIcon");
         $("#playlistRow" + index).addClass("PlaylistRowPlaying");
     }
@@ -6287,10 +6307,10 @@ function RefreshHeaderBar() {
             if (e.ifname.startsWith("can.")) { return 0; }
             e.addr_info.forEach(function (n) {
                 if (n.family === "inet" && (n.local == "192.168.8.1" || e.ifname.startsWith("SoftAp") || e.ifname.startsWith("tether"))) {
-                    var row = '<span class="ipTooltip" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-title="Tether IP: ' + n.local + '"><i class="fas fa-broadcast-tower"></i><small>' + e.ifname + '<div class="divIPAddress">: ' + n.local + '</div></small></span>';
+                    var row = '<span class="ipTooltip" data-bs-toggle="tooltip" data-bs-html="true" data-bs-placement="bottom" data-bs-title="Tether IP: ' + n.local + '"><i class="fas fa-broadcast-tower"></i><small>' + e.ifname + '<div class="divIPAddress">: ' + n.local + '</div></small></span>';
                     rc.push(row);
                 } else if (n.family === "inet" && "wifi" in e) {
-                    var row = '<span class="ipTooltip" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-title="IP: ' + n.local + '<br/>Strength: ' + e.wifi.level + e.wifi.unit + '">';
+                    var row = '<span class="ipTooltip" data-bs-toggle="tooltip" data-bs-html="true" data-bs-placement="bottom" data-bs-title="IP: ' + n.local + '<br/>Strength: ' + e.wifi.level + e.wifi.unit + '">';
                     row += '<img src="images/redesign/wifi-' + e.wifi.desc + '.svg" height="14px"/>';
                     row += '<small>' + e.ifname + '<div class="divIPAddress">: ' + n.local + '</div></small></span>';
                     rc.push(row);
@@ -6301,7 +6321,7 @@ function RefreshHeaderBar() {
                     } else if (e.flags.includes("STATIC") && e.operstate != "UP") {
                         icon = "text-danger";
                     }
-                    var row = '<span class="ipTooltip" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-title="IP: ' + n.local + '" ><i class="fas fa-network-wired ' + icon + '"></i><small>' + e.ifname + '<div class="divIPAddress">: ' + n.local + '</div></small></span>';
+                    var row = '<span class="ipTooltip" data-bs-toggle="tooltip" data-bs-html="true" data-bs-placement="bottom" data-bs-title="IP: ' + n.local + '" ><i class="fas fa-network-wired ' + icon + '"></i><small>' + e.ifname + '<div class="divIPAddress">: ' + n.local + '</div></small></span>';
                     rc.push(row);
                 }
             });

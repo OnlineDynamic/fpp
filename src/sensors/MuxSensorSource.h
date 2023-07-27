@@ -13,30 +13,37 @@
 
 #include <array>
 #include <mutex>
-
 #include "Sensors.h"
+#include "../util/GPIOUtils.h"
 
-class IIOSensorSource : public SensorSource {
+
+class MuxSensorSource : public SensorSource {
 public:
-    IIOSensorSource(Json::Value& config);
-    virtual ~IIOSensorSource();
+    MuxSensorSource(Json::Value& config);
+    virtual ~MuxSensorSource();
 
     virtual void Init(std::map<int, std::function<bool(int)>>& callbacks) override;
-
+   
     virtual void update(bool forceInstant = false) override;
     virtual void enable(int id) override;
     virtual int32_t getValue(int id) override;
 
+    virtual void lockToGroup(int i) override;
 private:
-    void update(bool forceInstant, bool fromSelect);
+    
+    void setGroupPins();
+    void nextMux();
+    void getValues();
     std::vector<int32_t> values;
-    std::mutex updateMutex;
+    std::vector<bool> enabled;
 
-    int iioDevNumber = 0;
-    bool usingBuffers = true;
-    int iioDevFile = -1;
-    std::vector<int> channelMapping;
+    std::vector<const PinCapabilities*> pins;
+    SensorSource *source = nullptr;
+    int channelsPerMux = 0;
+    int muxCount = 0;
+    bool updatingByCallback = false;
 
-    uint16_t* readBuffer = nullptr;
-    size_t readBufferSize = 0;
+    volatile int curMux = 0;
+    volatile int updateCount = 0;
+    volatile bool lockedToGroup = false;
 };

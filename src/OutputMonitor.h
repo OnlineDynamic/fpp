@@ -28,8 +28,8 @@ public:
 
     void Initialize(std::map<int, std::function<bool(int)>>& callbacks);
 
-    void AddPortConfiguration(const std::string &name, const Json::Value &config, bool enabled = true);
-    const PinCapabilities *AddOutputPin(const std::string &name, const std::string &pin);
+    void AddPortConfiguration(const std::string& name, const Json::Value& config, bool enabled = true);
+    const PinCapabilities* AddOutputPin(const std::string& name, const std::string& pin);
 
     void EnableOutputs();
     void DisableOutputs();
@@ -39,15 +39,22 @@ public:
 
     virtual HTTP_RESPONSE_CONST std::shared_ptr<httpserver::http_response> render_GET(const httpserver::http_request& req) override;
 
+    int getGroupCount() const { return numGroups; }
+    void lockToGroup(int i);
+    bool isPortInGroup(int group, int port);
     std::vector<float> GetPortCurrentValues();
     void SetPixelCount(int port, int pc);
+    int GetPixelCount(int port);
+
 private:
     OutputMonitor();
     ~OutputMonitor();
 
-    std::list<const PinCapabilities *> pullHighOutputPins;
-    std::list<const PinCapabilities *> pullLowOutputPins;
+    std::list<const PinCapabilities*> pullHighOutputPins;
+    std::list<const PinCapabilities*> pullLowOutputPins;
 
-    std::map<std::string, const PinCapabilities *> fusePins;
+    std::map<std::string, const PinCapabilities*> fusePins;
     std::vector<PortPinInfo*> portPins;
+    int numGroups = 1;
+    int curGroup = -1;
 };

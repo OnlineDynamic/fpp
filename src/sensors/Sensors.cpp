@@ -12,16 +12,22 @@
 
 #include "fpp-pch.h"
 
-#include "Sensors.h"
-
+#include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <fstream>
+#include <iomanip>
+#include <thread>
+#include <unistd.h>
 
-#include <sys/ioctl.h>
+#include "../common.h"
 
-#include "util/I2CUtils.h"
 #include "ADS7828.h"
 #include "IIOSensorSource.h"
+#include "MuxSensorSource.h"
+#include "util/I2CUtils.h"
+
+#include "Sensors.h"
 
 #ifdef PLATFORM_BBB
 #define I2C_DEV 2
@@ -40,6 +46,14 @@ static std::string exec(const std::string& cmd) {
         result += buffer.data();
     }
     return result;
+}
+
+SensorSource::SensorSource(Json::Value& s) {
+    if (s.isMember("id")) {
+        _id = s["id"].asString();
+    } else if (s.isMember("type")) {
+        _id = s["type"].asString();
+    }
 }
 
 class Sensor {
@@ -210,12 +224,21 @@ public:
 
 class SensorSourceSensor : public Sensor {
 public:
-    explicit SensorSourceSensor(Json::Value& s) : Sensor(s) {
+    explicit SensorSourceSensor(Json::Value& s) :
+        Sensor(s) {
         if (s.isMember("scale")) {
             scale = s["scale"].asDouble();
         }
         if (s.isMember("offset")) {
             offset = s["offset"].asDouble();
+        }
+        if (s.isMember("min")) {
+            min = s["min"].asDouble();
+            isMinMax = true;
+        }
+        if (s.isMember("max")) {
+            max = s["max"].asDouble();
+            isMinMax = true;
         }
         if (s.isMember("channel")) {
             channel = s["channel"].asInt();
@@ -232,13 +255,20 @@ public:
             double d = source->getValue(channel);
             d -= offset;
             d *= scale;
+            if (isMinMax) {
+                d *= (max - min + 1);
+                d += min;
+            }
             return d;
         }
         return 0.0f;
     }
-    SensorSource *source = nullptr;
+    SensorSource* source = nullptr;
     double scale = 1.0;
     double offset = 0.0;
+    double min = 0.0;
+    double max = 0.0;
+    bool isMinMax = false;
     int channel;
 };
 
@@ -334,49 +364,60 @@ public:
 Sensors Sensors::INSTANCE;
 
 Sensors::Sensors() {
-
 }
 Sensors::~Sensors() {
     for (auto x : sensorSources) {
-        delete x.second;
+        delete x;
     }
     sensorSources.clear();
 }
 void Sensors::Init(std::map<int, std::function<bool(int)>>& callbacks) {
-    for (auto &ss : sensorSources) {
-        ss.second->Init(callbacks);
+    for (auto it = sensorSources.rbegin(); it != sensorSources.rend(); ++it) {
+        (*it)->Init(callbacks);
     }
 }
-
 
 void Sensors::addSensorSources(Json::Value& config) {
     for (int x = 0; x < config.size(); x++) {
         Json::Value v = config[x];
         std::string type = v["type"].asString();
         if (type == "ads7828" || type == "ads7830") {
-            sensorSources[v["id"].asString()] = new ADS7828Sensor(v);
+            sensorSources.push_back(new ADS7828Sensor(v));
         } else if (type == "iio") {
-            sensorSources[v["id"].asString()] = new IIOSensorSource(v);
+            sensorSources.push_back(new IIOSensorSource(v));
+        } else if (type == "mux") {
+            sensorSources.push_back(new MuxSensorSource(v));
         }
     }
 }
 void Sensors::updateSensorSources(bool forceInstant) {
-    for (auto &ss : sensorSources) {
-        ss.second->update(forceInstant);
+    for (auto& ss : sensorSources) {
+        ss->update(forceInstant);
     }
 }
-SensorSource *Sensors::getSensorSource(const std::string &name) {
-    SensorSource *ss = sensorSources[name];
-    if (ss == nullptr && name == "iio") {
+SensorSource* Sensors::getSensorSource(const std::string& name) {
+    for (auto ss : sensorSources) {
+        if (ss->getID() == name) {
+            return ss;
+        }
+    }
+    if (name == "iio") {
         //default the iio name if requested
         Json::Value v;
         v["type"] = "iio";
         v["id"] = "iio";
-        ss = new IIOSensorSource(v);
-        sensorSources["iio"] = ss;
+        SensorSource* ss = new IIOSensorSource(v);
+        sensorSources.push_back(ss);
+        return ss;
     }
-    return ss;
+    return nullptr;
 }
+void Sensors::lockToGroup(int i) {
+    for (auto ss : sensorSources) {
+        ss->lockToGroup(i);
+    }
+}
+
 void Sensors::DetectHWSensors() {
     int i = 0;
     char path[256] = { 0 };

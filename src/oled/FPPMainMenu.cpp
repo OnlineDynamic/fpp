@@ -13,9 +13,14 @@
 #include "fpp-pch.h"
 
 #include <net/if.h>
+#include <unistd.h>
 
 #include "FPPMainMenu.h"
+#include "../Warnings.h"
+#include "../common.h"
 #include "../fppversion.h"
+#include "../log.h"
+#include "../settings.h"
 
 #include "FPPStatusOLEDPage.h"
 #include "NetworkOLEDPage.h"
@@ -268,11 +273,11 @@ static std::vector<std::string> TEST_OPTIONS = {
 
 class TestingMenuOLEDPage : public MenuOLEDPage {
 public:
-    TestingMenuOLEDPage(FPPStatusOLEDPage *sp, OLEDPage* parent) : MenuOLEDPage("Test", TEST_OPTIONS, parent), statusPage(sp) {
+    TestingMenuOLEDPage(FPPStatusOLEDPage* sp, OLEDPage* parent) :
+        MenuOLEDPage("Test", TEST_OPTIONS, parent), statusPage(sp) {
         if (sp->isMultiSyncTest()) {
             items[0][0] = '*';
         }
-        
     }
 
     virtual void itemSelected(const std::string& item) override {
@@ -298,7 +303,7 @@ public:
         }
     }
 
-    FPPStatusOLEDPage *statusPage;
+    FPPStatusOLEDPage* statusPage;
 };
 
 void FPPMainMenu::itemSelected(const std::string& item) {
