@@ -104,11 +104,27 @@ bool GPIODCapabilities::supportsPullDown() const {
     return gpiodVersion >= 105;
 }
 
+#ifdef HASGPIOD
+constexpr int MAX_GPIOD_CHIPS = 15;
+class GPIOChipHolder {
+public:
+    static GPIOChipHolder INSTANCE;
+
+    std::array<gpiod::chip, MAX_GPIOD_CHIPS> chips;
+};
+GPIOChipHolder GPIOChipHolder::INSTANCE;
+#endif
 int GPIODCapabilities::configPin(const std::string& mode,
                                  bool directionOut) const {
 #ifdef HASGPIOD
-    std::string n = std::to_string(gpioIdx);
-    line = gpiod::chip(n, gpiod::chip::OPEN_BY_NUMBER).get_line(gpio);
+    if (chip == nullptr) {
+        if (!GPIOChipHolder::INSTANCE.chips[gpioIdx]) {
+            std::string n = std::to_string(gpioIdx);
+            GPIOChipHolder::INSTANCE.chips[gpioIdx].open(n, gpiod::chip::OPEN_BY_NUMBER);
+        }
+        chip = &GPIOChipHolder::INSTANCE.chips[gpioIdx];
+        line = chip->get_line(gpio);
+    }
     gpiod::line_request req;
     req.consumer = PROCESS_NAME;
     if (directionOut) {
@@ -127,7 +143,13 @@ int GPIODCapabilities::configPin(const std::string& mode,
             }
         }
     }
-    line.request(req, 1);
+    if (req.request_type != lastRequestType) {
+        if (line.is_requested()) {
+            line.release();
+        }
+        line.request(req, 1);
+        lastRequestType = req.request_type;
+    }
 #endif
     return 0;
 }
@@ -240,4 +262,13 @@ const PinCapabilities& PinCapabilities::getPinByGPIO(int i) {
 }
 const PinCapabilities& PinCapabilities::getPinByUART(const std::string& n) {
     return PIN_PROVIDER->getPinByUART(n);
+}
+
+void PinCapabilities::SetMultiPinValue(const std::list<const PinCapabilities*>& pins, int v) {
+    if (pins.empty()) {
+        return;
+    }
+    for (auto p : pins) {
+        p->setValue(v);
+    }
 }

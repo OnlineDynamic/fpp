@@ -14,6 +14,7 @@
 #include <functional>
 #include <list>
 #include <map>
+#include <mutex>
 #include <string>
 
 #include <httpserver.hpp>
@@ -27,6 +28,7 @@ public:
     static OutputMonitor INSTANCE;
 
     void Initialize(std::map<int, std::function<bool(int)>>& callbacks);
+    void Cleanup();
 
     void AddPortConfiguration(const std::string& name, const Json::Value& config, bool enabled = true);
     const PinCapabilities* AddOutputPin(const std::string& name, const std::string& pin);
@@ -43,8 +45,10 @@ public:
     void lockToGroup(int i);
     bool isPortInGroup(int group, int port);
     std::vector<float> GetPortCurrentValues();
-    void SetPixelCount(int port, int pc);
+    void SetPixelCount(int port, int pc, int cc = -1);
     int GetPixelCount(int port);
+
+    void checkPixelCounts(const std::string& portList, const std::string& action, int sensitivy);
 
 private:
     OutputMonitor();
@@ -55,6 +59,7 @@ private:
 
     std::map<std::string, const PinCapabilities*> fusePins;
     std::vector<PortPinInfo*> portPins;
+    std::mutex gpioLock;
     int numGroups = 1;
     int curGroup = -1;
 };

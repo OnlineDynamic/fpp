@@ -8,6 +8,9 @@ $git_branch = getFPPBranch();
 if (!preg_match("/^$git_branch(-.*)?$/", $fpp_head_version))
 	$fpp_head_version .= " ($git_branch branch)";
 
+if (!isset($activeParentMenuItem)) {
+    $activeParentMenuItem = "";
+}
 ?>
 
 <?php require_once(dirname(__FILE__)."/config.php"); ?>
@@ -66,7 +69,7 @@ function list_plugin_entries($menu) {
    <div class="header">
     <div class="headerLeft">
           <div class="headerLeftCol fppBrand">
-            <a href="/">
+            <a href="index.php">
               <img src='<?= $themeInfo["HEADER_LOGO1"] ?>' class="logo" title="Host: <? echo $settings['HostName']; ?>" />
               <? if (isset($themeInfo["HEADER_LOGO2"]) && $themeInfo["HEADER_LOGO2"] != "" ) {
                 echo "<img src='" . $themeInfo["HEADER_LOGO2"] . "' class='fpp-logo'  title='Host: " . $settings["HostName"] . "' />";
@@ -191,7 +194,7 @@ if ($freeSpace < 50000000) {
 }
 ?>
 <!--
-  <div id='upgradeFlag' class="alert detract"><span class='inlineBlock'>FPP v5.1 is available for install</span><span class='inlineBlock'><button name="btnUpgrade" type="button" onClick="ViewReleaseNotes('5.1');"  class = "buttons btn-outline-light" ><i class='fas fa-fw fa-sync fa-nbsp'></i>Upgrade FPP</button></span></div>
+  <div id='upgradeFlag' class="alert detract"><span class='inlineBlock'>FPP v7.1 is available for install</span><span class='inlineBlock'><button name="btnUpgrade" type="button" onClick="ViewReleaseNotes('7.1');"  class = "buttons btn-outline-light" ><i class='fas fa-fw fa-sync fa-nbsp'></i>Upgrade FPP</button></span></div>
 -->
   <div id='restartFlag' class="alert detract"><span class='inlineBlock'>Settings have changed. FPPD Restart Required</span><span class='inlineBlock'><button name="btnRestartFPPD" type="button" onClick="RestartFPPD();" class="buttons btn-outline-light"><i class='fas fa-fw fa-sync fa-nbsp'></i>Restart FPPD</button>
 
@@ -350,7 +353,13 @@ if ($settings["hideExternalURLs"]) {
           <hr class="dropdown-divider">
           <a class="dropdown-item" href="healthCheck.php"><i class="fas fa-thermometer-half"></i> System Health Check</a>
           <a class="dropdown-item" href="troubleshooting.php"><i class="fas fa-code"></i> Troubleshooting Commands</a>
-          <a class="<?= $externalLinkClass ?>" href="http://<?php echo $_SERVER['HTTP_HOST'] ?>:4200" target="_new"><i class="fas fa-terminal"></i> SSH Shell</a>
+          <?
+          $baseLink = $_SERVER['HTTP_HOST'];
+          if (isset($_SERVER['HTTP_X_FORWARDED_HOST'])) {
+            $baseLink = $_SERVER['HTTP_X_FORWARDED_HOST'] . '/proxy/' . $_SERVER['SERVER_ADDR'];
+          }
+          ?>
+          <a class="<?= $externalLinkClass ?>" href="http://<?=$baseLink?>:4200" target="_new"><i class="fas fa-terminal"></i> SSH Shell</a>
           <?php list_plugin_entries("help"); ?>
         </div>
       </li>
