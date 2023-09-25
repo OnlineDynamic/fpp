@@ -23,11 +23,13 @@
 #include <unistd.h>
 #include <vector>
 
+#include "Timers.h"
 #include "Warnings.h"
 #include "common.h"
 #include "gpio.h"
 #include "log.h"
 #include "settings.h"
+#include "channeloutput/stringtesters/PixelCountStringTester.h"
 #include "commands/Commands.h"
 #include "sensors/Sensors.h"
 #include "util/GPIOUtils.h"
@@ -136,6 +138,8 @@ public:
     CurrentMonitorBase* currentMonitor = nullptr;
 
     int pixelCount = -1;
+    int configuredCount = -1;
+    std::string warning;
 
     void appendTo(Json::Value& result) {
         Json::Value v;
@@ -169,6 +173,7 @@ public:
 
 class FPPEnableOutputsCommand : public Command {
 public:
+    static FPPEnableOutputsCommand INSTANCE;
     FPPEnableOutputsCommand() :
         Command("Outputs On") {
     }
@@ -177,8 +182,11 @@ public:
         return std::make_unique<Command::Result>("OK");
     }
 };
+
 class FPPDisableOutputsCommand : public Command {
 public:
+    static FPPDisableOutputsCommand INSTANCE;
+
     FPPDisableOutputsCommand() :
         Command("Outputs Off") {
     }
@@ -187,6 +195,38 @@ public:
         return std::make_unique<Command::Result>("OK");
     }
 };
+class FPPCheckConfiguredPixelsCommand : public Command {
+public:
+    static FPPCheckConfiguredPixelsCommand INSTANCE;
+
+    FPPCheckConfiguredPixelsCommand() :
+        Command("Check Pixel Count") {
+        args.push_back(CommandArg("Ports", "multistring", "Ports").setContentListUrl("api/fppd/ports/list", false).setDefaultValue("--ALL--"));
+        args.push_back(CommandArg("Sensitivity", "int", "Sensitivity").setRange(0, 20).setDefaultValue("2"));
+        args.push_back(CommandArg("Action", "string", "Action").setContentList({ "Warn", "Log" }).setDefaultValue("Warn"));
+    }
+    virtual std::unique_ptr<Command::Result> run(const std::vector<std::string>& args) override {
+        std::vector<std::string> nargs;
+        nargs.push_back("50");
+        nargs.push_back("Output Specific");
+        nargs.push_back("--ALL--");
+        nargs.push_back("999");
+        CommandManager::INSTANCE.run("Test Start", nargs);
+        Timers::INSTANCE.addPeriodicTimer("CheckPixelCount", 1000, [args]() {
+            if (CurrentBasedPixelCountPixelStringTester::INSTANCE.getCurrentStatus() == CurrentBasedPixelCountPixelStringTester::Status::Complete) {
+                OutputMonitor::INSTANCE.checkPixelCounts(args[0], args[2], std::atoi(args[1].c_str()));
+                std::vector<std::string> args;
+                CommandManager::INSTANCE.run("Test Stop", args);
+                Timers::INSTANCE.stopPeriodicTimer("CheckPixelCount");
+            }
+        });
+
+        return std::make_unique<Command::Result>("OK");
+    }
+};
+FPPEnableOutputsCommand FPPEnableOutputsCommand::INSTANCE;
+FPPDisableOutputsCommand FPPDisableOutputsCommand::INSTANCE;
+FPPCheckConfiguredPixelsCommand FPPCheckConfiguredPixelsCommand::INSTANCE;
 
 OutputMonitor::OutputMonitor() {
 }
@@ -195,23 +235,73 @@ OutputMonitor::~OutputMonitor() {
         delete pi;
     }
     portPins.clear();
+    pullHighOutputPins.clear();
+    pullLowOutputPins.clear();
+    fusePins.clear();
 }
 
 void OutputMonitor::Initialize(std::map<int, std::function<bool(int)>>& callbacks) {
-    CommandManager::INSTANCE.addCommand(new FPPEnableOutputsCommand());
-    CommandManager::INSTANCE.addCommand(new FPPDisableOutputsCommand());
+    CommandManager::INSTANCE.addCommand(&FPPEnableOutputsCommand::INSTANCE);
+    CommandManager::INSTANCE.addCommand(&FPPDisableOutputsCommand::INSTANCE);
+    if (!portPins.empty()) {
+        CommandManager::INSTANCE.addCommand(&FPPCheckConfiguredPixelsCommand::INSTANCE);
+    }
+}
+void OutputMonitor::Cleanup() {
+    CommandManager::INSTANCE.removeCommand(&FPPEnableOutputsCommand::INSTANCE);
+    CommandManager::INSTANCE.removeCommand(&FPPDisableOutputsCommand::INSTANCE);
+    if (!portPins.empty()) {
+        CommandManager::INSTANCE.removeCommand(&FPPCheckConfiguredPixelsCommand::INSTANCE);
+    }
+    for (auto pi : portPins) {
+        delete pi;
+    }
+    portPins.clear();
+    pullHighOutputPins.clear();
+    pullLowOutputPins.clear();
+    fusePins.clear();
+}
+
+void OutputMonitor::checkPixelCounts(const std::string& portList, const std::string& action, int sensitivty) {
+    std::set<std::string> ports;
+    for (auto p : split(portList, ',')) {
+        if (p == "--ALL--") {
+            for (auto p : portPins) {
+                ports.insert(p->name);
+            }
+        } else {
+            ports.insert(p);
+        }
+    }
+    for (auto p : portPins) {
+        if (ports.find(p->name) != ports.end()) {
+            int diff = std::abs(p->configuredCount - p->pixelCount);
+            std::string newWarn;
+            if (diff > sensitivty) {
+                newWarn = p->name + " configured for " + std::to_string(p->configuredCount) + " pixels but " + std::to_string(p->pixelCount) + " pixels detected.";
+            }
+            if (action == "Warn" && newWarn != p->warning) {
+                if (!p->warning.empty()) {
+                    WarningHolder::RemoveWarning(p->warning);
+                }
+                p->warning = newWarn;
+                if (!p->warning.empty()) {
+                    WarningHolder::AddWarning(p->warning);
+                }
+            } else if (action == "Log") {
+                LogInfo(VB_CHANNELOUT, "%s\n", newWarn.c_str());
+            }
+        }
+    }
 }
 
 void OutputMonitor::EnableOutputs() {
     if (!pullHighOutputPins.empty() || !pullLowOutputPins.empty()) {
         LogDebug(VB_CHANNELOUT, "Enabling outputs\n");
     }
-    for (auto& p : pullHighOutputPins) {
-        p->setValue(1);
-    }
-    for (auto& p : pullLowOutputPins) {
-        p->setValue(0);
-    }
+    std::unique_lock<std::mutex> lock(gpioLock);
+    PinCapabilities::SetMultiPinValue(pullHighOutputPins, 1);
+    PinCapabilities::SetMultiPinValue(pullLowOutputPins, 0);
     for (auto p : portPins) {
         if (p->enabled) {
             p->isOn = true;
@@ -219,25 +309,24 @@ void OutputMonitor::EnableOutputs() {
         }
     }
     for (auto p : portPins) {
-        if (p->eFusePin->getValue() == p->eFuseOKValue) {
+        if (p->eFusePin && p->eFusePin->getValue() == p->eFuseOKValue) {
             WarningHolder::RemoveWarning("eFUSE Triggered for " + p->name);
         }
     }
+    lock.unlock();
     CommandManager::INSTANCE.TriggerPreset("OUTPUTS_ENABLED");
 }
 void OutputMonitor::DisableOutputs() {
     if (!pullHighOutputPins.empty() || !pullLowOutputPins.empty()) {
         LogDebug(VB_CHANNELOUT, "Disabling outputs\n");
     }
+    std::unique_lock<std::mutex> lock(gpioLock);
     for (auto p : portPins) {
         p->isOn = false;
     }
-    for (auto& p : pullHighOutputPins) {
-        p->setValue(0);
-    }
-    for (auto& p : pullLowOutputPins) {
-        p->setValue(1);
-    }
+    PinCapabilities::SetMultiPinValue(pullHighOutputPins, 0);
+    PinCapabilities::SetMultiPinValue(pullLowOutputPins, 1);
+    lock.unlock();
     CommandManager::INSTANCE.TriggerPreset("OUTPUTS_DISABLED");
 }
 void OutputMonitor::AddPortConfiguration(const std::string& name, const Json::Value& pinConfig, bool enabled) {
@@ -290,8 +379,10 @@ void OutputMonitor::AddPortConfiguration(const std::string& name, const Json::Va
                 hasInfo = true;
                 if (fusePins[eFuseInterruptPin] == nullptr) {
                     pi->eFuseInterruptPin->configPin("gpio" + postFix, false);
+                    fusePins[eFuseInterruptPin] = pi->eFuseInterruptPin;
                     GPIOManager::INSTANCE.AddGPIOCallback(pi->eFuseInterruptPin, [this, pi](int v) {
                         // printf("\n\n\nInterrupt Pin!!!   %d   %d\n\n\n", v, pi->eFuseInterruptPin->getValue());
+                        std::unique_lock<std::mutex> lock(gpioLock);
                         for (auto a : portPins) {
                             if (a->eFuseInterruptPin == pi->eFuseInterruptPin) {
                                 int v = a->eFusePin->getValue();
@@ -337,7 +428,9 @@ void OutputMonitor::AddPortConfiguration(const std::string& name, const Json::Va
             pi->eFusePin->configPin("gpio" + postFix, false);
             if (pi->eFuseInterruptPin == nullptr) {
                 GPIOManager::INSTANCE.AddGPIOCallback(pi->eFusePin, [this, pi](int v) {
-                    // printf("eFuse for %s trigger: %d    %d\n",  pi->name.c_str(), v, pi->eFusePin->getValue());
+                    std::unique_lock<std::mutex> lock(gpioLock);
+                    //printf("eFuse for %s trigger: %d    %d\n", pi->name.c_str(), v, pi->eFusePin->getValue());
+                    v = pi->eFusePin->getValue();
                     if (v != pi->eFuseOKValue) {
                         if (pi->enablePin) {
                             // make sure the port is turned off
@@ -397,6 +490,7 @@ const PinCapabilities* OutputMonitor::AddOutputPin(const std::string& name, cons
         return nullptr;
     }
     op.push_back(pc);
+    std::unique_lock<std::mutex> lock(gpioLock);
     pc->configPin("gpio", true);
     pc->setValue(!highToEnable);
     return pc;
@@ -436,9 +530,10 @@ std::vector<float> OutputMonitor::GetPortCurrentValues() {
     }
     return ret;
 }
-void OutputMonitor::SetPixelCount(int port, int pc) {
+void OutputMonitor::SetPixelCount(int port, int pc, int cc) {
     if (port < portPins.size() && ((curGroup == -1) || (curGroup == portPins[port]->group))) {
         portPins[port]->pixelCount = pc;
+        portPins[port]->configuredCount = cc;
     }
 }
 int OutputMonitor::GetPixelCount(int port) {
@@ -451,6 +546,15 @@ int OutputMonitor::GetPixelCount(int port) {
 HTTP_RESPONSE_CONST std::shared_ptr<httpserver::http_response> OutputMonitor::render_GET(const httpserver::http_request& req) {
     int plen = req.get_path_pieces().size();
     if (plen > 1 && req.get_path_pieces()[1] == "ports") {
+        if (plen > 2 && req.get_path_pieces()[2] == "list") {
+            Json::Value result;
+            result.append("--ALL--");
+            for (auto a : portPins) {
+                result.append(a->name);
+            }
+            std::string resultStr = SaveJsonToString(result);
+            return std::shared_ptr<httpserver::http_response>(new httpserver::string_response(resultStr, 200, "application/json"));
+        }
         if (portPins.empty()) {
             return std::shared_ptr<httpserver::http_response>(new httpserver::string_response("[]", 200, "application/json"));
         }

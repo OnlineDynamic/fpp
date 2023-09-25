@@ -373,7 +373,8 @@ bool setupExceptionHandlers() {
     static struct sigaction s_handlerFPE,
         s_handlerILL,
         s_handlerBUS,
-        s_handlerSEGV;
+        s_handlerSEGV,
+        s_handlerABRT;
 
     bool ok = true;
     if (!s_savedHandlers) {
@@ -391,6 +392,7 @@ bool setupExceptionHandlers() {
         ok &= sigaction(SIGILL, &act, &s_handlerILL) == 0;
         ok &= sigaction(SIGBUS, &act, &s_handlerBUS) == 0;
         ok &= sigaction(SIGSEGV, &act, &s_handlerSEGV) == 0;
+        ok &= sigaction(SIGABRT, &act, &s_handlerABRT) == 0;
         ok &= sigaction(SIGQUIT, &act, nullptr) == 0;
         ok &= sigaction(SIGUSR1, &act, nullptr) == 0;
 
@@ -410,6 +412,7 @@ bool setupExceptionHandlers() {
         ok &= sigaction(SIGILL, &s_handlerILL, NULL) == 0;
         ok &= sigaction(SIGBUS, &s_handlerBUS, NULL) == 0;
         ok &= sigaction(SIGSEGV, &s_handlerSEGV, NULL) == 0;
+        ok &= sigaction(SIGABRT, &s_handlerABRT, NULL) == 0;
         if (!ok) {
             LogWarn(VB_ALL, "Failed to install default signal handlers.\n");
         }
@@ -616,6 +619,8 @@ int main(int argc, char* argv[]) {
 
     curl_global_init(CURL_GLOBAL_ALL);
 
+    // Initialize Magick, but we don't want the Magick signal handlers as they interfere with our own
+    MagickLib::InitializeMagickEx(nullptr, MAGICK_OPT_NO_SIGNAL_HANDER, nullptr);
     Magick::InitializeMagick(NULL);
 
     // Parse our arguments first, override any defaults
@@ -634,7 +639,8 @@ int main(int argc, char* argv[]) {
     if (getSettingInt("daemonize")) {
         CreateDaemon();
     }
-    PinCapabilities::InitGPIO("FPPD", new PLAT_GPIO_CLASS());
+    PLAT_GPIO_CLASS* gpioUtil = new PLAT_GPIO_CLASS();
+    PinCapabilities::InitGPIO("FPPD", gpioUtil);
 
     std::srand(std::time(nullptr));
 
@@ -715,15 +721,10 @@ int main(int argc, char* argv[]) {
     InitializeChannelOutputs();
     PluginManager::INSTANCE.loadUserPlugins();
 
-    if (!getSettingInt("restarted")) {
-        sequence->SendBlankingData();
-    }
     InitEffects();
     ChannelTester::INSTANCE.RegisterCommands();
 
     WriteRuntimeInfoFile(multiSync->GetSystems(true, false));
-
-    CommandManager::INSTANCE.TriggerPreset("FPPD_STARTED");
 
     MainLoop();
     // DISABLED: Stats collected while fppd is shutting down
@@ -739,6 +740,7 @@ int main(int argc, char* argv[]) {
     CleanupMediaOutput();
     CloseEffects();
     CloseChannelOutputs();
+    OutputMonitor::INSTANCE.Cleanup();
     CommandManager::INSTANCE.Cleanup();
     MultiSync::INSTANCE.ShutdownSync();
     PluginManager::INSTANCE.Cleanup();
@@ -755,6 +757,7 @@ int main(int argc, char* argv[]) {
         Events::RemoveEventHandler(mqtt);
         delete mqtt;
     }
+    delete gpioUtil;
 
     MagickLib::DestroyMagick();
     curl_global_cleanup();
@@ -817,12 +820,6 @@ void MainLoop(void) {
             return false;
         };
     }
-    if (getFPPmode() & PLAYER_MODE) {
-        scheduler->CheckIfShouldBePlayingNow();
-        if (getSettingInt("alwaysTransmit")) {
-            StartChannelOutputThread();
-        }
-    }
     Bridge_Initialize(callbacks);
 
     APIServer apiServer;
@@ -833,6 +830,16 @@ void MainLoop(void) {
     PluginManager::INSTANCE.addControlCallbacks(callbacks);
     NetworkMonitor::INSTANCE.Init(callbacks);
     Sensors::INSTANCE.Init(callbacks);
+
+    StartChannelOutputThread();
+    if (!getSettingInt("restarted")) {
+        sequence->SendBlankingData();
+    }
+    bool alwaysTransmit = (bool)getSettingInt("alwaysTransmit");
+    if (getFPPmode() & PLAYER_MODE) {
+        scheduler->CheckIfShouldBePlayingNow();
+    }
+    CommandManager::INSTANCE.TriggerPreset("FPPD_STARTED");
 
     static const int MAX_EVENTS = 20;
 #ifdef USE_KQUEUE
@@ -880,7 +887,6 @@ void MainLoop(void) {
 
     memset(events, 0, sizeof(events));
     int idleCount = 0;
-    bool alwaysTransmit = (bool)getSettingInt("alwaysTransmit");
 
     while (runMainFPPDLoop) {
 #ifdef USE_KQUEUE

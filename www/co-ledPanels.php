@@ -36,7 +36,7 @@ if (count($panelCapes) == 1) {
     echo "// NO KNOWN_PANEL_CAPE";
 }
 
-$LEDPanelOutputs = 16;
+$LEDPanelOutputs = 24;
 $LEDPanelPanelsPerOutput = 24;
 $LEDPanelRows = 1;
 $LEDPanelCols = 1;
@@ -428,7 +428,7 @@ if ($settings['Platform'] == "Raspberry Pi") {
 		if ((channelOutputsLookup["LEDPanelMatrix"].subType == 'ColorLight5a75') ||
             (channelOutputsLookup["LEDPanelMatrix"].subType == 'X11PanelMatrix'))
 		{
-			LEDPanelOutputs = 16;
+			LEDPanelOutputs = 24;
 			LEDPanelPanelsPerOutput = 24;
 		}
     }
@@ -513,7 +513,8 @@ if ($settings['Platform'] == "Raspberry Pi") {
     config.panelColorDepth = parseInt($('#LEDPanelsColorDepth').val());
     config.gamma = $('#LEDPanelsGamma').val();
 	config.invertedData = parseInt($('#LEDPanelsStartCorner').val());
-	config.panelWidth = LEDPanelWidth;
+    config.ledPanelsLayout = $('#LEDPanelsLayoutCols').val() + "x" + $('#LEDPanelsLayoutRows').val();
+    config.panelWidth = LEDPanelWidth;
 	config.panelHeight = LEDPanelHeight;
     config.panelScan = LEDPanelScan;
     <?if ($settings['Platform'] == "Raspberry Pi" || $settings['Platform'] == "BeagleBone Black") {?>
@@ -654,7 +655,7 @@ if ($settings['Platform'] == "Raspberry Pi") {
 }
 ?>
 
-		LEDPanelOutputs = 16;
+		LEDPanelOutputs = 24;
 	}
 	else
 	{

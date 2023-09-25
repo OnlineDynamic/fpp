@@ -48,7 +48,7 @@
 #
 #############################################################################
 FPPBRANCH=${FPPBRANCH:-"master"}
-FPPIMAGEVER="2023-07"
+FPPIMAGEVER="2023-08"
 FPPCFGVER="78"
 FPPPLATFORM="UNKNOWN"
 FPPDIR=/opt/fpp
@@ -483,7 +483,7 @@ case "${OSVER}" in
                       php${PHPVER}-bcmath php${PHPVER}-sqlite3 php${PHPVER}-zip php${PHPVER}-xml \
                       libavcodec-dev libavformat-dev libswresample-dev libswscale-dev libavdevice-dev libavfilter-dev libtag1-dev \
                       vorbis-tools libgraphicsmagick++1-dev graphicsmagick-libmagick-dev-compat libmicrohttpd-dev \
-                      git gettext apt-utils x265 libtheora-dev libvorbis-dev libx265-dev iputils-ping \
+                      git gettext apt-utils x265 libtheora-dev libvorbis-dev libx265-dev iputils-ping mp3gain \
                       libmosquitto-dev mosquitto-clients mosquitto libzstd-dev lzma zstd gpiod libgpiod-dev libjsoncpp-dev libcurl4-openssl-dev \
                       fonts-freefont-ttf flex bison pkg-config libasound2-dev mesa-common-dev qrencode libusb-1.0-0-dev \
                       flex bison pkg-config libasound2-dev python3-distutils libssl-dev libtool bsdextrautils iw"
@@ -496,7 +496,7 @@ case "${OSVER}" in
         if [ "$FPPPLATFORM" != "BeagleBone Black" ]; then
             PACKAGE_LIST="$PACKAGE_LIST libva-dev"
         fi
-        if [ ! $desktop ]; then
+        if $isimage; then
             PACKAGE_LIST="$PACKAGE_LIST networkd-dispatcher"
         fi
 
@@ -576,7 +576,11 @@ case "${OSVER}" in
                 rm -f /etc/resolv.conf
                 ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
             fi
-            
+
+            echo '#!/bin/sh' > /etc/networkd-dispatcher/routable.d/ntpd
+            echo "/usr/bin/systemctl restart ntp" >> /etc/networkd-dispatcher/routable.d/ntpd
+            chmod +x /etc/networkd-dispatcher/routable.d/ntpd
+
             #remove some things that were installed (not sure why)
             apt-get remove -y --purge --autoremove --allow-change-held-packages pocketsphinx-en-us
 
@@ -788,6 +792,8 @@ case "${FPPPLATFORM}" in
             echo "gpu_mem=64" >> /boot/config.txt
             echo "" >> /boot/config.txt
             echo "[all]" >> /boot/config.txt
+            echo "# Use 32bit kernel instead of 64bit so external wifi drivers will load" >> /boot/config.txt
+            echo "arm_64bit=0" >> /boot/config.txt
             echo "" >> /boot/config.txt
 
             echo "FPP - Freeing up more space by removing unnecessary packages"
