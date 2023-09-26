@@ -36,6 +36,7 @@ OBJECTS_fpp_so += \
 	commands/PlaylistCommands.o \
     commands/EventCommands.o \
     commands/MediaCommands.o \
+	commands/OLEDCommands.o \
 	common.o \
 	CurlManager.o \
 	e131bridge.o \
@@ -60,6 +61,7 @@ OBJECTS_fpp_so += \
  	NetworkMonitor.o \
 	ping.o \
 	Player.o \
+	OLEDMenuController.o \
 	OutputMonitor.o \
 	overlays/PixelOverlay.o \
     overlays/PixelOverlayEffects.o \

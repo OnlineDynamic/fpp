@@ -1,12 +1,27 @@
+/*
+ * This file is part of the Falcon Player (FPP) and is Copyright (C)
+ * 2013-2023 by the Falcon Player Developers.
+ *
+ * The Falcon Player (FPP) is free software, and is covered under
+ * multiple Open Source licenses.  Please see the included 'LICENSES'
+ * file for descriptions of what files are covered by each license.
+ *
+ * This source file is covered under the LGPL v2.1 as described in the
+ * included LICENSE.LGPL file.
+ */
+
 #include "fpp-pch.h"
 
 #include <linux/wireless.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+// #include <chrono>
 #include <fcntl.h>
 #include <gpiod.h>
+// #include <iostream>
 #include <poll.h>
+// #include <thread>
 #include <unistd.h>
 
 #include "I2C.h"
@@ -18,15 +33,25 @@
 #include "FPPStatusOLEDPage.h"
 #include "OLEDPages.h"
 
-//shared memory area so other processes can see if the display is on
-//as well as let fppoled know to force it off (if the pins need to be
-//reconfigured so I2C no longer will work)
+// shared memory area so other processes can see if the display is on
+// as well as let fppoled know to force it off (if the pins need to be
+// reconfigured so I2C no longer will work)
 
 struct DisplayStatus {
-    unsigned int i2cBus;
-    volatile unsigned int displayOn;
-    volatile unsigned int forceOff;
+    unsigned int i2cBus;                         // [0] i2c bus #
+    volatile unsigned int displayOn;             // [1] display on status
+    volatile unsigned int forceOff;              // [2] force off flag
+    volatile unsigned int actionToProcess;       // [3] flag to alert an action needs to be processed
+    volatile unsigned int InputCmdUp;            // [4] Menu Control: Up
+    volatile unsigned int InputCmdDown;          // [5] Menu Control: Down
+    volatile unsigned int InputCmdBack;          // [6] Menu Control: Back
+    volatile unsigned int InputCmdRight;         // [7] Menu Control: Right
+    volatile unsigned int InputCmdEnter;         // [8] Menu Control: Enter
+    volatile unsigned int InputCmdTest;          // [9] Menu Control: Test
+    volatile unsigned int InputCmdMode;          // [10] Menu Control: Mode
+    volatile unsigned int InputCmdModeMultisync; // [11] Menu Control: Test Multisync
 };
+
 static DisplayStatus* currentStatus;
 static std::string controlPin;
 
@@ -35,6 +60,7 @@ extern I2C_DeviceT I2C_DEV_2;
 FPPOLEDUtils::FPPOLEDUtils(int ledType) :
     _ledType(ledType),
     gpiodChips(10) {
+    // Set status of OLED to Shared memory
     int smfd = shm_open("fppoled", O_CREAT | O_RDWR, 0);
     ftruncate(smfd, 1024);
     currentStatus = (DisplayStatus*)mmap(0, 1024, PROT_WRITE | PROT_READ, MAP_SHARED, smfd, 0);
@@ -125,7 +151,7 @@ public:
 
 bool FPPOLEDUtils::InputAction::Action::checkAction(int i, long long ntimeus) {
     if (i <= actionValueMax && i >= actionValueMin && (ntimeus > nextActionTime)) {
-        //at least 10ms since last action.  Should cover any debounce time
+        // at least 10ms since last action.  Should cover any debounce time
         nextActionTime = ntimeus + minActionInterval;
         return true;
     }
@@ -192,7 +218,7 @@ FPPOLEDUtils::InputAction* FPPOLEDUtils::configureGPIOPin(const std::string& pin
 #ifdef HASGPIOD
     const GPIODCapabilities* gpiodPin = dynamic_cast<const GPIODCapabilities*>(pin.ptr());
     if (gpiodPin) {
-        //it's a gpiod pin and not a native pin, we need to handle these special
+        // it's a gpiod pin and not a native pin, we need to handle these special
         InputAction* action = new GPIOQueryPinAction(gpiodPin);
         action->pin = pinName;
         action->mode = mode;
@@ -366,11 +392,11 @@ bool FPPOLEDUtils::parseInputActions(const std::string& file) {
 
                     std::string type = root["inputs"][x]["type"].asString();
                     if (type == "gpiod") {
-                        //this is the mode for various gpio extenders like the pca9675 chip that
-                        //use a single interrupt line (configured above) fall all the buttons.
-                        //The above will trigger an interupt after which we will need to
-                        //use libgpiod to get the value of each button to figure out
-                        //which triggered the action.  Thus, there are multiple actions
+                        // this is the mode for various gpio extenders like the pca9675 chip that
+                        // use a single interrupt line (configured above) fall all the buttons.
+                        // The above will trigger an interupt after which we will need to
+                        // use libgpiod to get the value of each button to figure out
+                        // which triggered the action.  Thus, there are multiple actions
 
                         std::string label = root["inputs"][x]["chip"].asString();
                         gpiod_chip* chip = getChip(label);
@@ -453,7 +479,7 @@ void FPPOLEDUtils::run() {
     std::vector<struct pollfd> fdset(actions.size());
 
     if (actions.size() == 0 && _ledType == 0) {
-        //no display and no actions, nothing to do.
+        // no display and no actions, nothing to do.
         exit(0);
     }
 
@@ -461,7 +487,7 @@ void FPPOLEDUtils::run() {
 
     statusPage = new FPPStatusOLEDPage();
     if (!checkStatusAbility()) {
-        //statusPage->disableFullStatus();
+        // statusPage->disableFullStatus();
     }
     OLEDPage::SetCurrentPage(statusPage);
 
@@ -471,7 +497,7 @@ void FPPOLEDUtils::run() {
     while (true) {
         bool forcedOff = currentStatus->forceOff;
         if (OLEDPage::IsForcedOff() && !forcedOff) {
-            //turning back on
+            // turning back on
             if (controlPin != "") {
                 printf("Re-enabling I2C Bus via pin: %s\n", controlPin.c_str());
                 const PinCapabilities& pin = PinCapabilities::getPinByName(controlPin);
@@ -506,8 +532,50 @@ void FPPOLEDUtils::run() {
             currentStatus->displayOn = displayOn;
             lastUpdateTime = ntime;
         }
+        ////Set Actions from shared memory
+        bool actionToProcess = currentStatus->actionToProcess;             // [3] flag to alert an action needs to be processed
+        bool InputCmdUp = currentStatus->InputCmdUp;                       // [4] Menu Control: Up
+        bool InputCmdDown = currentStatus->InputCmdDown;                   // [5] Menu Control: Down
+        bool InputCmdBack = currentStatus->InputCmdBack;                   // [6] Menu Control: Back
+        bool InputCmdRight = currentStatus->InputCmdRight;                 // [7] Menu Control: Right
+        bool InputCmdEnter = currentStatus->InputCmdEnter;                 // [8] Menu Control: Enter
+        bool InputCmdTest = currentStatus->InputCmdTest;                   // [9] Menu Control: Test
+        bool InputCmdMode = currentStatus->InputCmdMode;                   // [10] Menu Control: Mode
+        bool InputCmdModeMultisync = currentStatus->InputCmdModeMultisync; // [11] Menu Control: Test Multisync
+
+        // actions pending set in shared memory bits
+        if (actionToProcess) {
+            OLEDPage* cur_p = OLEDPage::GetCurrentPage();
+            if (InputCmdUp) {
+                FPPOLEDUtils::setInputFlag("Up");
+                cur_p->doAction("Up");
+                currentStatus->InputCmdUp = false;
+                currentStatus->actionToProcess = false;
+            }
+            if (InputCmdDown) {
+                FPPOLEDUtils::setInputFlag("Down");
+                cur_p->doAction("Down");
+                currentStatus->InputCmdDown = false;
+                currentStatus->actionToProcess = false;
+            }
+            if (InputCmdBack) {
+                FPPOLEDUtils::setInputFlag("Back");
+                cur_p->doAction("Back");
+                currentStatus->InputCmdBack = false;
+                currentStatus->actionToProcess = false;
+            }
+            if (InputCmdEnter) {
+                FPPOLEDUtils::setInputFlag("Enter");
+                cur_p->doAction("Enter");
+                currentStatus->InputCmdEnter = false;
+                currentStatus->actionToProcess = false;
+            }
+        }
         if (actions.empty()) {
+            // conflicts with signal processing so using this instead
             sleep(1);
+            // wait(1);
+            // std::this_thread::sleep_for(std::chrono::seconds(1));
             ntime = GetTime();
         } else {
             memset((void*)&fdset[0], 0, sizeof(struct pollfd) * actions.size());
@@ -524,7 +592,10 @@ void FPPOLEDUtils::run() {
             if (actionCount) {
                 poll(&fdset[0], actionCount, needsPolling ? 100 : 1000);
             } else {
+                // conflicts with signal processing so using this instead
                 usleep(100000);
+                // sleep_for(chrono::milliseconds(5000));
+                // std::this_thread::sleep_for(std::chrono::microseconds(100000));
             }
             ntime = GetTime();
             for (int x = 0; x < actions.size(); x++) {
@@ -544,7 +615,7 @@ void FPPOLEDUtils::run() {
                     }
                 }
                 if (action != "" && !currentStatus->displayOn) {
-                    //just turn the display on if button is hit
+                    // just turn the display on if button is hit
                     if (!currentStatus->forceOff) {
                         currentStatus->displayOn = true;
                         OLEDPage::SetCurrentPage(statusPage);
@@ -558,9 +629,9 @@ void FPPOLEDUtils::run() {
                             OLEDPage::GetCurrentPage()->doAction(action);
                         }
                     }
-                } else if (action != "" && ((ntime - lastActionTime) > 70000)) { //account for some debounce time
+                } else if (action != "" && ((ntime - lastActionTime) > 70000)) { // account for some debounce time
                     printf("Action: %s\n", action.c_str());
-                    //force immediate update
+                    // force immediate update
                     lastUpdateTime = 0;
                     lastActionTime = ntime;
                     if (OLEDPage::GetCurrentPage()) {
