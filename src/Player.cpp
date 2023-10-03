@@ -45,8 +45,8 @@ Player::~Player() {
 
 void Player::Init() {
     /*
-   * Start Playlist Callback
-   */
+     * Start Playlist Callback
+     */
     std::function<void(const std::string&, const std::string&)>
         playlist_callback = [](const std::string& topic_in,
                                const std::string& payload) {

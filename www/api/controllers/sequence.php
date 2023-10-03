@@ -138,8 +138,8 @@ function GetSequenceStart()
 
     $startSecond = params('startSecond');
 
-    SendCommand(sprintf("StartSequence,%s,%d", $sequence, $startSecond));
-
+    //SendCommand(sprintf("StartSequence,%s,%d", $sequence, $startSecond));
+    SendCommand(sprintf("P,%s,%d", $sequence, $startSecond));
     $rc = array("status" => "OK", "SequenceName" => $sequence, "startSecond" => $startSecond);
     return json($rc);
 
