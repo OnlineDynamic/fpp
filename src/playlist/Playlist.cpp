@@ -510,9 +510,10 @@ int Playlist::Start(void) {
 
     std::unique_lock<std::recursive_mutex> lck(m_playlistMutex);
 
-    /*     sprintf(m_leadIn.size().c_str());
-        sprintf(m_mainPlaylist.size().c_str());
-        sprintf(m_leadOut.size().c_str()); */
+    int stuart = m_leadIn.size() + m_mainPlaylist.size() + m_leadOut.size();
+    // sprintf("Sum is: %s", stuart);
+    //  sprintf("Main: %s", m_mainPlaylist.size());
+    //  sprintf("Lead Out: %s", m_leadOut.size());
 
     if ((!m_leadIn.size()) &&
         (!m_mainPlaylist.size()) &&
