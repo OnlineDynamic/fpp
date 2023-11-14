@@ -18,6 +18,15 @@
 #include <sys/types.h>
 #include <time.h>
 
+#include "../Events.h"
+#include "../Sequence.h"
+#include "../Warnings.h"
+#include "../common.h"
+#include "../log.h"
+#include "../settings.h"
+
+#include "../fseq/FSEQFile.h"
+
 #include "Playlist.h"
 #include "Plugins.h"
 #include "fpp.h"
@@ -1081,7 +1090,7 @@ int Playlist::Play(const char* filename, const int position, const int repeat, c
 
     Load(filename);
 
-    if ((position == 0) && (m_random > 0)) {
+    if ((position == 0 || position == -1) && (m_random > 0)) {
         RandomizeMainPlaylist();
     }
 
@@ -1542,7 +1551,7 @@ void Playlist::GetCurrentStatus(Json::Value& result) {
     }
 
     plname = plname.substr(plname.find_last_of("\\/") + 1);
-    if (!endsWith(plname, ".fseq")) {
+    if (endsWith(plname, ".json")) {
         plname = plname.substr(0, plname.find_last_of("."));
     }
     result["current_playlist"]["playlist"] = plname;

@@ -10,8 +10,13 @@ CC := g++
 #CC := clang++
 
 ifneq ($(wildcard /usr/bin/ccache),)
+ifeq ($(DISTCC_HOSTS),)
 	CCACHE = ccache
+else
+	CCACHE = ccache distcc
 endif
+endif
+
 
 TARGETS =
 SUBMODULES =
@@ -21,6 +26,9 @@ ifeq '$(ARCH)' ''
 UNAME := $(shell uname 2> /dev/null)
 ifeq '$(UNAME)' 'Darwin'
 ARCH = OSX
+CXXCOMPILER := clang++
+CCOMPILER := clang
+CC := clang++
 endif
 ifeq '$(UNAME)' 'Linux'
 ARCH = Linux
@@ -38,8 +46,12 @@ endif
 ifeq '$(CXXCOMPILER)' 'g++'
     GCCVERSIONGTEQ9:=$(shell expr `gcc -dumpversion | cut -f1 -d.` \>= 9)
     # Common CFLAGS
+ifeq ($(DISTCC_HOSTS),)
     PCH_FILE=fpp-pch.h.gch
-    CFLAGS+=-fpch-preprocess
+	CFLAGS+=-fpch-preprocess
+else
+	CFLAGS+=-DNOPCH
+endif
     OPTIMIZE_FLAGS=-O3 -Wno-psabi
     debug: OPTIMIZE_FLAGS=-g -DDEBUG -Wno-psabi
     CXXFLAGS += -std=gnu++2a
@@ -52,7 +64,7 @@ ifeq '$(CXXCOMPILER)' 'g++'
 else
     OPTIMIZE_FLAGS=-O3
     debug: OPTIMIZE_FLAGS=-g -DDEBUG
-    #CXXFLAGS += -std=gnu++2a
+    CXXFLAGS += -std=c++20
 endif
 
 

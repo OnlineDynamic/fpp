@@ -21,10 +21,13 @@
 class VirtualString {
 public:
     VirtualString();
-    VirtualString(int receiverNum);
+    VirtualString(int receiverType, int receiverNum);
     ~VirtualString(){};
 
     int channelsPerNode() const;
+
+    bool isSmartReceiver() const;
+    bool isFalconV5SmartReceiver() const;
 
     int startChannel;
     int pixelCount;
@@ -45,7 +48,7 @@ public:
     uint8_t leadOutCount;
     std::string description;
 
-    int *chMap;
+    int* chMap;
     int chMapCount;
 };
 
@@ -60,7 +63,7 @@ public:
 
     int port;
     int channelOffset;
-    int type; //0 for off, 1 for on
+    int type; // 0 for off, 1 for on
     int bitOffset;
 };
 
@@ -69,13 +72,13 @@ public:
     PixelString(bool supportsSmartReceivers = false);
     ~PixelString();
 
-    int Init(Json::Value config, Json::Value *pinConfig = nullptr);
+    int Init(Json::Value config, Json::Value* pinConfig = nullptr);
     void DumpConfig(void);
 
     int m_portNumber;
     int m_channelOffset;
     int m_outputChannels;
-    uint8_t *m_outputBuffer;
+    uint8_t* m_outputBuffer;
 
     std::vector<VirtualString> m_virtualStrings;
     std::vector<GPIOCommand> m_gpioCommands;
@@ -83,12 +86,19 @@ public:
     std::vector<int> m_outputMap;
     uint8_t** m_brightnessMaps;
 
-    bool m_isSmartReceiver;
+    enum class ReceiverType {
+        Standard = 0,
+        v1 = 1,
+        v2 = 2,
+        FalconV5 = 3
+    };
+    ReceiverType smartReceiverType = PixelString::ReceiverType::Standard;
+    bool m_isSmartReceiver = false;
 
     static void AutoCreateOverlayModels(const std::vector<PixelString*>& strings);
 
     // returned buffer is owned by the PixelString and reused next frame
-    uint8_t *prepareOutput(uint8_t *channelData);
+    uint8_t* prepareOutput(uint8_t* channelData);
 
 private:
     void SetupMap(int vsOffset, const VirtualString& vs);

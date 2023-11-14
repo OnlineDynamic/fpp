@@ -57,6 +57,10 @@ function GetVideoInfo(file) {
         });
     });
 }
+function mp3GainProgressDialogDone() {
+    $('#mp3GainProgressCloseButton').prop("disabled", false);
+    EnableModalDialogCloseButton("mp3GainProgress");
+}
 function ButtonHandler(table, button) {
     var selectedCount = $('#tbl' + table + ' tr.selectedEntry').length;
     var filename = '';
@@ -135,8 +139,18 @@ function ButtonHandler(table, button) {
         } else {
             DialogError('Error', 'Error, unable to view multiple files at the same time.');
         }
+    } else if (button == 'mp3gain') {
+        var files = [];
+        $('#tbl' + table + ' tr.selectedEntry').each(function() {
+            files.push($(this).find('td:first').text());
+        });
+        var postData = JSON.stringify(files);
+        DisplayProgressDialog("mp3GainProgress", "MP3Gain");
+        StreamURL("run_mp3gain.php", 'mp3GainProgressText', 'mp3GainProgressDialogDone', 'mp3GainProgressDialogDone', 'POST', postData, 'application/json');
     }
 }
+
+
 
 function ClearSelections(table) {
     $('#tbl' + table + ' tr').removeClass('selectedEntry');
@@ -376,7 +390,7 @@ include 'menu.inc';?>
           <div id= "divMusic">
 
               <div class="backdrop">
-                <h2> Music Files (.mp3/.ogg/.m4a/.flac/.aac) </h2>
+                <h2> Music Files (.mp3/.ogg/.m4a/.flac/.aac/.wav/.m4p) </h2>
                 <div id="divMusicData" class="fileManagerDivData">
                   <table id="tblMusic">
                   </table>
@@ -385,6 +399,10 @@ include 'menu.inc';?>
                 <div class='form-actions'>
                   <input onclick="ClearSelections('Music');" class="buttons" type="button" value="Clear" />
                   <input onclick="ButtonHandler('Music', 'playInBrowser');" id="btnPlayMusicInBrowser" class="disableButtons singleMusicButton" type="button"  value="Listen" />
+                  <? if (file_exists("/bin/mp3gain") || file_exists("/usr/bin/mp3gain") || file_exists("/opt/homebrew/bin/mp3gain") || file_exists("/usr/local/bin/mp3gain")) { ?>
+                    <input onclick="ButtonHandler('Music', 'mp3gain');" id="btnPlayMusicInBrowser" class="disableButtons singleMusicButton multiMusicButton" type="button"  value="MP3Gain" />
+                  <? } ?>
+
                   <input onclick="ButtonHandler('Music', 'download');" id="btnDownloadMusic" class="disableButtons singleMusicButton multiMusicButton" type="button"  value="Download" />
                   <input onclick="ButtonHandler('Music', 'rename');" id="btnRenameMusic" class="disableButtons singleMusicButton" type="button"  value="Rename" />
                   <input onclick="ButtonHandler('Music', 'delete');" id="btnDeleteMusic" class="disableButtons singleMusicButton multiMusicButton" type="button"  value="Delete" />
@@ -399,7 +417,7 @@ include 'menu.inc';?>
           <div id= "divVideo">
 
               <div class="backdrop">
-                <h2> Video Files (.mp4/.mkv) </h2>
+                <h2> Video Files (.mp4/.mkv/.avi/.mpg/.mov) </h2>
                 <div id="divVideoData" class="fileManagerDivData">
                   <table id="tblVideos">
                   </table>

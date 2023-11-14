@@ -264,7 +264,7 @@ input[type=date]{
     }
 }   
 .pageContent select, .ui-dialog select, .modal select{
-	background: #fff url(/images/redesign/chevron-down-grey.svg) no-repeat;
+	background: #fff url(../../../images/redesign/chevron-down-grey.svg) no-repeat;
 	background-position: right 9px center;
     background-size: 15px;
     padding-right:1.8em;
@@ -383,6 +383,11 @@ input[type=checkbox]:checked{
         margin-top: -0.5em;
         margin-bottom: -0.5em;
     }
+}
+
+.alert-info {
+    background-color: #008B8B;
+    border-color: #008B8B;
 }
 .d-flex{
     display:flex;

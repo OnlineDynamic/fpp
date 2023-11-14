@@ -1,7 +1,4 @@
-
-
-
-...<?php
+<?php
 
 $kernel_version = exec("uname -r");
 
@@ -11,6 +8,9 @@ $git_branch = getFPPBranch();
 if (!preg_match("/^$git_branch(-.*)?$/", $fpp_head_version))
 	$fpp_head_version .= " ($git_branch branch)";
 
+if (!isset($activeParentMenuItem)) {
+    $activeParentMenuItem = "";
+}
 ?>
 
 <?php require_once(dirname(__FILE__)."/config.php"); ?>
@@ -69,7 +69,7 @@ function list_plugin_entries($menu) {
    <div class="header">
     <div class="headerLeft">
           <div class="headerLeftCol fppBrand">
-            <a href="/">
+            <a href="index.php">
               <img src='<?= $themeInfo["HEADER_LOGO1"] ?>' class="logo" title="Host: <? echo $settings['HostName']; ?>" />
               <? if (isset($themeInfo["HEADER_LOGO2"]) && $themeInfo["HEADER_LOGO2"] != "" ) {
                 echo "<img src='" . $themeInfo["HEADER_LOGO2"] . "' class='fpp-logo'  title='Host: " . $settings["HostName"] . "' />";
@@ -124,6 +124,9 @@ function list_plugin_entries($menu) {
                 }
                 if (isset($settings['cape-info']['cs']) && $settings['cape-info']['cs'] != "" && $settings['SendVendorSerial'] == 1) {
                     $iurl = $iurl . "&cs=" . $settings['cape-info']['cs'];
+                }
+                if ($settings['hideExternalURLs']) {
+                    $landing = "";
                 }
                 ?>
                       <div class="capeVendor">
@@ -191,7 +194,7 @@ if ($freeSpace < 50000000) {
 }
 ?>
 <!--
-  <div id='upgradeFlag' class="alert detract"><span class='inlineBlock'>FPP v5.1 is available for install</span><span class='inlineBlock'><button name="btnUpgrade" type="button" onClick="ViewReleaseNotes('5.1');"  class = "buttons btn-outline-light" ><i class='fas fa-fw fa-sync fa-nbsp'></i>Upgrade FPP</button></span></div>
+  <div id='upgradeFlag' class="alert detract"><span class='inlineBlock'>FPP v7.1 is available for install</span><span class='inlineBlock'><button name="btnUpgrade" type="button" onClick="ViewReleaseNotes('7.1');"  class = "buttons btn-outline-light" ><i class='fas fa-fw fa-sync fa-nbsp'></i>Upgrade FPP</button></span></div>
 -->
   <div id='restartFlag' class="alert detract"><span class='inlineBlock'>Settings have changed. FPPD Restart Required</span><span class='inlineBlock'><button name="btnRestartFPPD" type="button" onClick="RestartFPPD();" class="buttons btn-outline-light"><i class='fas fa-fw fa-sync fa-nbsp'></i>Restart FPPD</button>
 
@@ -317,13 +320,7 @@ if ((!$settings["IsDesktop"]) || ($settings['uiLevel'] > 2) ) {
         <div class="dropdown-menu dropdown-with-icons dropdown-menu-end" aria-labelledby="navbarDropdownMenuLink">
           <a class="dropdown-item" href="about.php"><i class="fas fa-info-circle"></i> About</a>
 <?php
-$eepromFile = "/sys/bus/i2c/devices/1-0050/eeprom";
-if ($settings['Platform'] == "BeagleBone Black") {
-    $eepromFile = "/sys/bus/i2c/devices/2-0050/eeprom";
-    if (!file_exists($eepromFile)) {
-        $eepromFile = "/sys/bus/i2c/devices/1-0050/eeprom";
-    }
-}
+$eepromFile = "/home/fpp/media/tmp/eeprom.bin";
 if (!file_exists($eepromFile) && file_exists("/home/fpp/media/config/cape-eeprom.bin")) {
     $eepromFile = "/home/fpp/media/config/cape-eeprom.bin";
 }
@@ -331,22 +328,32 @@ if (!file_exists($eepromFile) && file_exists("/home/fpp/media/config/cape-eeprom
 if (file_exists($eepromFile)) {
     echo "<a class='dropdown-item' href='cape-info.php'><i class='fas fa-microchip'></i> Cape Info</a>\n";
 }
+$externalLinkClass = "dropdown-item";
+if ($settings["hideExternalURLs"]) {
+    $externalLinkClass = "hiddenExternalLink";
+}
 ?>
-          <a class="dropdown-item link-to-fpp-manual" href="https://added-by-javascript.net" target="_blank"><i class="fas fa-book"></i> FPP Manual <i class="fas fa-external-link-alt external-link"></i></a>
-          <a class="dropdown-item" href="https://falconchristmas.com/forum" target="_blank"><i class="fas fa-comments"></i> Forums <i class="fas fa-external-link-alt external-link"></i></a>
+          <a class="<?= $externalLinkClass ?> link-to-fpp-manual" href="https://added-by-javascript.net" target="_blank"><i class="fas fa-book"></i> FPP Manual <i class="fas fa-external-link-alt external-link"></i></a>
+          <a class="<?= $externalLinkClass ?>" href="https://falconchristmas.com/forum" target="_blank"><i class="fas fa-comments"></i> Forums <i class="fas fa-external-link-alt external-link"></i></a>
           <!--
-          <a class="dropdown-item" href="http://falconchristmas.com/wiki/index.php/Falcon_FPP" target="_blank"><i class="fas fa-external-link-square-alt"></i> Wiki/Help <i class="fas fa-external-link-alt external-link"></i></a>
+          <a class="<?= $externalLinkClass ?>" href="http://falconchristmas.com/wiki/index.php/Falcon_FPP" target="_blank"><i class="fas fa-external-link-square-alt"></i> Wiki/Help <i class="fas fa-external-link-alt external-link"></i></a>
           -->
           <a class="dropdown-item" href="help.php"><i class="fas fa-question-circle"></i> Help Index</a>
           <a class="dropdown-item" href="apihelp.php"><i class="fas fa-plug"></i> REST API Help</a>
           <a class="dropdown-item" href="commandhelp.php"><i class="fas fa-cubes"></i> FPP Commands Help</a>
           <a class="dropdown-item" href="cliHelp.php"><i class="fas fa-life-ring"></i> fpp &amp; fppmm Usage</a>
           <a class="dropdown-item" href="credits.php"><i class="fas fa-stream"></i> Credits</a>
-          <a class="dropdown-item" href="https://www.paypal.com/donate/?hosted_button_id=ASF9XYZ2V2F5G" target='_blank'><i class="fas fa-solid fa-gift"></i> Donate to FPP <i class="fas fa-external-link-alt external-link"></i></a>
+          <a class="<?= $externalLinkClass ?>" href="https://www.paypal.com/donate/?hosted_button_id=ASF9XYZ2V2F5G" target='_blank'><i class="fas fa-solid fa-gift"></i> Donate to FPP <i class="fas fa-external-link-alt external-link"></i></a>
           <hr class="dropdown-divider">
           <a class="dropdown-item" href="healthCheck.php"><i class="fas fa-thermometer-half"></i> System Health Check</a>
           <a class="dropdown-item" href="troubleshooting.php"><i class="fas fa-code"></i> Troubleshooting Commands</a>
-          <a class="dropdown-item" href="http://<?php echo $_SERVER['HTTP_HOST'] ?>:4200" target="_new"><i class="fas fa-terminal"></i> SSH Shell</a>
+          <?
+          $baseLink = $_SERVER['HTTP_HOST'];
+          if (isset($_SERVER['HTTP_X_FORWARDED_HOST'])) {
+            $baseLink = $_SERVER['HTTP_X_FORWARDED_HOST'] . '/proxy/' . $_SERVER['SERVER_ADDR'];
+          }
+          ?>
+          <a class="<?= $externalLinkClass ?>" href="http://<?=$baseLink?>:4200" target="_new"><i class="fas fa-terminal"></i> SSH Shell</a>
           <?php list_plugin_entries("help"); ?>
         </div>
       </li>

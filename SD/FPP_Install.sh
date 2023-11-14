@@ -48,8 +48,8 @@
 #
 #############################################################################
 FPPBRANCH=${FPPBRANCH:-"master"}
-FPPIMAGEVER="2023-06"
-FPPCFGVER="77"
+FPPIMAGEVER="2023-11"
+FPPCFGVER="79"
 FPPPLATFORM="UNKNOWN"
 FPPDIR=/opt/fpp
 FPPUSER=fpp
@@ -410,7 +410,7 @@ case "${OSVER}" in
             rm -f /etc/systemd/network/50-default.network
             wget -O /etc/systemd/network/50-default.network https://raw.githubusercontent.com/FalconChristmas/fpp/master/etc/systemd/network/50-default.network
             if [ "$FPPPLATFORM" == "BeagleBone Black" ]; then
-                sed -e 's/LinkLocalAddressing=fallback/LinkLocalAddressing=yes/' /etc/systemd/network/50-default.network
+                sed -i -e 's/LinkLocalAddressing=fallback/LinkLocalAddressing=yes/' /etc/systemd/network/50-default.network
             fi
             
             
@@ -483,7 +483,7 @@ case "${OSVER}" in
                       php${PHPVER}-bcmath php${PHPVER}-sqlite3 php${PHPVER}-zip php${PHPVER}-xml \
                       libavcodec-dev libavformat-dev libswresample-dev libswscale-dev libavdevice-dev libavfilter-dev libtag1-dev \
                       vorbis-tools libgraphicsmagick++1-dev graphicsmagick-libmagick-dev-compat libmicrohttpd-dev \
-                      git gettext apt-utils x265 libtheora-dev libvorbis-dev libx265-dev iputils-ping \
+                      git gettext apt-utils x265 libtheora-dev libvorbis-dev libx265-dev iputils-ping mp3gain \
                       libmosquitto-dev mosquitto-clients mosquitto libzstd-dev lzma zstd gpiod libgpiod-dev libjsoncpp-dev libcurl4-openssl-dev \
                       fonts-freefont-ttf flex bison pkg-config libasound2-dev mesa-common-dev qrencode libusb-1.0-0-dev \
                       flex bison pkg-config libasound2-dev python3-distutils libssl-dev libtool bsdextrautils iw"
@@ -496,7 +496,7 @@ case "${OSVER}" in
         if [ "$FPPPLATFORM" != "BeagleBone Black" ]; then
             PACKAGE_LIST="$PACKAGE_LIST libva-dev"
         fi
-        if [ ! $desktop ]; then
+        if $isimage; then
             PACKAGE_LIST="$PACKAGE_LIST networkd-dispatcher"
         fi
 
@@ -576,7 +576,11 @@ case "${OSVER}" in
                 rm -f /etc/resolv.conf
                 ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
             fi
-            
+
+            echo '#!/bin/sh' > /etc/networkd-dispatcher/routable.d/ntpd
+            echo "/usr/bin/systemctl restart ntp" >> /etc/networkd-dispatcher/routable.d/ntpd
+            chmod +x /etc/networkd-dispatcher/routable.d/ntpd
+
             #remove some things that were installed (not sure why)
             apt-get remove -y --purge --autoremove --allow-change-held-packages pocketsphinx-en-us
 
@@ -788,6 +792,8 @@ case "${FPPPLATFORM}" in
             echo "gpu_mem=64" >> /boot/config.txt
             echo "" >> /boot/config.txt
             echo "[all]" >> /boot/config.txt
+            echo "# Use 32bit kernel instead of 64bit so external wifi drivers will load" >> /boot/config.txt
+            echo "arm_64bit=0" >> /boot/config.txt
             echo "" >> /boot/config.txt
 
             echo "FPP - Freeing up more space by removing unnecessary packages"
@@ -981,6 +987,10 @@ do
         sed -i -e "s/^user\ .*/user = ${FPPUSER}/" ${PHPDIR}/${FILE}
         sed -i -e "s/^group\ .*/group = ${FPPUSER}/" ${PHPDIR}/${FILE}
         sed -i -e "s/^pm.max_children.*/pm.max_children = 25/" ${PHPDIR}/${FILE}
+        sed -i -e "s/^pm.min_spare_servers.*/pm.min_spare_servers = 3/" ${PHPDIR}/${FILE}
+        sed -i -e "s/^pm.max_spare_servers.*/pm.max_spare_servers = 6/" ${PHPDIR}/${FILE}
+        sed -i -e "s/^pm.start_servers.*/pm.start_servers = 3/" ${PHPDIR}/${FILE}
+        sed -i -e "s/^;pm.max_requests.*/pm.max_requests = 500/" ${PHPDIR}/${FILE}
         sed -i -e "s+^;clear_env.*+clear_env = no+g" ${PHPDIR}/${FILE}
     fi
 done

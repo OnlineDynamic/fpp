@@ -16,35 +16,43 @@
 #define _GNU_SOURCE
 #endif
 
-#include <arpa/inet.h>
-#include <dirent.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <ifaddrs.h>
-#ifndef PLATFORM_OSX
-#include <linux/if_link.h>
+#if defined(__APPLE__)
+#include <copyfile.h>
+#else
+#include <sys/sendfile.h>
 #endif
+
+#include <arpa/inet.h>
+#include <curl/curl.h>
 #include <net/if.h>
 #include <netinet/in.h>
+#include <sys/file.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
-#include <sys/types.h>
+#include <algorithm>
+#include <cstdint>
+#include <ctime>
 #include <ctype.h>
+#include <cxxabi.h>
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <fstream>
+#include <ifaddrs.h>
+#include <iomanip>
+#include <list>
+#include <map>
 #include <netdb.h>
 #include <pwd.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <string>
 #include <unistd.h>
-
-#include <algorithm>
-#include <fstream>
-#include <sstream>
-
-#include <curl/curl.h>
+#include <utility>
+#include <vector>
 
 #include "common.h"
 #include "fppversion.h"
@@ -635,6 +643,33 @@ bool PutFileContents(const std::string& filename, const std::string& str) {
 
     return false;
 }
+bool CopyFileContents(const std::string& srcFile, const std::string& destFile) {
+    int input, output;    
+    if ((input = open(srcFile.c_str(), O_RDONLY)) == -1){
+        LogErr(VB_GENERAL, "ERROR: Unable to open %s for reading.\n", srcFile.c_str());
+        return false;
+    }    
+    if ((output = creat(destFile.c_str(), 0660)) == -1) {
+        LogErr(VB_GENERAL, "ERROR: Unable to open %s for writing.\n", destFile.c_str());
+        close(input);
+        return false;
+    }
+    //Here we use kernel-space copying for performance
+#if defined(__APPLE__)
+    int result = fcopyfile(input, output, 0, COPYFILE_ALL);
+#else
+    off_t bytesCopied = 0;
+    struct stat fileinfo = {0};
+    fstat(input, &fileinfo);
+    int result = sendfile(output, input, &bytesCopied, fileinfo.st_size);
+#endif
+    close(input);
+    close(output);
+    if (result < 0) {
+        LogErr(VB_GENERAL, "ERROR: Unable to copy %s to %s - %s.\n", srcFile.c_str(), destFile.c_str(), strerror(errno));
+    }
+    return result == 0;
+}
 
 bool SetFilePerms(const std::string& filename, bool exBit) {
     mode_t mode = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH;
@@ -1022,7 +1057,7 @@ bool urlHelper(const std::string method, const std::string& url, const std::stri
 
     status = curl_easy_perform(curl);
     if (status != CURLE_OK) {
-        LogErr(VB_GENERAL, "curl_easy_perform() failed: %s\n", curl_easy_strerror(status));
+        LogErr(VB_GENERAL, "curl_easy_perform() failed (%s): %s\n", url.c_str(), curl_easy_strerror(status));
         curl_slist_free_all(headers);
         curl_easy_cleanup(curl);
         return false;

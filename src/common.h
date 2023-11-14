@@ -14,8 +14,10 @@
 #include <stdint.h>
 
 #include <functional>
+#include <list>
 #include <string>
 #include <vector>
+
 
 #include "log.h"
 
@@ -50,9 +52,9 @@
 
 /////////////////////////////////////////////////////////////////////////////
 
-long long GetTime(void);
-long long GetTimeMicros(void);
-long long GetTimeMS(void);
+long long GetTime();
+long long GetTimeMicros();
+long long GetTimeMS();
 std::string GetTimeStr(std::string fmt);
 std::string GetDateStr(std::string fmt);
 
@@ -78,6 +80,7 @@ std::string GetFileContents(const std::string& filename);
 std::string GetFileExtension(const std::string& filename);
 
 bool PutFileContents(const std::string& filename, const std::string& str);
+bool CopyFileContents(const std::string& srcFile, const std::string& destFile);
 void TrimWhiteSpace(std::string& s);
 
 uint8_t ReverseBitsInByte(uint8_t n);
@@ -119,7 +122,7 @@ std::string getSimpleHTMLTTag(const std::string& html, const std::string& search
 std::string getSimpleXMLTag(const std::string& xml, const std::string& tag);
 
 // URL Helpers
-bool urlHelper(const std::string method, const std::string& url, const std::string& data, std::string& resp, const std::list<std::string> &headers, const unsigned int timeout = 30);
+bool urlHelper(const std::string method, const std::string& url, const std::string& data, std::string& resp, const std::list<std::string>& headers, const unsigned int timeout = 30);
 bool urlHelper(const std::string method, const std::string& url, const std::string& data, std::string& resp, const unsigned int timeout = 30);
 bool urlHelper(const std::string method, const std::string& url, std::string& resp, const unsigned int timeout = 30);
 bool urlGet(const std::string url, std::string& resp);

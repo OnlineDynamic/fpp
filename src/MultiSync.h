@@ -95,6 +95,9 @@ typedef enum systemType {
     kSysTypeExperienceGP16 = 0xA0,
     kSysTypeExperienceGP8 = 0xA1,
     kSysTypeExperienceGLR = 0xA2,
+    kSysTypeExperienceG16Pro = 0xA3,
+    kSysTypeExperienceG32Pro = 0xA4,
+    kSysTypeExperienceGenius = 0xAF,
     kSysTypeOtherSystem = 0xC0,
     kSysTypexSchedule = 0xC1,
     kSysTypeESPixelStick = 0xC2,
@@ -278,6 +281,9 @@ public:
     static MultiSyncSystemType ModelStringToType(std::string model);
 
     void StoreHTTPResponse(std::string* ipp, uint8_t* data, int sz);
+
+    [[nodiscard]] std::vector<MultiSyncSystem> const& GetLocalSystems(){ return m_localSystems; }
+    [[nodiscard]] std::vector<MultiSyncSystem> const& GetRemoteSystems(){ return m_remoteSystems; }
 
 private:
     bool isSupportedForMultisync(const char* address, const char* intface);

@@ -2430,33 +2430,73 @@ function PingE131IP(id) {
 }
 
 function ViewReleaseNotes(version) {
-    $('#helpText').html("Retrieving Release Notes");
-    $('#dialog-help').fppDialog({ width: 800, title: "Release Notes for FPP v" + version });
-    $('#dialog-help').fppDialog("moveToTop");
+    
+    var opts = {
+        id: "releaseNotesDialog",
+        title: "Release Notes for FPP v" + version,
+        body: "<div id='releaseNotesText'>Retrieving Release Notes...</div>",
+        class: "modal-dialog-scrollable",
+        backdrop: "static",
+        keyboard: false,
+        focus: true
+    };
+
+    
+    DoModalDialog(opts);
 
     $.get("api/system/releaseNotes/" + version
     ).done(function (data) {
-        $('#helpText').html(
+        $('#releaseNotesText').html(
             "<center><input onClick='UpgradeFPPVersion(\"" + version + "\");' type='button' class='buttons' value='Upgrade'></center>" +
             "<pre style='white-space: pre-wrap; word-wrap: break-word;'>" + data.body + "</pre>"
         );
     }).fail(function () {
-        $('#helpText').html("Error loading release notes.");
+        $('#releaseNotesText').html("Error loading release notes.");
     });
 }
 
 function VersionUpgradeDone(id) {
-    id = id.replace('_logText', '');
-    $('#' + id + '_doneButtons').show();
-    $('#rebootFPPAfterUpgradeButton').show();
+    $("#fppUpgradeCloseDialogButton").prop("disabled", false);
 }
 function UpgradeFPPVersion(newVersion) {
     if (confirm('Do you wish to upgrade the Falcon Player?\n\nClick "OK" to continue.\n\nThe system will automatically reboot to complete the upgrade.\nThis can take a long time,  20-30 minutes on slower devices.')) {
-        $('#upgradePopup').fppDialog({ height: 600, width: 900, title: "FPP Upgrade" });
-        $('#upgradePopup').fppDialog("moveToTop");
-        $('#upgradeText').html('');
+        
+        CloseModalDialog("releaseNotesDialog");
+        
+        
+        var opts = {
+            id: "upgradeFPPDialog",
+            title: "Upgrading to FPP v" + newVersion,
+            body: "<textarea style='width: 99%; height: 500px;' disabled id='upgradeFPPDialogText'>Starting upgrade....</textarea>",
+            class: "modal-dialog-scrollable",
+            backdrop: "static",
+            keyboard: false,
+            noClose: true,
+            focus: true,
+            footer: ""
+        };
+        if (settings['Platform'] == "MacOS") {
+            opts["buttons"] = {
+                "Close": {
+                id: 'fppUpgradeCloseDialogButton',
+                click: function() {CloseModalDialog("upgradeFPPDialog");},
+                disabled: true,
+                    class: 'btn-success'
+                }
+            };
+        } else {
+            opts["buttons"] = {
+                "Reboot": {
+                id: 'fppUpgradeCloseDialogButton',
+                click: function() {Reboot();},
+                disabled: true,
+                    class: 'btn-success'
+                }
+            };
+        }
 
-        StreamURL('upgradefpp.php?version=v' + newVersion, 'upgradeText', 'VersionUpgradeDone');
+        DoModalDialog(opts);
+        StreamURL('upgradefpp.php?version=v' + newVersion, 'upgradeFPPDialogText', 'VersionUpgradeDone');
     }
 }
 
@@ -3928,6 +3968,12 @@ function UpdateCurrentEntryPlaying(index, lastIndex) {
     $('#tblPlaylistDetails td').removeClass('PlaylistPlayingIcon');
 
     if ((index >= 0) && ($('#playlistRow' + index).length)) {
+        if (!$("#playlistRow" + index).hasClass("PlaylistRowPlaying")) {
+            if (settings["playlistAutoScroll"] > 0) {
+                var topPos = document.getElementById('playlistRow' + index).offsetTop;
+                document.getElementById('playlistOuterScroll').scrollTop = topPos + 100;
+            }
+        }
         $("#colEntryNumber" + index).addClass("PlaylistPlayingIcon");
         $("#playlistRow" + index).addClass("PlaylistRowPlaying");
     }
@@ -6287,10 +6333,10 @@ function RefreshHeaderBar() {
             if (e.ifname.startsWith("can.")) { return 0; }
             e.addr_info.forEach(function (n) {
                 if (n.family === "inet" && (n.local == "192.168.8.1" || e.ifname.startsWith("SoftAp") || e.ifname.startsWith("tether"))) {
-                    var row = '<span class="ipTooltip" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-title="Tether IP: ' + n.local + '"><i class="fas fa-broadcast-tower"></i><small>' + e.ifname + '<div class="divIPAddress">: ' + n.local + '</div></small></span>';
+                    var row = '<span class="ipTooltip" data-bs-toggle="tooltip" data-bs-html="true" data-bs-placement="bottom" data-bs-title="Tether IP: ' + n.local + '"><i class="fas fa-broadcast-tower"></i><small>' + e.ifname + '<div class="divIPAddress">: ' + n.local + '</div></small></span>';
                     rc.push(row);
                 } else if (n.family === "inet" && "wifi" in e) {
-                    var row = '<span class="ipTooltip" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-title="IP: ' + n.local + '<br/>Strength: ' + e.wifi.level + e.wifi.unit + '">';
+                    var row = '<span class="ipTooltip" data-bs-toggle="tooltip" data-bs-html="true" data-bs-placement="bottom" data-bs-title="IP: ' + n.local + '<br/>Strength: ' + e.wifi.level + e.wifi.unit + '">';
                     row += '<img src="images/redesign/wifi-' + e.wifi.desc + '.svg" height="14px"/>';
                     row += '<small>' + e.ifname + '<div class="divIPAddress">: ' + n.local + '</div></small></span>';
                     rc.push(row);
@@ -6301,7 +6347,7 @@ function RefreshHeaderBar() {
                     } else if (e.flags.includes("STATIC") && e.operstate != "UP") {
                         icon = "text-danger";
                     }
-                    var row = '<span class="ipTooltip" data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-title="IP: ' + n.local + '" ><i class="fas fa-network-wired ' + icon + '"></i><small>' + e.ifname + '<div class="divIPAddress">: ' + n.local + '</div></small></span>';
+                    var row = '<span class="ipTooltip" data-bs-toggle="tooltip" data-bs-html="true" data-bs-placement="bottom" data-bs-title="IP: ' + n.local + '" ><i class="fas fa-network-wired ' + icon + '"></i><small>' + e.ifname + '<div class="divIPAddress">: ' + n.local + '</div></small></span>';
                     rc.push(row);
                 }
             });

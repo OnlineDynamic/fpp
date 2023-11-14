@@ -11,13 +11,28 @@
  */
 
 #include "fpp-pch.h"
+
+#include <cstring>
+#include <functional>
+#include <list>
+#include <map>
+#include <memory>
+#include <mosquitto.h>
+#include <mutex>
+#include <stdlib.h>
+#include <string>
+#include <unistd.h>
+#include <vector>
+
+#include "Events.h"
+#include "Warnings.h"
+#include "log.h"
 #include "mqtt.h"
-#include "fppd.h"
-#include <algorithm>
-#include <climits>
+#include "settings.h"
+#include "Timers.h"
+#include "commands/Commands.h"
 
 #define FALCON_TOPIC "falcon/player"
-
 
 MosquittoClient* mqtt = NULL;
 
@@ -102,7 +117,6 @@ MosquittoClient::MosquittoClient(const std::string& host, const int port,
     m_baseTopic += hostname;
 
     pthread_mutex_init(&m_mosqLock, NULL);
-
 
 } // End of MosquittoClient()
 
@@ -226,14 +240,14 @@ int MosquittoClient::PublishRaw(const std::string& topic, const std::string& msg
     return 1;
 }
 
-bool MosquittoClient::Publish(const std::string &topic, const std::string &data) {
+bool MosquittoClient::Publish(const std::string& topic, const std::string& data) {
     if (topic == "version" || topic == "branch" || topic == "warnings") {
         return Publish(topic, data, true, 1);
     }
     return Publish(topic, data, false, 1);
 }
 bool MosquittoClient::Publish(const std::string& topic, const int value) {
-    if (topic == "ready")  {
+    if (topic == "ready") {
         if (value) {
             SetReady();
         }
@@ -325,7 +339,7 @@ void MosquittoClient::SetReady() {
 
 void MosquittoClient::HandleConnect() {
     m_isConnected = true;
-
+    LogWarn(VB_CONTROL, "Mosquitto Connected\n");
     if (!m_canProcessMessages) {
         LogWarn(VB_CONTROL, "HandleConnect() called before can process messages.  Won't Register topics yet.\n");
         return;
@@ -361,9 +375,14 @@ void MosquittoClient::HandleConnect() {
 }
 
 void MosquittoClient::HandleDisconnect() {
-    LogWarn(VB_CONTROL, "Mosquitto Disconnected. Will try reconnect\n");
+    long long tm = GetTimeMS();
+    LogWarn(VB_CONTROL, "Mosquitto Disconnected. Will try reconnect %ld\n", tm);
     m_isConnected = false;
-    WarningHolder::AddWarning("MQTT Disconnected");
+    Timers::INSTANCE.addTimer("MosquittoDisconnect", tm + 10000, [this, tm]() {
+        if (!m_isConnected) {
+            WarningHolder::AddWarning("MQTT Disconnected");
+        }
+    });
 }
 
 /*
@@ -416,7 +435,6 @@ void MosquittoClient::MessageCallback(void* obj, const struct mosquitto_message*
             message->topic);
 }
 
-
 void MosquittoClient::CacheSetMessage(std::string& topic, std::string& message) {
     std::unique_lock<std::mutex> lock(messageCacheLock);
 
@@ -424,7 +442,6 @@ void MosquittoClient::CacheSetMessage(std::string& topic, std::string& message) 
 
     messageCache[topic] = message;
 }
-
 
 bool MosquittoClient::CacheCheckMessage(std::string& topic, std::string& message) {
     std::unique_lock<std::mutex> lock(messageCacheLock);
@@ -435,4 +452,3 @@ bool MosquittoClient::CacheCheckMessage(std::string& topic, std::string& message
 
     return false;
 }
-

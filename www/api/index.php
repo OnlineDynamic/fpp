@@ -7,7 +7,7 @@ require_once '../common.php';
 
 dispatch_get('/backups/list', 'GetAvailableBackups');
 dispatch_get('/backups/list/:DeviceName', 'GetAvailableBackupsOnDevice');
-dispatch_get('/backups/devices', 'GetAvailableBackupsDevices');
+dispatch_get('/backups/devices', 'RetrieveAvailableBackupsDevices');
 dispatch_post('/backups/devices/mount/:DeviceName/:MountLocation', 'MountDevice');
 dispatch_post('/backups/devices/unmount/:DeviceName/:MountLocation', 'UnmountDevice');
 dispatch_post('/backups/configuration', 'MakeJSONBackup');
@@ -58,7 +58,7 @@ dispatch_get('/file/move/:fileName', 'MoveFile'); // keep above file/:DirName
 dispatch_get('/files/zip/:DirNames', 'GetZipDir');
 dispatch_post('/file/:DirName/copy/:source/:dest', 'files_copy');
 dispatch_post('/file/:DirName/rename/:source/:dest', 'files_rename');
-dispatch_get('/file/:DirName/:Name', 'GetFile');
+dispatch_get('/file/:DirName/**', 'GetFile');
 dispatch_delete('/file/:DirName/:Name', 'DeleteFile');
 dispatch_post('/file/:DirName', 'PatchFile');
 dispatch_patch('/file/:DirName', 'PatchFile');
@@ -129,6 +129,7 @@ dispatch_post('/plugin/:RepoName/upgrade', 'UpgradePlugin');
 // which are added after the above endpoints via addPluginEndpoints() below.
 
 dispatch_get('/proxies', 'GetProxies');
+dispatch_post('/proxies', 'PostProxies');
 dispatch_post('/proxies/:ProxyIp', 'AddProxy');
 dispatch_delete('/proxies/:ProxyIp', 'DeleteProxy');
 

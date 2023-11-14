@@ -14,12 +14,20 @@
 #include "fpp-pch.h"
 
 #include <sys/wait.h>
+#include <unistd.h>
+
+#include <fstream>
 
 #define BBB_PRU 1
 
 //  #define PRINT_STATS
 
 // FPP includes
+#include "../../Sequence.h"
+#include "../../Warnings.h"
+#include "../../common.h"
+#include "../../log.h"
+
 #include "BBB48String.h"
 #include "../CapeUtils/CapeUtils.h"
 #include "channeloutput/stringtesters/PixelStringTester.h"
@@ -63,6 +71,9 @@ BBB48StringOutput::BBB48StringOutput(unsigned int startChannel,
  */
 BBB48StringOutput::~BBB48StringOutput() {
     LogDebug(VB_CHANNELOUT, "BBB48StringOutput::~BBB48StringOutput()\n");
+    for (auto a : m_strings) {
+        delete a;
+    }
     m_strings.clear();
     if (m_pru)
         delete m_pru;
@@ -112,7 +123,7 @@ inline int mapSize(int max, int maxString) {
         maxString = max;
     }
     int newHeight = maxString;
-    //make sure it's a multiple of 4 to keep things aligned in memory
+    // make sure it's a multiple of 4 to keep things aligned in memory
     if (maxString == 0) {
         return 0;
     } else if (maxString <= 4) {
@@ -252,7 +263,6 @@ int BBB48StringOutput::Init(Json::Value config) {
     m_licensedOutputs = CapeUtils::INSTANCE.getLicensedOutputs();
     config["base"] = root;
 
-
     int maxStringLen = 0;
     for (int i = 0; i < config["outputs"].size(); i++) {
         Json::Value s = config["outputs"][i];
@@ -296,7 +306,7 @@ int BBB48StringOutput::Init(Json::Value config) {
     int allMax = 0;
     for (int x = 0; x < m_strings.size(); x++) {
         if (m_strings[x]->m_outputChannels > 0) {
-            //need to output this pin, configure it
+            // need to output this pin, configure it
             const PinCapabilities& pin = PinCapabilities::getPinByName(root["outputs"][x]["pin"].asString());
             pin.configPin();
             allStringMap.push_back(x);
@@ -356,13 +366,13 @@ int BBB48StringOutput::Init(Json::Value config) {
     }
 
     if (!m_gpio0Data.maxStringLen) {
-        //no GPIO0 output so no need for the second PRU to be used
+        // no GPIO0 output so no need for the second PRU to be used
         hasSerial = true;
     }
     bool canSplit = !hasSerial;
     if (hasSerial && m_gpio0Data.maxStringLen && ((m_gpio0Data.maxStringLen + m_gpioData.maxStringLen) < 2000)) {
-        //if there is plenty of time to output the GPIO0 stuff
-        //after the other GPIO's, let's do that
+        // if there is plenty of time to output the GPIO0 stuff
+        // after the other GPIO's, let's do that
         args.push_back("-DSPLIT_GPIO0");
         args.push_back("-DGPIO0OUTPUTS=" + std::to_string(mapSize(48, m_gpio0Data.gpioStringMap.size())));
 
@@ -444,13 +454,13 @@ int BBB48StringOutput::Init(Json::Value config) {
     }
 
     // give each area two chunks (frame flipping) of DDR memory
-    m_gpioData.frameSize = m_gpioData.gpioStringMap.size() * std::max(2000, m_gpioData.maxStringLen);
+    m_gpioData.frameSize = m_gpioData.gpioStringMap.size() * std::max(2400, m_gpioData.maxStringLen);
     m_gpioData.curData = m_pru->ddr;
     // leave a full memory page between to avoid conflicts
     int offset = ((m_gpioData.frameSize / 4096) + 2) * 4096;
     m_gpioData.lastData = m_gpioData.curData + offset;
 
-    m_gpio0Data.frameSize = m_gpio0Data.gpioStringMap.size() * std::max(2000, m_gpio0Data.maxStringLen);
+    m_gpio0Data.frameSize = m_gpio0Data.gpioStringMap.size() * std::max(2400, m_gpio0Data.maxStringLen);
     m_gpio0Data.curData = m_gpioData.lastData + offset;
     offset = ((m_gpio0Data.frameSize / 4096) + 2) * 4096;
     m_gpio0Data.lastData = m_gpio0Data.curData + offset;
@@ -568,9 +578,10 @@ void BBB48StringOutput::prepData(FrameData& d, unsigned char* channelData) {
     PixelString* ps = NULL;
     uint8_t* c = NULL;
 
-    PixelStringTester *tester = nullptr;
+    PixelStringTester* tester = nullptr;
     if (m_testType && m_testCycle >= 0) {
         tester = PixelStringTester::getPixelStringTester(m_testType);
+        tester->prepareTestData(m_testCycle, m_testPercent);
     }
     int numStrings = d.gpioStringMap.size();
     uint32_t newMaxLen = 0;
@@ -580,9 +591,9 @@ void BBB48StringOutput::prepData(FrameData& d, unsigned char* channelData) {
             ps = m_strings[idx];
             c = out + s;
             uint32_t newLen = ps->m_outputChannels;
-            uint8_t* d = tester 
-                ? tester->createTestData(ps, m_testCycle, m_testPercent, channelData, newLen)
-                : ps->prepareOutput(channelData);
+            uint8_t* d = tester
+                             ? tester->createTestData(ps, m_testCycle, m_testPercent, channelData, newLen)
+                             : ps->prepareOutput(channelData);
             newMaxLen = std::max(newLen, newMaxLen);
             for (int p = 0; p < newLen; p++) {
                 *c = *d;
@@ -631,16 +642,16 @@ void BBB48StringOutput::PrepData(unsigned char* channelData) {
 void BBB48StringOutput::sendData(FrameData& d, uintptr_t* dptr) {
     bool doSwap = false;
     if (d.copyToPru && (m_curFrame == 1 || memcmp(d.lastData, d.curData, std::min(d.frameSize, (uint32_t)24 * 1024)))) {
-        //don't copy to PRU memory unless really needed to avoid bus contention
+        // don't copy to PRU memory unless really needed to avoid bus contention
 
-        //copy first 7.5K into PRU mem directly
+        // copy first 7.5K into PRU mem directly
         int fullsize = d.frameSize;
         int mx = d.frameSize;
         if (mx > (8 * 1024 - 512)) {
             mx = 8 * 1024 - 512;
         }
 
-        //first 7.5K to main PRU ram
+        // first 7.5K to main PRU ram
         memcpy(m_pru->data_ram + 512, d.curData, mx);
         fullsize -= 7628;
         if (fullsize > 0) {
@@ -677,14 +688,14 @@ int BBB48StringOutput::SendData(unsigned char* channelData) {
         sendData(m_gpio0Data, &m_pru0Data->address_dma);
     }
 
-    //make sure memory is flushed before command is set to 1
+    // make sure memory is flushed before command is set to 1
     __asm__ __volatile__("" ::
                              : "memory");
 
     // Send the start command
     uint32_t flag = 0;
     if (m_testType == 999) {
-        //pixel counting needs the GPIO commands and such turned off
+        // pixel counting needs the GPIO commands and such turned off
         flag = 0x8000;
     }
     m_pruData->command = m_gpioData.outputStringLen | flag;

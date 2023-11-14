@@ -38,6 +38,7 @@ OBJECTS_fpp_so += \
     commands/MediaCommands.o \
 	commands/OLEDCommands.o \
 	common.o \
+	CurlManager.o \
 	e131bridge.o \
 	effects.o \
 	Events.o \
@@ -99,6 +100,7 @@ OBJECTS_fpp_so += \
 	ScheduleEntry.o \
 	scripts.o \
 	sensors/IIOSensorSource.o \
+	sensors/MuxSensorSource.o \
 	sensors/Sensors.o \
 	sensors/ADS7828.o \
 	Sequence.o \

@@ -13,16 +13,21 @@
 #include "fpp-pch.h"
 
 #include <filesystem>
+#include <thread>
 using namespace std::filesystem;
 
 #include <sys/wait.h>
 
-#include "MultiSync.h"
+#include "../Events.h"
+#include "../MultiSync.h"
+#include "../Plugins.h"
+#include "../channeloutput/ChannelOutputSetup.h"
+#include "../common.h"
+#include "../log.h"
+#include "../mediadetails.h"
+
 #include "Playlist.h"
 #include "PlaylistEntryMedia.h"
-#include "Plugins.h"
-#include "mediadetails.h"
-#include "channeloutput/ChannelOutputSetup.h"
 
 int PlaylistEntryMedia::m_openStartDelay = -1;
 
@@ -98,6 +103,10 @@ int PlaylistEntryMedia::PreparePlay() {
         FinishPlay();
         return 0;
     }
+    mediaOutputStatus.minutesTotal = 0;
+    mediaOutputStatus.secondsTotal = 0;
+    mediaOutputStatus.secondsElapsed = 0;
+    mediaOutputStatus.subSecondsElapsed = 0;
 
     if (m_fileMode != "single") {
         if (m_files.size()) {
@@ -246,6 +255,11 @@ int PlaylistEntryMedia::Stop(void) {
     Events::Publish("playlist/media/title", "");
     Events::Publish("playlist/media/artist", "");
 
+    mediaOutputStatus.minutesTotal = 0;
+    mediaOutputStatus.secondsTotal = 0;
+    mediaOutputStatus.secondsElapsed = 0;
+    mediaOutputStatus.subSecondsElapsed = 0;
+
     return PlaylistEntryBase::Stop();
 }
 
@@ -389,12 +403,12 @@ int PlaylistEntryMedia::GetFileList(void) {
 
     for (auto& cp : recursive_directory_iterator(dir)) {
         std::string entry = cp.path().string();
-         
+
         if (!m_mediaPrefix.empty()) {
-             if (cp.is_regular_file() && cp.path().stem().string().find(m_mediaPrefix) == 0) {
-                 LogDebug(VB_PLAYLIST, "match: %s\n", cp.path().c_str());
-                 m_files.push_back(entry);
-             }
+            if (cp.is_regular_file() && cp.path().stem().string().find(m_mediaPrefix) == 0) {
+                LogDebug(VB_PLAYLIST, "match: %s\n", cp.path().c_str());
+                m_files.push_back(entry);
+            }
         } else {
             m_files.push_back(entry);
         }

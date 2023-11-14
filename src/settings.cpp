@@ -12,17 +12,24 @@
 
 #include "fpp-pch.h"
 
-#include "fpp.h"
-
-#include <sys/stat.h>
+#include <cstring>
 #include <ctype.h>
 #include <filesystem>
-#include <getopt.h>
-#include <libgen.h>
-#include <pwd.h>
+#include <fstream>
+#include <map>
+#include <memory>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string>
 #include <unistd.h>
+#include <utility>
+#include <pwd.h>
+
+#include "common.h"
+#include "log.h"
+#include "commands/Commands.h"
+
+#include "settings.h"
 
 #ifdef PLATFORM_OSX
 #include <mach-o/dyld.h>
@@ -359,7 +366,7 @@ void UpgradeSettings() {
         }
         output_file.close();
         input_file.close();
-        std::filesystem::copy("/tmp/upgradedsettings.txt", FPP_FILE_SETTINGS, std::filesystem::copy_options::overwrite_existing);
+        CopyFileContents("/tmp/upgradedsettings.txt", FPP_FILE_SETTINGS);
     }
 }
 

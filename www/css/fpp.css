@@ -39,6 +39,10 @@ h6 {
 
 }
 
+.hiddenExternalLink {
+    display: none;
+}
+
 .pin-parent {
     position: relative;
 }
@@ -188,6 +192,11 @@ body .ui-tabs .ui-tabs-nav li {
 .statusHostname {
     /*display: inline;*/
     display: none;
+}
+
+#playlistOuterScroll {
+    max-height: 75vh;
+    overflow-y: scroll;
 }
 
 @media(min-width:991px) {
@@ -635,7 +644,7 @@ body.has-touch .pageContent-tabs {
     /*height: 100%;*/
 }
 
-body.has-touch .pageContent-tabs>.nav-item {
+body.has-touch .pageContent-tabs>.nav-item:not(.hidden) {
     display: inline-block;
     margin-left: 1.5px;
     margin-right: 1.5px;

@@ -12,17 +12,35 @@
 
 #include "fpp-pch.h"
 
-#include "OutputMonitor.h"
-#include "sensors/Sensors.h"
-#include "gpio.h"
+#include <cmath>
+#include <fcntl.h>
+#include <httpserver.hpp>
+#include <list>
+#include <map>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string>
+#include <unistd.h>
+#include <vector>
+
 #include "Timers.h"
+#include "Warnings.h"
+#include "common.h"
+#include "gpio.h"
+#include "log.h"
+#include "settings.h"
+#include "channeloutput/stringtesters/PixelCountStringTester.h"
+#include "commands/Commands.h"
+#include "sensors/Sensors.h"
+#include "util/GPIOUtils.h"
+
+#include "OutputMonitor.h"
 
 OutputMonitor OutputMonitor::INSTANCE;
 
-
 class CurrentMonitorBase {
 public:
-    CurrentMonitorBase(const Json::Value &c) {
+    CurrentMonitorBase(const Json::Value& c) {
         currentMonitorScale = c["scale"].asFloat();
         if (c.isMember("offset")) {
             currentMonitorOffset = c["offset"].asFloat();
@@ -30,7 +48,7 @@ public:
     }
     virtual ~CurrentMonitorBase() {
     }
-    
+
     float getValue() {
         float f = getRawValue();
         f -= currentMonitorOffset;
@@ -44,12 +62,13 @@ public:
     virtual float getRawValue() = 0;
 
     float currentMonitorScale = 1.0f;
-    float currentMonitorOffset = 0.0f; 
+    float currentMonitorOffset = 0.0f;
 };
 
 class FileCurrentMonitor : public CurrentMonitorBase {
 public:
-    FileCurrentMonitor(const Json::Value &c) : CurrentMonitorBase(c) {
+    FileCurrentMonitor(const Json::Value& c) :
+        CurrentMonitorBase(c) {
         currentMonitorFile = open(c["path"].asString().c_str(), O_NONBLOCK | O_RDONLY);
     }
     virtual ~FileCurrentMonitor() {
@@ -59,11 +78,11 @@ public:
     }
     virtual float getRawValue() override {
         if (currentMonitorFile >= 0) {
-            char buf[12] = {0};
+            char buf[12] = { 0 };
             float f = 0;
             for (int x = 0; x < 3; x++) {
                 lseek(currentMonitorFile, 0, SEEK_SET);
-                read(currentMonitorFile, buf, sizeof(buf));                
+                read(currentMonitorFile, buf, sizeof(buf));
                 f += atoi(buf);
             }
             f /= 3.0;
@@ -75,7 +94,8 @@ public:
 };
 class SensorCurrentMonitor : public CurrentMonitorBase {
 public:
-    SensorCurrentMonitor(const Json::Value &c) : CurrentMonitorBase(c) {
+    SensorCurrentMonitor(const Json::Value& c) :
+        CurrentMonitorBase(c) {
         sensor = Sensors::INSTANCE.getSensorSource(c["sensor"].asString());
         channel = c["channel"].asInt();
         sensor->enable(channel);
@@ -83,18 +103,18 @@ public:
     virtual float getRawValue() override {
         if (sensor) {
             return sensor->getValue(channel);
-        } 
+        }
         return 0;
     }
 
-    SensorSource *sensor = nullptr;
+    SensorSource* sensor = nullptr;
     int channel = 0;
 };
 
-
 class PortPinInfo {
 public:
-    PortPinInfo(const std::string &n, const Json::Value &c) : name(n), config(c) {}
+    PortPinInfo(const std::string& n, const Json::Value& c) :
+        name(n), config(c) {}
     ~PortPinInfo() {
         if (currentMonitor) {
             delete currentMonitor;
@@ -107,18 +127,21 @@ public:
     bool isOn = false;
     bool hasTriggered = false;
     bool enabled = true;
+    uint32_t group = 0;
 
-    const PinCapabilities *enablePin = nullptr;
+    const PinCapabilities* enablePin = nullptr;
     bool highToEnable = true;
-    const PinCapabilities *eFusePin = nullptr;
+    const PinCapabilities* eFusePin = nullptr;
     int eFuseOKValue = 0;
 
-    const PinCapabilities *eFuseInterruptPin = nullptr;
-    CurrentMonitorBase *currentMonitor = nullptr;
+    const PinCapabilities* eFuseInterruptPin = nullptr;
+    CurrentMonitorBase* currentMonitor = nullptr;
 
     int pixelCount = -1;
+    int configuredCount = -1;
+    std::string warning;
 
-    void appendTo(Json::Value &result) {
+    void appendTo(Json::Value& result) {
         Json::Value v;
         v["name"] = name;
         if (enablePin) {
@@ -150,6 +173,7 @@ public:
 
 class FPPEnableOutputsCommand : public Command {
 public:
+    static FPPEnableOutputsCommand INSTANCE;
     FPPEnableOutputsCommand() :
         Command("Outputs On") {
     }
@@ -158,8 +182,11 @@ public:
         return std::make_unique<Command::Result>("OK");
     }
 };
+
 class FPPDisableOutputsCommand : public Command {
 public:
+    static FPPDisableOutputsCommand INSTANCE;
+
     FPPDisableOutputsCommand() :
         Command("Outputs Off") {
     }
@@ -168,6 +195,38 @@ public:
         return std::make_unique<Command::Result>("OK");
     }
 };
+class FPPCheckConfiguredPixelsCommand : public Command {
+public:
+    static FPPCheckConfiguredPixelsCommand INSTANCE;
+
+    FPPCheckConfiguredPixelsCommand() :
+        Command("Check Pixel Count") {
+        args.push_back(CommandArg("Ports", "multistring", "Ports").setContentListUrl("api/fppd/ports/list", false).setDefaultValue("--ALL--"));
+        args.push_back(CommandArg("Sensitivity", "int", "Sensitivity").setRange(0, 20).setDefaultValue("2"));
+        args.push_back(CommandArg("Action", "string", "Action").setContentList({ "Warn", "Log" }).setDefaultValue("Warn"));
+    }
+    virtual std::unique_ptr<Command::Result> run(const std::vector<std::string>& args) override {
+        std::vector<std::string> nargs;
+        nargs.push_back("50");
+        nargs.push_back("Output Specific");
+        nargs.push_back("--ALL--");
+        nargs.push_back("999");
+        CommandManager::INSTANCE.run("Test Start", nargs);
+        Timers::INSTANCE.addPeriodicTimer("CheckPixelCount", 1000, [args]() {
+            if (CurrentBasedPixelCountPixelStringTester::INSTANCE.getCurrentStatus() == CurrentBasedPixelCountPixelStringTester::Status::Complete) {
+                OutputMonitor::INSTANCE.checkPixelCounts(args[0], args[2], std::atoi(args[1].c_str()));
+                std::vector<std::string> args;
+                CommandManager::INSTANCE.run("Test Stop", args);
+                Timers::INSTANCE.stopPeriodicTimer("CheckPixelCount");
+            }
+        });
+
+        return std::make_unique<Command::Result>("OK");
+    }
+};
+FPPEnableOutputsCommand FPPEnableOutputsCommand::INSTANCE;
+FPPDisableOutputsCommand FPPDisableOutputsCommand::INSTANCE;
+FPPCheckConfiguredPixelsCommand FPPCheckConfiguredPixelsCommand::INSTANCE;
 
 OutputMonitor::OutputMonitor() {
 }
@@ -176,24 +235,73 @@ OutputMonitor::~OutputMonitor() {
         delete pi;
     }
     portPins.clear();
+    pullHighOutputPins.clear();
+    pullLowOutputPins.clear();
+    fusePins.clear();
 }
 
-
 void OutputMonitor::Initialize(std::map<int, std::function<bool(int)>>& callbacks) {
-    CommandManager::INSTANCE.addCommand(new FPPEnableOutputsCommand());
-    CommandManager::INSTANCE.addCommand(new FPPDisableOutputsCommand());
+    CommandManager::INSTANCE.addCommand(&FPPEnableOutputsCommand::INSTANCE);
+    CommandManager::INSTANCE.addCommand(&FPPDisableOutputsCommand::INSTANCE);
+    if (!portPins.empty()) {
+        CommandManager::INSTANCE.addCommand(&FPPCheckConfiguredPixelsCommand::INSTANCE);
+    }
+}
+void OutputMonitor::Cleanup() {
+    CommandManager::INSTANCE.removeCommand(&FPPEnableOutputsCommand::INSTANCE);
+    CommandManager::INSTANCE.removeCommand(&FPPDisableOutputsCommand::INSTANCE);
+    if (!portPins.empty()) {
+        CommandManager::INSTANCE.removeCommand(&FPPCheckConfiguredPixelsCommand::INSTANCE);
+    }
+    for (auto pi : portPins) {
+        delete pi;
+    }
+    portPins.clear();
+    pullHighOutputPins.clear();
+    pullLowOutputPins.clear();
+    fusePins.clear();
+}
+
+void OutputMonitor::checkPixelCounts(const std::string& portList, const std::string& action, int sensitivty) {
+    std::set<std::string> ports;
+    for (auto p : split(portList, ',')) {
+        if (p == "--ALL--") {
+            for (auto p : portPins) {
+                ports.insert(p->name);
+            }
+        } else {
+            ports.insert(p);
+        }
+    }
+    for (auto p : portPins) {
+        if (ports.find(p->name) != ports.end()) {
+            int diff = std::abs(p->configuredCount - p->pixelCount);
+            std::string newWarn;
+            if (diff > sensitivty) {
+                newWarn = p->name + " configured for " + std::to_string(p->configuredCount) + " pixels but " + std::to_string(p->pixelCount) + " pixels detected.";
+            }
+            if (action == "Warn" && newWarn != p->warning) {
+                if (!p->warning.empty()) {
+                    WarningHolder::RemoveWarning(p->warning);
+                }
+                p->warning = newWarn;
+                if (!p->warning.empty()) {
+                    WarningHolder::AddWarning(p->warning);
+                }
+            } else if (action == "Log") {
+                LogInfo(VB_CHANNELOUT, "%s\n", newWarn.c_str());
+            }
+        }
+    }
 }
 
 void OutputMonitor::EnableOutputs() {
     if (!pullHighOutputPins.empty() || !pullLowOutputPins.empty()) {
         LogDebug(VB_CHANNELOUT, "Enabling outputs\n");
     }
-    for (auto &p : pullHighOutputPins) {
-        p->setValue(1);
-    }
-    for (auto &p : pullLowOutputPins) {
-        p->setValue(0);
-    }
+    std::unique_lock<std::mutex> lock(gpioLock);
+    PinCapabilities::SetMultiPinValue(pullHighOutputPins, 1);
+    PinCapabilities::SetMultiPinValue(pullLowOutputPins, 0);
     for (auto p : portPins) {
         if (p->enabled) {
             p->isOn = true;
@@ -201,29 +309,28 @@ void OutputMonitor::EnableOutputs() {
         }
     }
     for (auto p : portPins) {
-        if (p->eFusePin->getValue() == p->eFuseOKValue) {
+        if (p->eFusePin && p->eFusePin->getValue() == p->eFuseOKValue) {
             WarningHolder::RemoveWarning("eFUSE Triggered for " + p->name);
         }
     }
+    lock.unlock();
     CommandManager::INSTANCE.TriggerPreset("OUTPUTS_ENABLED");
 }
 void OutputMonitor::DisableOutputs() {
     if (!pullHighOutputPins.empty() || !pullLowOutputPins.empty()) {
         LogDebug(VB_CHANNELOUT, "Disabling outputs\n");
     }
+    std::unique_lock<std::mutex> lock(gpioLock);
     for (auto p : portPins) {
         p->isOn = false;
     }
-    for (auto &p : pullHighOutputPins) {
-        p->setValue(0);
-    }
-    for (auto &p : pullLowOutputPins) {
-        p->setValue(1);
-    }
+    PinCapabilities::SetMultiPinValue(pullHighOutputPins, 0);
+    PinCapabilities::SetMultiPinValue(pullLowOutputPins, 1);
+    lock.unlock();
     CommandManager::INSTANCE.TriggerPreset("OUTPUTS_DISABLED");
 }
-void OutputMonitor::AddPortConfiguration(const std::string &name, const Json::Value &pinConfig, bool enabled) {
-    PortPinInfo *pi = new PortPinInfo(name, pinConfig);
+void OutputMonitor::AddPortConfiguration(const std::string& name, const Json::Value& pinConfig, bool enabled) {
+    PortPinInfo* pi = new PortPinInfo(name, pinConfig);
     bool hasInfo = false;
     if (pinConfig.isMember("enablePin")) {
         std::string ep = pinConfig.get("enablePin", "").asString();
@@ -241,8 +348,14 @@ void OutputMonitor::AddPortConfiguration(const std::string &name, const Json::Va
             hasInfo = true;
         }
     }
+    if (pinConfig.isMember("group")) {
+        int g = pinConfig["group"].asInt();
+        pi->group = g;
+        if (g >= numGroups) {
+            numGroups = g + 1;
+        }
+    }
     if (pinConfig.isMember("eFusePin")) {
-
         if (pinConfig.isMember("eFuseInterruptPin")) {
             std::string eFuseInterruptPin = pinConfig.get("eFuseInterruptPin", "").asString();
             bool eFuseInterruptHigh = false;
@@ -257,7 +370,7 @@ void OutputMonitor::AddPortConfiguration(const std::string &name, const Json::Va
             } else if (eFuseInterruptPin[0] == '+') {
                 postFix = "_pu";
                 eFuseInterruptPin = eFuseInterruptPin.substr(1);
-            } 
+            }
             pi->eFuseInterruptPin = PinCapabilities::getPinByName(eFuseInterruptPin).ptr();
             if (!pi->eFuseInterruptPin) {
                 LogWarn(VB_CHANNELOUT, "Could not find pin " + eFuseInterruptPin + " to handle fuse interrupts for output " + name + "\n");
@@ -266,23 +379,25 @@ void OutputMonitor::AddPortConfiguration(const std::string &name, const Json::Va
                 hasInfo = true;
                 if (fusePins[eFuseInterruptPin] == nullptr) {
                     pi->eFuseInterruptPin->configPin("gpio" + postFix, false);
+                    fusePins[eFuseInterruptPin] = pi->eFuseInterruptPin;
                     GPIOManager::INSTANCE.AddGPIOCallback(pi->eFuseInterruptPin, [this, pi](int v) {
-                        //printf("\n\n\nInterrupt Pin!!!   %d   %d\n\n\n", v, pi->eFuseInterruptPin->getValue());
+                        // printf("\n\n\nInterrupt Pin!!!   %d   %d\n\n\n", v, pi->eFuseInterruptPin->getValue());
+                        std::unique_lock<std::mutex> lock(gpioLock);
                         for (auto a : portPins) {
                             if (a->eFuseInterruptPin == pi->eFuseInterruptPin) {
                                 int v = a->eFusePin->getValue();
                                 if (v != a->eFuseOKValue) {
                                     if (a->enablePin) {
-                                        //make sure the port is turned off
+                                        // make sure the port is turned off
                                         a->enablePin->setValue(a->highToEnable ? 0 : 1);
                                     }
-                                    if (a->isOn && !a->hasTriggered) {                                        
+                                    if (a->isOn && !a->hasTriggered) {
                                         // Output SHOULD be on, but the fuse triggered.  That's a warning.
                                         LogWarn(VB_CHANNELOUT, "eFUSE Triggered for " + a->name + "\n");
                                         WarningHolder::AddWarning("eFUSE Triggered for " + a->name);
                                         a->hasTriggered = true;
                                     }
-                                }                            
+                                }
                             }
                         }
                         return true;
@@ -303,7 +418,7 @@ void OutputMonitor::AddPortConfiguration(const std::string &name, const Json::Va
         } else if (eFusePin[0] == '+') {
             postFix = "_pu";
             eFusePin = eFusePin.substr(1);
-        } 
+        }
         pi->eFusePin = PinCapabilities::getPinByName(eFusePin).ptr();
         pi->eFuseOKValue = eFuseHigh ? 1 : 0;
         if (pi->eFusePin == nullptr) {
@@ -313,10 +428,12 @@ void OutputMonitor::AddPortConfiguration(const std::string &name, const Json::Va
             pi->eFusePin->configPin("gpio" + postFix, false);
             if (pi->eFuseInterruptPin == nullptr) {
                 GPIOManager::INSTANCE.AddGPIOCallback(pi->eFusePin, [this, pi](int v) {
-                    //printf("eFuse for %s trigger: %d    %d\n",  pi->name.c_str(), v, pi->eFusePin->getValue());
+                    std::unique_lock<std::mutex> lock(gpioLock);
+                    //printf("eFuse for %s trigger: %d    %d\n", pi->name.c_str(), v, pi->eFusePin->getValue());
+                    v = pi->eFusePin->getValue();
                     if (v != pi->eFuseOKValue) {
                         if (pi->enablePin) {
-                            //make sure the port is turned off
+                            // make sure the port is turned off
                             pi->enablePin->setValue(pi->highToEnable ? 0 : 1);
                         }
                         if (pi->isOn) {
@@ -352,27 +469,28 @@ void OutputMonitor::AddPortConfiguration(const std::string &name, const Json::Va
     }
 }
 
-const PinCapabilities * OutputMonitor::AddOutputPin(const std::string &name, const std::string &pinName) {
+const PinCapabilities* OutputMonitor::AddOutputPin(const std::string& name, const std::string& pinName) {
     std::string pin = pinName;
     bool highToEnable = true;
     if (pin[0] == '!') {
         pin = pin.substr(1);
         highToEnable = false;
     }
-    auto &op = highToEnable ? pullHighOutputPins : pullLowOutputPins;
-    for (auto &pc : op) {
+    auto& op = highToEnable ? pullHighOutputPins : pullLowOutputPins;
+    for (auto& pc : op) {
         if (pc->name == pin) {
             return pc;
         }
     }
 
-    const PinCapabilities *pc = PinCapabilities::getPinByName(pin).ptr();
+    const PinCapabilities* pc = PinCapabilities::getPinByName(pin).ptr();
     if (!pc) {
         LogWarn(VB_CHANNELOUT, "Could not find pin " + pin + " to enable output " + name + "\n");
         WarningHolder::AddWarning("Could not find pin " + pin + " to enable output " + name);
         return nullptr;
     }
     op.push_back(pc);
+    std::unique_lock<std::mutex> lock(gpioLock);
     pc->configPin("gpio", true);
     pc->setValue(!highToEnable);
     return pc;
@@ -391,12 +509,20 @@ void OutputMonitor::AutoDisableOutputs() {
     }
 }
 
+void OutputMonitor::lockToGroup(int i) {
+    curGroup = i;
+    Sensors::INSTANCE.lockToGroup(i);
+}
+bool OutputMonitor::isPortInGroup(int group, int port) {
+    return ((port < portPins.size()) && (group == portPins[port]->group));
+}
+
 std::vector<float> OutputMonitor::GetPortCurrentValues() {
     std::vector<float> ret;
     ret.reserve(portPins.size());
     Sensors::INSTANCE.updateSensorSources(true);
     for (auto a : portPins) {
-        if (a->currentMonitor) {
+        if (a->currentMonitor && ((curGroup == -1) || (curGroup == a->group))) {
             ret.push_back(a->currentMonitor->getValue());
         } else {
             ret.push_back(0);
@@ -404,15 +530,31 @@ std::vector<float> OutputMonitor::GetPortCurrentValues() {
     }
     return ret;
 }
-void OutputMonitor::SetPixelCount(int port, int pc) {
-    if (port < portPins.size()) {
+void OutputMonitor::SetPixelCount(int port, int pc, int cc) {
+    if (port < portPins.size() && ((curGroup == -1) || (curGroup == portPins[port]->group))) {
         portPins[port]->pixelCount = pc;
+        portPins[port]->configuredCount = cc;
     }
+}
+int OutputMonitor::GetPixelCount(int port) {
+    if (port < portPins.size()) {
+        return portPins[port]->pixelCount;
+    }
+    return 0;
 }
 
 HTTP_RESPONSE_CONST std::shared_ptr<httpserver::http_response> OutputMonitor::render_GET(const httpserver::http_request& req) {
     int plen = req.get_path_pieces().size();
     if (plen > 1 && req.get_path_pieces()[1] == "ports") {
+        if (plen > 2 && req.get_path_pieces()[2] == "list") {
+            Json::Value result;
+            result.append("--ALL--");
+            for (auto a : portPins) {
+                result.append(a->name);
+            }
+            std::string resultStr = SaveJsonToString(result);
+            return std::shared_ptr<httpserver::http_response>(new httpserver::string_response(resultStr, 200, "application/json"));
+        }
         if (portPins.empty()) {
             return std::shared_ptr<httpserver::http_response>(new httpserver::string_response("[]", 200, "application/json"));
         }

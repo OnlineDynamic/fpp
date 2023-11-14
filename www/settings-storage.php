@@ -10,7 +10,7 @@ require_once('common.php');
 function StorageDialogDone() {
     EnableModalDialogCloseButton("storageSettingsProgress");
     $('#storageSettingsProgressCloseButton').prop("disabled", false);
-    SetSetting("LastBlock", "0", 0, 1);
+    SetRebootFlag();
 }
 function growSDCardFS() {
     DisplayConfirmationDialog("growSDCard", "Grow Filesystem", $("#dialog-confirm"), function() {
@@ -113,6 +113,12 @@ function cloneUSB(device) {
     DisplayConfirmationDialog("flashUSB", "Clone to USB/SD", $("#dialog-confirm-usb"), function() {
         DisplayProgressDialog("flashUSBProgress", "Clone to USB/SD");
         StreamURL("flash-pi-usb.php?clone=true&dev=" + device, 'flashUSBProgressText', 'flashUSBDone', 'flashUSBDone');
+    });
+}
+
+function unmountUSBDevice(usbDevice, mountLocation) {
+    $.post("api/backups/devices/unmount/" + usbDevice + "/" + mountLocation).done(function (data) {
+        $('#unmount_' + usbDevice).remove();
     });
 }
 </script>
@@ -229,7 +235,7 @@ $addflashbutton = false;
 exec('findmnt -n -o SOURCE / | colrm 1 5', $output, $return_val);
 $rootDevice = $output[0];
 if ($rootDevice == 'mmcblk0p1' || $rootDevice == 'mmcblk0p2') {
-    if (isset($settings["LastBlock"]) && $settings['LastBlock'] < 8000000 && $settings['LastBlock'] > 0) {
+    if (isset($settings["UnpartitionedSpace"]) && $settings['UnpartitionedSpace'] > 0) {
         $addnewfsbutton = true;
     }
     if ($settings['Platform'] == "BeagleBone Black") {
@@ -340,5 +346,73 @@ In addition to the above, since it is not recommended, using USB storage is not 
 </div>
 <div id="dialog-confirm-newpartition" class="hidden">
 <p><span class="ui-icon ui-icon-alert" style="flat:left; margin: 0 7px 20px 0;"></span>Creating a new partition in the unused space will require a reboot to take effect.  Do you wish to proceed?</p>
+</div>
+
+<hr>
+<h3>Mounted USB Device Actions:</h3>
+
+	<?php
+	$systems_UsbDevices = GetAvailableBackupsDevices(true);
+	$foundAMountedDevice = false;
+	if (!empty($systems_UsbDevices)) {
+		foreach ($systems_UsbDevices as $usbID => $usbInfo) {
+			$usbName = trim($usbInfo['name']);
+			$usbModel = $usbInfo['model'];
+			$usbVendor = $usbInfo['vendor'];
+			$usbSize = $usbInfo['size'] . " GB";
+			$usbMountLocation = "";
+
+			$deviceIsUsable = CheckIfDeviceIsUsable($usbName);
+            //CheckIfDeviceIsUsable returns a empty string if device is usable
+			if ($deviceIsUsable != '') {
+				$foundAMountedDevice = true;
+				//find where mounted
+				$usbMountLocation = shell_exec('findmnt -nr -o target -S /dev/' . $usbName);
+				$usbMountLocation_folder = trim(str_replace("/mnt/", "", $usbMountLocation));
+				$onClick_unmount = "unmountUSBDevice(\"$usbName\",\"$usbMountLocation_folder\");";
+
+                //Find what files are open for the mount
+                $openFiles = trim(shell_exec("sudo lsof +f -- /dev/$usbName"));
+				?>
+                <div id="unmount_<?php echo $usbName; ?>" class="row">
+                    <div id="mounted-usb-info" class="row">
+                        <div id="mounted-usb-name_<?php echo $usbName; ?>"
+                             class="col-md-3"><?php echo $usbName . " - " . $usbVendor . " - " . $usbModel . " - " . $usbSize; ?></div>
+                        <div id="mounted-usb-location_<?php echo $usbName; ?>" class="col-md-2">Mounted
+                            at: <?php echo $usbMountLocation; ?></div>
+                        <div id="mounted-usb-action_<?php echo $usbName; ?>" class="col-md-2">
+                            <input style='width:13em;' type='button'
+                                   class='buttons btn-danger'
+                                   value='Force Unmount' onClick='<?php echo $onClick_unmount; ?>'>
+                        </div>
+                    </div>
+					<?php if (!empty($openFiles)) {
+						?>
+                        <div id="mounted-usb-open-files" class="row">
+                            <div class="backdrop col-md-10 m-auto">
+                                <p><b>Open files:</b></p>
+                            <pre><?php echo trim($openFiles); ?></pre>
+                            </div>
+                        </div>
+						<?php
+					}
+					?>
+
+                </div>
+                <hr>
+				<?php
+			}
+		}
+	}
+    //Print a message if no devices were found
+	if (empty($systems_UsbDevices) || !$foundAMountedDevice) {
+		?>
+        <div class="col-md-3">No Mounted USB Detected.</div>
+		<?php
+	}
+	?>
+
+<div id="mounted-device-callout-warning" class="callout callout-warning">
+    Use caution when unmounting USB devices as they may be in use by the system processes. Forcing a unmount may result incomplete data or data loss.
 </div>
 
