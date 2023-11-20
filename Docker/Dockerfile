@@ -1,4 +1,5 @@
-FROM debian:bullseye
+#FROM debian:bullseye
+FROM debian:bookworm
 
 # if we get a bunch of these installed up front in one shot (assume a desktop so plenty of memory to do all at once)
 # then the FPP_Install step is faster.   In addition, docker will cache this result
@@ -41,7 +42,11 @@ RUN cp /opt/fpp/etc/asoundrc.plain /root/.asoundrc
 
 # this will do additional updates and create the required directories
 # and set permissions
-RUN /opt/fpp/scripts/init_pre_network
+#RUN dos2unix /opt/fpp/scripts/init_pre_network
+#RUN dos2unix /opt/fpp/Docker/runDocker.sh
+#RUN find /opt/fpp -type f -print0 | xargs -0 dos2unix --
+#RUN 
+RUN bash /opt/fpp/scripts/init_pre_network
 
 VOLUME /home/fpp/media
 
