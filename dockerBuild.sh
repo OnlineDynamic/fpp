@@ -1,6 +1,6 @@
 #!/bin/bash
 
-FPPBRANCH=${FPPBRANCH:-"master"}
+FPPBRANCH=${FPPBRANCH:-"pi5"}
 
 # build the docker image
 docker build -t falconchristmas/fpp:latest -f Docker/Dockerfile  --build-arg FPPBRANCH=${FPPBRANCH} .

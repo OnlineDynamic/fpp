@@ -1,5 +1,4 @@
 #!/bin/bash
-
 #############################################################################
 # FPP Install Script
 #
@@ -47,7 +46,7 @@
 #       hardware which does not support Bullseye may have issues.
 #
 #############################################################################
-FPPBRANCH=${FPPBRANCH:-"master"}
+FPPBRANCH=${FPPBRANCH:-"pi5"}
 FPPIMAGEVER="2023-11"
 FPPCFGVER="79"
 FPPPLATFORM="UNKNOWN"
@@ -55,11 +54,9 @@ FPPDIR=/opt/fpp
 FPPUSER=fpp
 FPPHOME=/home/${FPPUSER}
 OSVER="UNKNOWN"
-
 # Make sure the sbin directories are on the path as we will
 # need the adduser/addgroup/ldconfig/a2enmod/etc... commands
 PATH=$PATH:/usr/sbin:/sbin
-
 # CPU Count
 CPUS=$(grep "^processor" /proc/cpuinfo | wc -l)
 if [[ ${CPUS} -gt 1 ]]; then
@@ -78,8 +75,7 @@ if [[ ${CPUS} -gt 1 ]]; then
             CPUS=1
         fi
     fi
-fi
-        
+fi   
 #############################################################################
 # Some Helper Functions
 #############################################################################
@@ -375,7 +371,7 @@ cd /opt 2> /dev/null || mkdir /opt
 export DEBIAN_FRONTEND=noninteractive
 
 case "${OSVER}" in
-	debian_11 | debian_10 | ubuntu_20.04 | ubuntu_22.04 | ubuntu_22.10 | linuxmint_21)
+	debian_12 | debian_11 | debian_10 | ubuntu_20.04 | ubuntu_22.04 | ubuntu_22.10 | linuxmint_21)
 		case $FPPPLATFORM in
 			'BeagleBone Black')
 				echo "FPP - Skipping non-free for $FPPPLATFORM"
@@ -470,6 +466,9 @@ case "${OSVER}" in
         fi
         if [ "${OSVER}" == "ubuntu_22.10" ]; then
             ACTUAL_PHPVER="8.1"
+        fi
+		if [ "${OSVER}" == "debian_12"]; then
+            ACTUAL_PHPVER="8.2"
         fi
         PACKAGE_LIST="alsa-utils arping avahi-daemon avahi-utils locales nano net-tools \
                       apache2 apache2-bin apache2-data apache2-utils \
@@ -780,12 +779,16 @@ case "${FPPPLATFORM}" in
             echo >> /boot/config.txt
 
             echo "# GPU memory set to 128 to deal with error in omxplayer with hi-def videos" >> /boot/config.txt
-            echo "[pi4]" >> /boot/config.txt
+            echo "[pi5]" >> /boot/config.txt
+            echo "gpu_mem=128" >> /boot/config.txt
+			echo "[pi4]" >> /boot/config.txt
             echo "gpu_mem=128" >> /boot/config.txt
             echo "[pi3]" >> /boot/config.txt
             echo "gpu_mem=128" >> /boot/config.txt
             echo "[pi0]" >> /boot/config.txt
             echo "gpu_mem=64" >> /boot/config.txt
+            echo "[pi02]" >> /boot/config.txt
+            echo "gpu_mem=128" >> /boot/config.txt
             echo "[pi1]" >> /boot/config.txt
             echo "gpu_mem=64" >> /boot/config.txt
             echo "[pi2]" >> /boot/config.txt
@@ -958,8 +961,12 @@ sh scripts/upgrade_config -notee
 
 #######################################
 PHPDIR="/etc/php/7.4"
-if [ "${OSVER}" == "ubuntu_22.10" ]; then
+if [ "${OSVER}" == "ubuntu_22.10" -o "${OSVER}" == "debian_12" ]; then
     PHPDIR="/etc/php/8.1"
+fi
+
+if [ "${OSVER}" == "debian_12" ]; then
+    PHPDIR="/etc/php/8.2"
 fi
 
 echo "FPP - Configuring PHP"
@@ -990,7 +997,7 @@ do
         sed -i -e "s/^pm.min_spare_servers.*/pm.min_spare_servers = 3/" ${PHPDIR}/${FILE}
         sed -i -e "s/^pm.max_spare_servers.*/pm.max_spare_servers = 6/" ${PHPDIR}/${FILE}
         sed -i -e "s/^pm.start_servers.*/pm.start_servers = 3/" ${PHPDIR}/${FILE}
-        sed -i -e "s/^;pm.max_requests.*/pm.max_requests = 500/" ${PHPDIR}/${FILE}
+        sed -i -e "s/^;pm.max_requests.*/pm.max_requests = 300/" ${PHPDIR}/${FILE}
         sed -i -e "s+^;clear_env.*+clear_env = no+g" ${PHPDIR}/${FILE}
     fi
 done
@@ -1047,11 +1054,11 @@ fi
 #######################################
 echo "FPP - Populating ${FPPHOME}"
 mkdir ${FPPHOME}/.ssh
-chown ${FPPUSER}.${FPPUSER} ${FPPHOME}/.ssh
+chown ${FPPUSER}:${FPPUSER} ${FPPHOME}/.ssh
 chmod 700 ${FPPHOME}/.ssh
 
 mkdir ${FPPHOME}/media
-chown ${FPPUSER}.${FPPUSER} ${FPPHOME}/media
+chown ${FPPUSER}:${FPPUSER} ${FPPHOME}/media
 chmod 775 ${FPPHOME}/media
 
 cat > ${FPPHOME}/.vimrc <<-EOF
@@ -1064,14 +1071,14 @@ set mouse=r
 EOF
 
 chmod 644 ${FPPHOME}/.vimrc
-chown ${FPPUSER}.${FPPUSER} ${FPPHOME}/.vimrc
+chown ${FPPUSER}:${FPPUSER} ${FPPHOME}/.vimrc
 
 echo >> ${FPPHOME}/.bashrc
 echo ". /opt/fpp/scripts/common" >> ${FPPHOME}/.bashrc
 echo >> ${FPPHOME}/.bashrc
 
 mkdir ${FPPHOME}/media/logs
-chown fpp.fpp ${FPPHOME}/media/logs
+chown fpp:fpp ${FPPHOME}/media/logs
 
 ln -f -s "${FPPHOME}/media/config/.htaccess" /opt/fpp/www/.htaccess
 ln -f -s "${FPPHOME}/media/config/proxies" /opt/fpp/www/proxy/.htaccess
@@ -1262,7 +1269,7 @@ sed -i -e "s/error\.log/apache2-base-error.log/" /etc/apache2/apache2.conf
 rm /etc/apache2/conf-enabled/other-vhosts-access-log.conf
 
 case "${OSVER}" in
-	debian_11 |  debian_10 | ununtu_20.04 | ubuntu_22.04 | ubuntu_22.10 | linuxmint_21)
+	debian_12 | debian_11 |  debian_10 | ununtu_20.04 | ubuntu_22.04 | ubuntu_22.10 | linuxmint_21)
 		systemctl enable apache2.service
 		;;
 esac
@@ -1468,5 +1475,5 @@ echo "========================================================="
 echo ""
 
 cp /root/FPP_Install.* ${FPPHOME}/
-chown fpp.fpp ${FPPHOME}/FPP_Install.*
+chown fpp:fpp ${FPPHOME}/FPP_Install.*
 

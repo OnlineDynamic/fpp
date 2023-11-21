@@ -8,7 +8,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update
 RUN DEBIAN_FRONTEND=noninteractive apt-get -yq upgrade
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -yq -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold"  alsa-utils arping avahi-daemon avahi-utils locales nano net-tools \
     apache2 apache2-bin apache2-data apache2-utils \
-    bc bash-completion btrfs-progs exfat-fuse lsof ethtool curl zip unzip bzip2 wireless-tools dos2unix \
+    bc bash bash-completion btrfs-progs exfat-fuse lsof ethtool curl zip unzip bzip2 wireless-tools dos2unix \
     fbi fbset file flite ca-certificates lshw ffmpeg mp3gain \
     build-essential gcc g++ gdb ccache vim vim-common bison flex device-tree-compiler dh-autoreconf \
     git git-core hdparm i2c-tools ifplugd less sysstat tcpdump time usbutils usb-modeswitch \
@@ -29,14 +29,22 @@ RUN ( yes | /root/buildVLC.sh ) || true
 # Pass --build-arg EXTRA_INSTALL_FLAG=--skip-clone to build without
 # cloning the lastest from git and instead use the stuff in the local
 # directory
-ARG EXTRA_INSTALL_FLAG=
+ARG EXTRA_INSTALL_FLAG=--skip-clone
 
 # branch being build
-ARG FPPBRANCH
+ARG FPPBRANCH=master
 
 ADD ./ /opt/fpp/
-ADD SD/FPP_Install.sh /root/FPP_Install.sh
+#COPY SD/FPP_Install.sh /root/FPP_Install.sh
+#RUN cp /opt/fpp/SD/FPP_Install.sh /root/FPP_Install.sh
+
+RUN cat /opt/fpp/SD/FPP_Install.sh | sed 's/\r$//' >/opt/fpp/SD/FPP_Install.sh
+RUN cat /opt/fpp/src/fppversion.sh | sed 's/\r$//' >/opt/fpp/src/fppversion.sh
+RUN dos2unix /opt/fpp/SD/FPP_Install.sh
+RUN cp /opt/fpp/SD/FPP_Install.sh /root/FPP_Install.sh
+
 RUN ( yes | /root/FPP_Install.sh $EXTRA_INSTALL_FLAG --branch ${FPPBRANCH:-master} --skip-apt-install --skip-vlc ) || true
+#RUN /root/FPP_Install.sh $EXTRA_INSTALL_FLAG --branch $FPPBRANCH --skip-apt-install --skip-vlc
 RUN rm -rf /tmp/*
 RUN cp /opt/fpp/etc/asoundrc.plain /root/.asoundrc
 
@@ -44,9 +52,9 @@ RUN cp /opt/fpp/etc/asoundrc.plain /root/.asoundrc
 # and set permissions
 #RUN dos2unix /opt/fpp/scripts/init_pre_network
 #RUN dos2unix /opt/fpp/Docker/runDocker.sh
-#RUN find /opt/fpp -type f -print0 | xargs -0 dos2unix --
-#RUN 
-RUN bash /opt/fpp/scripts/init_pre_network
+#RUN dos2unix /opt/fpp/scripts/common
+RUN grep -irl 'bash\|sh' /opt/fpp/scripts | xargs dos2unix
+RUN /opt/fpp/scripts/init_pre_network
 
 VOLUME /home/fpp/media
 

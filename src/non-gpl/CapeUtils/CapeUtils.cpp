@@ -39,6 +39,8 @@
 #include <jsoncpp/json/json.h>
 #include <filesystem>
 
+#include <openssl/bio.h>
+#include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/rsa.h>
 #include <openssl/sha.h>
@@ -678,7 +680,7 @@ private:
                 printf("Couldn't get eeprom\n");
             }
             printf("Copyng eeprom %s -> %s\n", EEPROM.c_str(), "/home/fpp/media/tmp/eeprom.bin");
-            removeIfExist( "/home/fpp/media/tmp/eeprom.bin");
+            removeIfExist("/home/fpp/media/tmp/eeprom.bin");
             copyFile(EEPROM, "/home/fpp/media/tmp/eeprom.bin");
             ORIGEEPROM = EEPROM;
             put_file_contents("/home/fpp/media/tmp/eeprom_location.txt", (uint8_t*)ORIGEEPROM.c_str(), ORIGEEPROM.size());

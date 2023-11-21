@@ -137,8 +137,8 @@ static um_data_t* processSamples(std::array<float, NUM_SAMPLES>& samples, int sa
     static kiss_fft_cpx fft_out[NUM_SAMPLES];
     static kiss_fftr_cfg cfg = kiss_fftr_alloc(NUM_SAMPLES, false, 0, 0);
 
-    //GenerateSinWave(samples, sampleRate);
-    //HammingWindow(samples);
+    // GenerateSinWave(samples, sampleRate);
+    // HammingWindow(samples);
 
     // compute fast fourier transform
     kiss_fftr(cfg, (kiss_fft_scalar*)&samples[0], fft_out);
@@ -150,7 +150,7 @@ static um_data_t* processSamples(std::array<float, NUM_SAMPLES>& samples, int sa
     static float volumeSmth;
     static uint16_t volumeRaw;
     static float my_magnitude;
-    //arrays
+    // arrays
     static um_data_t* um_data = nullptr;
     if (!um_data) {
         // initialize um_data pointer structure
@@ -205,7 +205,7 @@ static um_data_t* processSamples(std::array<float, NUM_SAMPLES>& samples, int sa
     float maxFreq = (maxBin * binHzRange) + (binHzRange / 2);
     int maxIdx = maxBin;
 
-    //printf("Max: %0.5f Hz   idx: %d\n", maxFreq, maxIdx);
+    // printf("Max: %0.5f Hz   idx: %d\n", maxFreq, maxIdx);
     int maxV = 0;
     float maxRV = 0;
     for (int x = 0; x < 16; x++) {
@@ -216,13 +216,13 @@ static um_data_t* processSamples(std::array<float, NUM_SAMPLES>& samples, int sa
         if (v2 < 0) {
             v2 = 0;
         }
-        //printf("%d:   %0.2f  %0.2f    %d\n", x, res[x], (float)log10(res[x]), v2);
+        // printf("%d:   %0.2f  %0.2f    %d\n", x, res[x], (float)log10(res[x]), v2);
         maxV = std::max(maxV, v2);
         maxRV = std::max(maxRV, res[x]);
         fftResult[x] = v2;
     }
-    //printf("\n");
-    //volumeSmth = max * 127.0;
+    // printf("\n");
+    // volumeSmth = max * 127.0;
 
     FFT_MajorPeak = maxFreq;
     my_magnitude = maxRV;
@@ -261,13 +261,13 @@ um_data_t* simulateSound(uint8_t simulationId) {
     static uint16_t volumeRaw;
     static float my_magnitude;
 
-    //arrays
+    // arrays
     uint8_t* fftResult;
 
     static um_data_t* um_data = nullptr;
 
     if (!um_data) {
-        //claim storage for arrays
+        // claim storage for arrays
         fftResult = (uint8_t*)malloc(sizeof(uint8_t) * 16);
 
         // initialize um_data pointer structure
@@ -344,7 +344,7 @@ um_data_t* simulateSound(uint8_t simulationId) {
     maxVol = 10; // this gets feedback fro UI
     binNum = 8;  // this gets feedback fro UI
     volumeRaw = volumeSmth;
-    my_magnitude = 10000.0 / 8.0f; //no idea if 10000 is a good value for FFT_Magnitude ???
+    my_magnitude = 10000.0 / 8.0f; // no idea if 10000 is a good value for FFT_Magnitude ???
     if (volumeSmth < 1)
         my_magnitude = 0.001f; // noise gate closed - mute
 
@@ -423,7 +423,7 @@ WS2812FXExt::WS2812FXExt(PixelOverlayModel* m, int map, int b,
         p.width = m->getHeight();
         p.height = m->getWidth();
     }
-    milliampsPerLed = 0; //need to turn off the power calculation
+    milliampsPerLed = 0; // need to turn off the power calculation
     _segments[0].transitional = false;
     setMode(0, mode);
     _segments[0].speed = s;
@@ -530,5 +530,5 @@ void Bus::setPixelColor(int i, uint32_t c) {
     r = r * brightness / 128;
     g = g * brightness / 128;
     b = b * brightness / 128;
-    currentStrip->model->setOverlayPixelValue(x, y, min(r, 255), min(g, 255), min(b, 255));
+    currentStrip->model->setOverlayPixelValue(x, y, my_min(r, 255), my_min(g, 255), my_min(b, 255));
 }
