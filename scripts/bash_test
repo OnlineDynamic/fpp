@@ -1,0 +1,9 @@
+#!/bin/bash
+# Some internal setup
+PATH="/sbin:/bin:/usr/sbin:/usr/bin"
+BINDIR=$(cd $(dirname $0) && pwd)
+
+. ${BINDIR}/common
+. ${BINDIR}/functions
+
+echo "hello"

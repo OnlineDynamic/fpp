@@ -7,6 +7,7 @@ OBJECTS_fpp = \
 LIBS_fpp = \
     -ljsoncpp \
     -lcurl \
+    -lstdc++ \
 	$(NULL)
 
 TARGETS+=fpp

@@ -1,5 +1,7 @@
 CXXCOMPILER := g++
 CCOMPILER := gcc
+#gxx_linux-64
+#gcc
 # CC has been set to g++ so keep for compatibility with C++ plugins
 CC := g++
 
@@ -54,7 +56,7 @@ else
 endif
     OPTIMIZE_FLAGS=-O3 -Wno-psabi
     debug: OPTIMIZE_FLAGS=-g -DDEBUG -Wno-psabi
-    CXXFLAGS += -std=gnu++2a
+    CXXFLAGS += -std=gnu++20
 
     ifeq "$(GCCVERSIONGTEQ9)" "0"
 		LD_FLAG_FS=-lstdc++fs
@@ -73,3 +75,8 @@ CFLAGS+=$(OPTIMIZE_FLAGS) -pipe \
 	-I $(SRCDIR) \
 	-fpic
 
+CFLAGS+= -I/usr/include/c++/12
+CXXFLAGS+= -I/usr/include/c++/12
+CFLAGS+= -I/usr/include/aarch64-linux-gnu/c++/12
+CXXFLAGS+= -I/usr/include/aarch64-linux-gnu/c++/12
+CXXFLAGS+= -x c++

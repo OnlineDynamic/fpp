@@ -5,7 +5,8 @@ OBJECTS_fppmm = \
 	fppversion.o
 LIBS_fppmm = \
 	-lcurl \
-	-ljsoncpp
+	-ljsoncpp \
+	-lstdc++
 
 TARGETS += fppmm
 OBJECTS_ALL+=$(OBJECTS_fppmm)

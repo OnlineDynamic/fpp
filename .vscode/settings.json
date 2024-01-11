@@ -126,5 +126,6 @@
         "filesystem": "cpp"
     },
     "editor.formatOnSave": true,
-    "cmake.configureOnOpen": false
+    "cmake.configureOnOpen": false,
+    "makefile.makefilePath": "/opt/fpp/src"
 }
