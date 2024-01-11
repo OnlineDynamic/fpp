@@ -1,7 +1,7 @@
 ifeq '$(ARCH)' 'Raspberry Pi'
 
 OBJECTS_fpp_co_rpi_ws281x_so += channeloutput/rpi_ws281x.o
-LIBS_fpp_co_rpi_ws281x_so=-L../external/rpi_ws281x/ -lws2811  -L. -lfpp -ljsoncpp
+LIBS_fpp_co_rpi_ws281x_so=-L../external/rpi_ws281x/ -lws2811  -L. -lfpp -ljsoncpp -lstdc++
 
 CXXFLAGS_channeloutput/rpi_ws281x.o=-I../external/rpi_ws281x/include/
 

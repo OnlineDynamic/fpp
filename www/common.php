@@ -66,7 +66,7 @@ function ScrubFile($filename, $taboo = array("emailpass", "emailgpass", "MQTTPas
         }
 
         foreach ($taboo as $key) {
-            if (array_key_exists($key, $data)) {
+            if (property_exists($data,$key)) {
                 $data[$key] = "********";
             }
         }
@@ -2281,7 +2281,7 @@ function getKnownFPPSystems()
     $data = file_get_contents('http://localhost/api/fppd/multiSyncSystems');
     $arr = json_decode($data, true);
 
-    if (array_key_exists("systems", $arr)) {
+    if (array_key_exists("systems",$arr)) {
         foreach ($arr["systems"] as $i) {
             // FPP Systems are 0x01 to 0x80
             if ($i["typeId"] >= 1 && $i["typeId"] < 128) {
@@ -2595,8 +2595,8 @@ function GenerateBackupComment($setting_name, $setting_value)
     //Read in the setting JSON file to assist with generating backup comment in relation to what setting was changed
     $settings_json = json_decode(file_get_contents("./settings.json"), true);
     //Try find  the setting name passed via Params in this array
-    if (is_array($settings_json) && array_key_exists($setting_name, $settings_json['settings'])) {
-        if (array_key_exists('description', $settings_json['settings'][$setting_name])) {
+    if (is_array($settings_json) && property_exists($settings_json['settings'],$setting_name)) {
+        if (property_exists($settings_json['settings'][$setting_name],'description')) {
             $settings_description = $settings_json['settings'][$setting_name]['description'];
 
             $backup_comment .= $settings_description . " setting was set to ( " . $setting_value . " ).";

@@ -171,6 +171,12 @@ then
 	OSVER="debian_${VERSION_ID}"
     isimage=true
     desktop=false
+elif [grep -q 'Pi 5' /sys/firmware/devicetree/base/model]
+then
+	FPPPLATFORM="Raspberry Pi"
+	OSVER="debian_$(VERSION_ID)"
+	isimage=tue
+	desktop=false
 elif [ -e "/sys/class/leds/beaglebone:green:usr0" ]
 then
 	FPPPLATFORM="BeagleBone Black"

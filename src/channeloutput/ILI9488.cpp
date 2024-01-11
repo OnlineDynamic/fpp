@@ -218,9 +218,10 @@ void ILI9488Output::ILI9488_Init(void) {
     );
 
     close(mem_fd); //No need to keep mem_fd open after mmap
+		   
 
     if (m_gpio_map == MAP_FAILED) {
-        LogErr(VB_CHANNELOUT, "mmap error %d\n", (int)m_gpio_map); //errno also set!
+        LogErr(VB_CHANNELOUT, "mmap error %d\n", (intptr_t)m_gpio_map); //errno also set!
         exit(-1);
     }
 
