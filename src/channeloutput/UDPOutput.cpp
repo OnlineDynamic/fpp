@@ -61,6 +61,7 @@ static inline std::string createWarning(const std::string& host, const std::stri
 }
 
 static void DoPingThread(UDPOutput* output) {
+    SetThreadName("FPP-UDPPing");
     output->BackgroundThreadPing();
 }
 
@@ -84,6 +85,10 @@ public:
 UDPOutputMessages::UDPOutputMessages() {
 }
 UDPOutputMessages::~UDPOutputMessages() {
+    for (auto& si : sendSockets) {
+        delete si.second;
+    }
+    sendSockets.clear();
 }
 int UDPOutputMessages::GetSocket(unsigned int key) {
     SendSocketInfo* info = sendSockets[key];
@@ -221,7 +226,6 @@ bool UDPOutputData::NeedToOutputFrame(unsigned char* channelData, int startChann
         }
         return false;
     }
-    skippedFrames = 0;
     return true;
 }
 
@@ -393,6 +397,8 @@ int UDPOutput::Close() {
         pingThread = nullptr;
     }
     NetworkMonitor::INSTANCE.removeCallback(networkCallbackId);
+    messages.clearMessages();
+    messages.clearSockets();
     return ChannelOutput::Close();
 }
 void UDPOutput::PrepData(unsigned char* channelData) {
@@ -488,6 +494,7 @@ int UDPOutput::SendMessages(unsigned int socketKey, SendSocketInfo* socketInfo, 
 }
 
 static void DoWorkThread(UDPOutput* output) {
+    SetThreadName("FPP-UDPWork");
     output->BackgroundOutputWork();
 }
 

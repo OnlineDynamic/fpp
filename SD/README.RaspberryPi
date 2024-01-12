@@ -3,7 +3,7 @@ Instructions for creating a new FPP SD image package for the Raspberry Pi
 =============================================================================
 
 Install the latest Raspbian Bullseye Lite image to the SD card.  The last
-version tested 2023-05-03-raspios-bullseye-armhf-lite.img.xz
+version tested 2023-12-05-raspios-bullseye-armhf-lite.img
 
 Resize the root partition to 3.5GB using fdisk (substitute the proper device
 for your SD card).
@@ -16,10 +16,11 @@ for your SD card).
     n
     p
     2
-	(Replace 540672 with the original start block of partition 2 noted earlier)
-    540672
+	(Replace 1056768 with the original start block of partition 2 noted earlier)
+    1056768
 	(FIXME, downsize this value once install is tested)
-    +3500M
+    +6000M
+    N
     p
     w
 
@@ -63,6 +64,20 @@ Do a system upgrade to make sure everything is at the latest versions
     sudo apt-get clean
     sudo localectl set-locale LANG="en_US.UTF-8"
 
+
+
+# For debian 12, we'd like to move to kernel 6.6+ and drop compiled wifi drivers, this still
+# needs some work to figure out and LOTS more testing
+#apt edit-sources
+# Append the following line to the bottom of the file:
+#deb http://deb.debian.org/debian bookworm-backports main contrib non-free
+
+#apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 0E98404D386FA1D9
+#apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 6ED0E7B82643E131
+#apt-get install -t bookworm-backports --install-recommends raspberrypi-kernel raspberrypi-kernel-headers firmware-linux firmware-linux-nonfree
+#rpi-update rpi-6.6.y
+
+
 Reboot again to pick up the latest kernel that may have been installed with the dist-upgrade
 
 
@@ -102,8 +117,8 @@ the proper device name for your SD card in place of '/dev/sdg'):
        apt-get install zerofree squashfs-tools
 
     DEVICE=/dev/sdc
-    VERSION=7.0
-    OSVERSION=2023-07
+    VERSION=7.4
+    OSVERSION=2023-12
     BLOCKS=3800
     mount "${DEVICE}2" /mnt
     rm -rf /mnt/usr/src/linux-headers-*
@@ -118,7 +133,7 @@ the proper device name for your SD card in place of '/dev/sdg'):
     rm -f /mnt/root/.bash_history
     umount /mnt
     zerofree -v "${DEVICE}2"
-	sudo time dd if=${DEVICE} of=FPP-v${VERSION}-Pi.img bs=1M count=${BLOCKS}
+	time dd if=${DEVICE} of=FPP-v${VERSION}-Pi.img bs=1M count=${BLOCKS}
 	time zip -9 FPP-v$VERSION-Pi.img.zip FPP-v${VERSION}-Pi.img
 
 This will create a file called FPP-${VERSION}-Pi.img.zip that can be distributed

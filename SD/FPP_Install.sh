@@ -14,7 +14,7 @@
 # To use this script, download the latest copy from github and run it as
 # root on the system where you want to install FPP:
 #
-# wget -O ./FPP_Install.sh https://raw.githubusercontent.com/FalconChristmas/fpp/master/SD/FPP_Install.sh
+# curl -o ./FPP_Install.sh https://raw.githubusercontent.com/FalconChristmas/fpp/master/SD/FPP_Install.sh
 # chmod 700 ./FPP_Install.sh
 # su
 # ./FPP_Install.sh
@@ -48,8 +48,8 @@
 #
 #############################################################################
 FPPBRANCH=${FPPBRANCH:-"master"}
-FPPIMAGEVER="2023-11"
-FPPCFGVER="79"
+FPPIMAGEVER="2023-12"
+FPPCFGVER="80"
 FPPPLATFORM="UNKNOWN"
 FPPDIR=/opt/fpp
 FPPUSER=fpp
@@ -375,7 +375,7 @@ cd /opt 2> /dev/null || mkdir /opt
 export DEBIAN_FRONTEND=noninteractive
 
 case "${OSVER}" in
-	debian_11 | debian_10 | ubuntu_20.04 | ubuntu_22.04 | ubuntu_22.10 | linuxmint_21)
+	debian_11 | debian_12 | ubuntu_22.04 | ubuntu_22.10 | linuxmint_21)
 		case $FPPPLATFORM in
 			'BeagleBone Black')
 				echo "FPP - Skipping non-free for $FPPPLATFORM"
@@ -408,7 +408,7 @@ case "${OSVER}" in
         if [ "x${PACKAGE_REMOVE}" != "x" ]; then
             # Need to make sure there is configuration for eth0 or uninstalling dhcpclient will cause network to drop
             rm -f /etc/systemd/network/50-default.network
-            wget -O /etc/systemd/network/50-default.network https://raw.githubusercontent.com/FalconChristmas/fpp/master/etc/systemd/network/50-default.network
+            curl -o /etc/systemd/network/50-default.network https://raw.githubusercontent.com/FalconChristmas/fpp/master/etc/systemd/network/50-default.network
             if [ "$FPPPLATFORM" == "BeagleBone Black" ]; then
                 sed -i -e 's/LinkLocalAddressing=fallback/LinkLocalAddressing=yes/' /etc/systemd/network/50-default.network
             fi
@@ -462,7 +462,7 @@ case "${OSVER}" in
         ACTUAL_PHPVER="7.4"
         if [ "${OSVER}" == "ubuntu_22.04" -o "${OSVER}" == "linuxmint_21" ]; then
             PHPVER="7.4"
-            echo "FPP - Forceing PHP 7.4"
+            echo "FPP - Forcing PHP 7.4"
             apt install software-properties-common apt-transport-https -y
             add-apt-repository ppa:ondrej/php -y
             apt-get -y update
@@ -471,12 +471,16 @@ case "${OSVER}" in
         if [ "${OSVER}" == "ubuntu_22.10" ]; then
             ACTUAL_PHPVER="8.1"
         fi
+        if [ "${OSVER}" == "debian_12" ]; then
+            ACTUAL_PHPVER="8.2"
+            PHPVER="8.2"
+        fi
         PACKAGE_LIST="alsa-utils arping avahi-daemon avahi-utils locales nano net-tools \
                       apache2 apache2-bin apache2-data apache2-utils \
                       bc bash-completion btrfs-progs exfat-fuse lsof ethtool curl zip unzip bzip2 wireless-tools dos2unix \
                       fbi fbset file flite ca-certificates lshw gettext wget \
                       build-essential ffmpeg gcc g++ gdb vim vim-common bison flex device-tree-compiler dh-autoreconf \
-                      git git-core hdparm i2c-tools ifplugd less sysstat tcpdump time usbutils usb-modeswitch \
+                      git git-core hdparm i2c-tools ifplugd jq less sysstat tcpdump time usbutils usb-modeswitch \
                       samba rsync sudo shellinabox dnsmasq hostapd vsftpd ntp sqlite3 at haveged samba samba-common-bin \
                       mp3info exim4 mailutils dhcp-helper parprouted bridge-utils libiio-utils \
                       php${PHPVER} php${PHPVER}-cli php${PHPVER}-fpm php${PHPVER}-common php${PHPVER}-curl php-pear \
@@ -490,6 +494,9 @@ case "${OSVER}" in
 
         if [ "$FPPPLATFORM" == "Raspberry Pi" -o "$FPPPLATFORM" == "BeagleBone Black" ]; then
             PACKAGE_LIST="$PACKAGE_LIST firmware-realtek firmware-atheros firmware-ralink firmware-brcm80211 firmware-iwlwifi firmware-libertas firmware-zd1211 firmware-ti-connectivity zram-tools"
+            if [ "${OSVER}" == "debian_12" ]; then
+                PACKAGE_LIST="$PACKAGE_LIST ccache"
+            fi
         else
             PACKAGE_LIST="$PACKAGE_LIST ccache"
         fi
@@ -497,7 +504,7 @@ case "${OSVER}" in
             PACKAGE_LIST="$PACKAGE_LIST libva-dev"
         fi
         if $isimage; then
-            PACKAGE_LIST="$PACKAGE_LIST networkd-dispatcher"
+            PACKAGE_LIST="$PACKAGE_LIST networkd-dispatcher systemd-resolved"
         fi
 
         if $skip_apt_install; then
@@ -561,7 +568,7 @@ case "${OSVER}" in
             if [ ! -f /etc/systemd/network/50-default.network ]; then
                 # Need to make sure there is configuration for eth0 or no connection will be
                 # setup after a reboot
-                wget -O /etc/systemd/network/50-default.network https://raw.githubusercontent.com/FalconChristmas/fpp/master/etc/systemd/network/50-default.network
+                curl -o /etc/systemd/network/50-default.network https://raw.githubusercontent.com/FalconChristmas/fpp/master/etc/systemd/network/50-default.network
             fi
             # make sure we end up with eth0/wlan0 instead of enx#### wlx#### naming for now
             ln -s /dev/null /etc/systemd/network/99-default.link
@@ -576,10 +583,6 @@ case "${OSVER}" in
                 rm -f /etc/resolv.conf
                 ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
             fi
-
-            echo '#!/bin/sh' > /etc/networkd-dispatcher/routable.d/ntpd
-            echo "/usr/bin/systemctl restart ntp" >> /etc/networkd-dispatcher/routable.d/ntpd
-            chmod +x /etc/networkd-dispatcher/routable.d/ntpd
 
             #remove some things that were installed (not sure why)
             apt-get remove -y --purge --autoremove --allow-change-held-packages pocketsphinx-en-us
@@ -786,6 +789,8 @@ case "${FPPPLATFORM}" in
             echo "gpu_mem=128" >> /boot/config.txt
             echo "[pi0]" >> /boot/config.txt
             echo "gpu_mem=64" >> /boot/config.txt
+            echo "[pi02]" >> /boot/config.txt
+            echo "gpu_mem=128" >> /boot/config.txt
             echo "[pi1]" >> /boot/config.txt
             echo "gpu_mem=64" >> /boot/config.txt
             echo "[pi2]" >> /boot/config.txt
@@ -797,7 +802,7 @@ case "${FPPPLATFORM}" in
             echo "" >> /boot/config.txt
 
             echo "FPP - Freeing up more space by removing unnecessary packages"
-            apt-get -y purge wolfram-engine sonic-pi minecraft-pi
+            apt-get -y purge wolfram-engine sonic-pi minecraft-pi firmware-iwlwifi libglusterfs0 mesa-va-drivers mesa-vdpau-drivers mesa-vulkan-drivers mkvtoolnix ncurses-term poppler-data va-driver-all librados2 libcephfs2
             apt-get -y --purge autoremove
 
             echo "FPP - Make things cleaner by removing configuration from unnecessary packages"
@@ -855,7 +860,7 @@ EOF
         fi
         
 		echo "FPP - Disabling getty on onboard serial ttyAMA0"
-		if [ "x${OSVER}" == "xdebian_11" ] || [ "x${OSVER}" == "xdebian_10" ]; then
+		if [ "x${OSVER}" == "xdebian_11" ] || [ "x${OSVER}" == "xdebian_12" ]; then
 			systemctl disable serial-getty@ttyAMA0.service
 			sed -i -e "s/console=serial0,115200 //" /boot/cmdline.txt
 			sed -i -e "s/autologin pi/autologin ${FPPUSER}/" /etc/systemd/system/autologin@.service
@@ -961,6 +966,9 @@ PHPDIR="/etc/php/7.4"
 if [ "${OSVER}" == "ubuntu_22.10" ]; then
     PHPDIR="/etc/php/8.1"
 fi
+if [ "${OSVER}" == "debian_12" ]; then
+    PHPDIR="/etc/php/8.2"
+fi
 
 echo "FPP - Configuring PHP"
 FILES="cli/php.ini apache2/php.ini fpm/php.ini"
@@ -990,7 +998,7 @@ do
         sed -i -e "s/^pm.min_spare_servers.*/pm.min_spare_servers = 3/" ${PHPDIR}/${FILE}
         sed -i -e "s/^pm.max_spare_servers.*/pm.max_spare_servers = 6/" ${PHPDIR}/${FILE}
         sed -i -e "s/^pm.start_servers.*/pm.start_servers = 3/" ${PHPDIR}/${FILE}
-        sed -i -e "s/^;pm.max_requests.*/pm.max_requests = 500/" ${PHPDIR}/${FILE}
+        sed -i -e "s/^;pm.max_requests.*/pm.max_requests = 300/" ${PHPDIR}/${FILE}
         sed -i -e "s+^;clear_env.*+clear_env = no+g" ${PHPDIR}/${FILE}
     fi
 done
@@ -1061,6 +1069,7 @@ set expandtab
 set autoindent
 set ignorecase
 set mouse=r
+syntax on
 EOF
 
 chmod 644 ${FPPHOME}/.vimrc
@@ -1089,8 +1098,13 @@ echo "FPP - Configuring ccache"
 mkdir -p /root/.ccache
 if [ "$FPPPLATFORM" == "Raspberry Pi" -o "$FPPPLATFORM" == "BeagleBone Black" ]; then
     # On Beagle/Pi, we'll use a newer ccache to allow developer sharing of the cache
-    cd /opt/fpp/SD
-    ./buildCCACHE.sh
+    if [ "x${OSVER}" != "xdebian_12" ]; then
+        cd /opt/fpp/SD
+        ./buildCCACHE.sh
+        ccache -M 350M
+    else
+        ccache -M 500M
+    fi
 fi
 ccache -M 350M
 ccache --set-config=temporary_dir=/tmp
@@ -1105,6 +1119,9 @@ if $isimage; then
     sed -i -e "s/.*local_enable.*/local_enable=YES/" /etc/vsftpd.conf
     sed -i -e "s/.*write_enable.*/write_enable=YES/" /etc/vsftpd.conf
     systemctl disable vsftpd
+
+    #######################################
+    cp ${FPPHOME}/.vimrc /root/.vimrc
 
     #######################################
     echo "FPP - Configuring Samba"
@@ -1262,10 +1279,19 @@ sed -i -e "s/error\.log/apache2-base-error.log/" /etc/apache2/apache2.conf
 rm /etc/apache2/conf-enabled/other-vhosts-access-log.conf
 
 case "${OSVER}" in
-	debian_11 |  debian_10 | ununtu_20.04 | ubuntu_22.04 | ubuntu_22.10 | linuxmint_21)
+	debian_11 |  debian_12 | ubuntu_22.04 | ubuntu_22.10 | linuxmint_21)
 		systemctl enable apache2.service
 		;;
 esac
+
+
+#######################################
+echo "FPP - Configuring NTP Daemon"
+
+# Clear all existing servers and pools and set default pool to be falconplayer NTP Pool
+sed -i '/^server.*/d' /etc/ntp.conf 
+sed -i '/^pool.*/d' /etc/ntp.conf 
+sed -i '$s/$/\npool falconplayer.pool.ntp.org iburst minpoll 8 maxpoll 12 prefer/' /etc/ntp.conf
 
 
 if [ "x${FPPPLATFORM}" = "xBeagleBone Black" ]; then
@@ -1361,7 +1387,9 @@ if [ "$FPPPLATFORM" == "BeagleBone Black" ]; then
     sed -i -e "s/getty.target//g" /lib/systemd/system/fppd.service
 fi
 cp /opt/fpp/etc/avahi/* /etc/avahi/services
-cp /opt/fpp/etc/networkd-dispatcher/routable.d/* /etc/networkd-dispatcher/routable.d
+if $isimage; then
+    cp /opt/fpp/etc/networkd-dispatcher/routable.d/* /etc/networkd-dispatcher/routable.d
+fi
 
 systemctl disable mosquitto
 systemctl daemon-reload

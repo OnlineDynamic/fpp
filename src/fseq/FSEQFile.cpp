@@ -55,6 +55,14 @@ int gettimeofday(struct timeval* tp, struct timezone* tzp) {
 
 #include "FSEQFile.h"
 
+static void SetThreadName(const std::string& name) {
+#ifdef PLATFORM_OSX
+    pthread_setname_np(name.c_str());
+#else
+    pthread_setname_np(pthread_self(), name.c_str());
+#endif
+}
+
 #if defined(PLATFORM_OSX)
 #define PLATFORM_UNKNOWN
 #endif
@@ -361,9 +369,9 @@ void FSEQFile::initializeFromFSEQ(const FSEQFile& fseq) {
     m_uniqueId = fseq.m_uniqueId;
 
     if (fseq.getVersionMajor() >= 2) {
-        const V2FSEQFile *v2 = dynamic_cast<const V2FSEQFile*>(&fseq);
+        const V2FSEQFile* v2 = dynamic_cast<const V2FSEQFile*>(&fseq);
         if (!v2->m_sparseRanges.empty()) {
-            for (auto &a : v2->m_sparseRanges) {
+            for (auto& a : v2->m_sparseRanges) {
                 m_seqChannelCount = std::max(m_seqChannelCount, (a.first + a.second));
             }
         }
@@ -529,7 +537,6 @@ void FSEQFile::parseVariableHeaders(const std::vector<uint8_t>& header, int read
 
             vheader.data.resize(dataLength);
             memcpy(&vheader.data[0], &header[readIndex], dataLength);
-
 
             LogDebug(VB_SEQUENCE, "Read VariableHeader: %c%c, length: %d bytes\n", vheader.code[0], vheader.code[1], dataLength);
 
@@ -801,7 +808,7 @@ public:
             for (int x = 0; x < m_variableHeaderOffsets.size(); x++) {
                 if (m_variableHeaderOffsets[x] != 0) {
                     uint64_t curEnd = tell();
-                    auto &h = m_file->getVariableHeaders()[x];
+                    auto& h = m_file->getVariableHeaders()[x];
                     write(&h.data[0], h.data.size());
                     size_t cur = tell();
                     uint64_t off = m_variableHeaderOffsets[x];
@@ -815,7 +822,7 @@ public:
 
     V2FSEQFile* m_file = nullptr;
     uint64_t m_seqChanDataOffset = 0;
-    
+
     std::vector<uint64_t> m_variableHeaderOffsets;
 };
 
@@ -894,6 +901,7 @@ public:
             m_readThreadRunning = false;
             m_readSignal.notify_all();
             m_readThread->join();
+            delete m_readThread;
         }
         for (auto& a : m_blockMap) {
             if (a.second) {
@@ -908,7 +916,9 @@ public:
             return m_maxBlocks;
         }
         //determine a good number of compression blocks
-        uint64_t datasize = m_file->getChannelCount() * m_file->getNumFrames();
+        uint64_t datasize = m_file->getChannelCount();
+        uint64_t numFrames = m_file->getNumFrames();
+        datasize *= numFrames;
         uint64_t numBlocks = datasize / V2FSEQ_OUT_COMPRESSION_BLOCK_SIZE;
         if (numBlocks > maxNumBlocks) {
             //need a lot of blocks, use as many as we can
@@ -916,7 +926,7 @@ public:
         } else if (numBlocks < 1) {
             numBlocks = 1;
         }
-        m_framesPerBlock = m_file->getNumFrames() / numBlocks;
+        m_framesPerBlock = numFrames / numBlocks;
         if (m_framesPerBlock < 10)
             m_framesPerBlock = 10;
         m_curFrameInBlock = 0;
@@ -993,6 +1003,7 @@ public:
         m_firstBlock = block;
         m_readThreadRunning = true;
         m_readThread = new std::thread([this]() {
+            SetThreadName("FSEQReadThread");
             while (m_readThreadRunning) {
                 std::unique_lock<std::mutex> readerlock(m_readMutex);
                 if (!m_blocksToRead.empty()) {

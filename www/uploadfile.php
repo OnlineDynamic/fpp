@@ -40,6 +40,24 @@ unset($output);
 </style>
 
 <script>
+function GetSequenceInfo(file) {
+    $('#fileText').html("Getting Sequence Info.");
+
+    $.get("api/sequence/" + file + "/meta", function (data) {
+        DoModalDialog({
+            id: "SequenceViewer",
+            title: "Sequence Info",
+            class: "modal-lg modal-dialog-scrollable",
+            body: '<pre>' + syntaxHighlight(JSON.stringify(data, null, 2)) + '</pre>',
+            keyboard: true,
+            backdrop: true,
+            buttons: {
+                "Close": function() {CloseModalDialog("SequenceViewer");}
+            }
+        });
+    });
+}
+
 function GetVideoInfo(file) {
     $('#fileText').html("Getting Video Info.");
 
@@ -147,6 +165,12 @@ function ButtonHandler(table, button) {
         var postData = JSON.stringify(files);
         DisplayProgressDialog("mp3GainProgress", "MP3Gain");
         StreamURL("run_mp3gain.php", 'mp3GainProgressText', 'mp3GainProgressDialogDone', 'mp3GainProgressDialogDone', 'POST', postData, 'application/json');
+    } else if (button == 'sequenceInfo') {
+        if (selectedCount == 1) {
+            GetSequenceInfo(filename);
+        } else {
+            DialogError('Error', 'Error, unable to get info for multiple files at the same time.');
+        }
     }
 }
 
@@ -224,10 +248,36 @@ $(function() {
 	GetFiles('Crashes');
   }
 
-	function RunScript(scriptName)
-	{
-		window.open("runEventScript.php?scriptName=" + scriptName);
-	}
+function RunScriptDone() {
+    $('#runScriptCloseButton').prop('disabled', false);
+    EnableModalDialogCloseButton('runScriptDialog');
+}
+
+function RunScript(scriptName)
+{
+    var options = {
+        id: 'runScriptDialog',
+        title: 'Run Script',
+        body: "<textarea style='width: 99%; height: 500px;' disabled id='runScriptText'></textarea>",
+        noClose: true,
+        keyboard: false,
+        backdrop: 'static',
+        footer: '',
+        buttons: {
+            'Close': {
+                id: 'runScriptCloseButton',
+                click: function() { CloseModalDialog('runScriptDialog'); },
+                disabled: true,
+                class: 'btn-success'
+            }
+        }
+    };
+
+    $('#runScriptCloseButton').prop('disabled', true);
+    DoModalDialog(options);
+
+    StreamURL('runEventScript.php?scriptName=' + scriptName + '&nohtml=1', 'runScriptText', 'RunScriptDone');
+}
 
 	function EditScript(scriptName)
 	{
@@ -380,8 +430,9 @@ include 'menu.inc';?>
                   <input onclick="ButtonHandler('Sequences', 'download');" class="disableButtons singleSequencesButton multiSequencesButton" type="button"  value="Download" />
                   <input onclick="ButtonHandler('Sequences', 'rename');" class="disableButtons singleSequencesButton" type="button"  value="Rename" />
                   <input onclick="ButtonHandler('Sequences', 'delete');" class="disableButtons singleSequencesButton multiSequencesButton" type="button"  value="Delete" />
+                  <input onclick="ButtonHandler('Sequences', 'sequenceInfo');" class="disableButtons singleSequencesButton" type="button"  value="Sequence Info" />
                 </div>
-                <div class="note"><strong>CTRL+Click to select multiple items</strong></div>
+                <div class="note"><strong>CTRL+Click to select multiple items.  SHIFT+Click can be used to select a range of items.</strong></div>
             </div>
           </div>
         </div>
@@ -475,6 +526,7 @@ include 'menu.inc';?>
                   <input onclick="ButtonHandler('Effects', 'download');" class="disableButtons singleEffectsButton multiEffectsButton" type="button"  value="Download" />
                   <input onclick="ButtonHandler('Effects', 'rename');" class="disableButtons singleEffectsButton" type="button"  value="Rename" />
                   <input onclick="ButtonHandler('Effects', 'delete');" class="disableButtons singleEffectsButton multiEffectsButton" type="button"  value="Delete" />
+                  <input onclick="ButtonHandler('Effects', 'sequenceInfo');" class="disableButtons singleEffectsButton" type="button"  value="Sequence Info" />
                 </div>
                 <div class="note"><strong>CTRL+Click to select multiple items</strong></div>
               </div>

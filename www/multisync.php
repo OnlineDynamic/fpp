@@ -5,13 +5,6 @@
 require_once "config.php";
 require_once "common.php";
 include 'common/menuHead.inc';
-
-$advancedView = true;
-if ((isset($settings['MultiSyncAdvancedView'])) &&
-    ($settings['MultiSyncAdvancedView'] == 1)) {
-    $advancedView = true;
-}
-
 ?>
 <script type="text/javascript" src="jquery/jquery.tablesorter/jquery.tablesorter.js"></script>
 <script type="text/javascript" src="jquery/jquery.tablesorter/jquery.tablesorter.widgets.js"></script>
@@ -31,7 +24,6 @@ if ((isset($settings['MultiSyncAdvancedView'])) &&
 <script>
     var hostRows = new Object();
     var rowSpans = new Object();
-    var advancedView = true;
     var systemStatusCache = {}; // Cache of api/system/status?ip[]=
     var localFpposFiles = [];
     var proxies = [];
@@ -340,7 +332,7 @@ if ((isset($settings['MultiSyncAdvancedView'])) &&
     function isFalconV4(typeId) {
         typeId = parseInt(typeId);
 
-        if ((typeId >= 0x88) && (typeId <= 0x89))
+        if ((typeId >= 0x88) && (typeId <= 0x90))
             return true;
 
         return false;
@@ -383,6 +375,17 @@ if ((isset($settings['MultiSyncAdvancedView'])) &&
         return false;
     }
 
+    function proxyURLsInString(str, ip) {
+        if (!isProxied(ip))
+            return str;
+
+        var re = /(href=['"])([^:]*)\//;
+        if (re.test(str))
+            str = str.replace(re,"$1proxy/" + ip + "/$2/");
+
+        return str;
+    }
+
     function isProxied(ip) {
         return proxies.includes(ip);
     }
@@ -396,8 +399,12 @@ if ((isset($settings['MultiSyncAdvancedView'])) &&
             (data.advancedView.RemoteGitVersion !== data.advancedView.LocalGitVersion)) {
             updatesAvailable = 1;
         }
-
-        var localVer = "<a target='host_" + ip + "' href='" + wrapUrlWithProxy(ip, '/about.php') + "' target='_blank' ip='" + ip + "'><b><font color='";
+        <? if (!$settings['hideExternalURLs']) { ?>
+            var localVer = "<a target='host_" + ip + "' href='" + wrapUrlWithProxy(ip, '/about.php') + "' target='_blank' ip='" + ip + "'>";
+        <? } else { ?>
+            var localVer = "";
+        <? } ?>
+        localVer += "<b><font color='";
         if (updatesAvailable) {
             localVer += 'red';
         } else if ((typeof (data.advancedView.RemoteGitVersion) !== 'undefined') &&
@@ -407,7 +414,10 @@ if ((isset($settings['MultiSyncAdvancedView'])) &&
             // Unknown or can't tell if up to date or not for some reason
             localVer += 'blue';
         }
-        localVer += "'>" + data.advancedView.LocalGitVersion + "</font></b></a>";
+        localVer += "'>" + data.advancedView.LocalGitVersion + "</font></b>";
+        <? if (!$settings['hideExternalURLs']) { ?>
+        localVer += "</a>";
+        <? } ?>
 
         return localVer;
     }
@@ -580,6 +590,9 @@ if ((isset($settings['MultiSyncAdvancedView'])) &&
 
                var wHTML = "";
                for(var i = 0; i < data.warnings.length; i++) {
+                   if (isProxied(ip))
+                       data.warnings[i] = proxyURLsInString(data.warnings[i], ip);
+
                 wHTML += "<span class='warning-text'>" + data.warnings[i] + "</span><br>";
                }
                $('#' + rowID + '_warningCell').html(wHTML);
@@ -725,7 +738,11 @@ if ((isset($settings['MultiSyncAdvancedView'])) &&
 	} // end of "api/system/status?ip=" + ips
 
     function ipLink(ip) {
+        <?if ($settings['hideExternalURLs']) {?>
+        return ip;
+        <? } else { ?>
         return "<a target='host_" + ip + "' href='" + wrapUrlWithProxy(ip, "/") + "' ip='" + ip + "'>" + ip + "</a>";
+        <? } ?>
     }
 
     function parseFPPSystems(data) {
@@ -798,6 +815,9 @@ if ((isset($settings['MultiSyncAdvancedView'])) &&
             var hostname = data[i].hostname;
             if (hostname == "") {
                 hostname = ip;
+            } else {
+                var cleanHost = hostname.replace(/[^a-zA-Z0-9]/, '_');
+                rowID = rowID + '_' + cleanHost;
             }
             var hostKey = hostname + '_' + data[i].version + '_' + data[i].fppModeString + '_' + data[i].channelRanges;
             hostKey = hostKey.replace(/[^a-zA-Z0-9]/, '_');
@@ -812,7 +832,7 @@ if ((isset($settings['MultiSyncAdvancedView'])) &&
                     (settings['fppMode'] == 'player') &&
                         (data[i].fppModeString == "remote"))
                 {
-                    star = "<input type='checkbox' class='syncCheckbox' name='" + data[i].address + "'";
+                    star = " <input type='checkbox' class='syncCheckbox' name='" + data[i].address + "'";
                     if (typeof remotes[data[i].address] !== 'undefined') {
                         star += " checked";
                         delete remotes[data[i].address];
@@ -856,10 +876,20 @@ if ((isset($settings['MultiSyncAdvancedView'])) &&
 		        var ipTxt = data[i].local ? data[i].address : ipLink(data[i].address);
 
                 if ((data[i].fppModeString == 'remote') && (star != ""))
-                    ipTxt = "<small class='hostDescriptionSM'>Select IPs for Unicast Sync</small><br>" + ipTxt + star;
+                    ipTxt = "<small>Select IPs for Unicast Sync</small><br>" + ipTxt + star;
+
+                <? if ($settings['hideExternalURLs']) { ?>
+                var hostTxt = hostname;
+                <? } else { ?>
+                var hostTxt = data[i].local ? hostname : "<a target='host_" + data[i].address + "' href='http://" + data[i].address + "'>" + hostname + "</a>";
+                if(data[i].address == hostname){
+                    hostTxt = hostname;
+                }
+                <? } ?>
+
 
                 var newRow = "<tr id='" + rowID + "' ip='" + data[i].address + "' ipList='" + data[i].address + "' class='systemRow'>" +
-                    "<td class='hostnameColumn'><span id='fpp_" + ip.replace(/\./g,'_') + "_hostname'" +  hnSpanStyle +">" + hostname + "</span><br><small class='hostDescriptionSM' id='fpp_" + ip.replace(/\./g,'_') + "_desc'>"+ hostDescription +"</small></td>" +
+                    "<td class='hostnameColumn'><span id='fpp_" + ip.replace(/\./g,'_') + "_hostname'" +  hnSpanStyle +">" + hostTxt + "</span><br><small class='hostDescriptionSM' id='fpp_" + ip.replace(/\./g,'_') + "_desc'>"+ hostDescription +"</small></td>" +
                     "<td id='" + rowID + "_ip' ip='" + data[i].address + "'>" + ipTxt + "</td>" +
                     "<td><span id='" + rowID + "_platform'>" + data[i].type + "</span><br><small id='" + rowID + "_variant'>" + data[i].model + "</small><span class='hidden typeId'>" + data[i].typeId + "</span>"
                         + "<span class='hidden version'>" + data[i].version + "</span></td>" +
@@ -894,7 +924,7 @@ if ((isset($settings['MultiSyncAdvancedView'])) &&
                 newRow = newRow + "</tr>";
                 $('#fppSystems').append(newRow);
 
-                var colspan = (advancedView === true) ? 9 : 7;
+                var colspan = 9;
 
                 newRow = "<tr id='" + rowID + "_warnings' class='tablesorter-childRow warning-row'><td colspan='" + colspan + "' id='" + rowID + "_warningCell'></td></tr>";
                 $('#fppSystems').append(newRow);
@@ -1016,7 +1046,9 @@ function parseESPixelStickStatus(ip, data) {
     u += "<tr><td>Uptime:</td><td>" + uptime + "</td></tr>";
     u += "</table>";
 
-    $('#advancedViewUtilization_fpp_' + ips).html(u);
+    var hostRowKey = ip.replace(/\./g, '_');
+    var rowId = hostRows[hostRowKey];
+    $('#advancedViewUtilization_' + rowId).html(u);
 
     var mode = $('#fpp_' + ips + '_mode').html();
 
@@ -1039,7 +1071,7 @@ function parseESPixelStickStatus(ip, data) {
             }
         }
 
-        $('#fpp_' + ips + '_status').html(st);
+        $('#' + rowId + '_status').html(st);
     }
 
     if ($('#MultiSyncRefreshStatus').is(":checked")) {
@@ -1216,20 +1248,23 @@ function getFalconControllerStatus(fv3ips, fv4ips, refreshing = false) {
                 u += "<tr><td>Temp:</td><td> " + t1temp + "C</td></tr>";
                 u += "</table>";
 
-                $('#advancedViewUtilization_fpp_' + ips).html(u);
-                $('#fpp_' + ips + '_status').html(s.status_name);
+                var hostRowKey = ip.replace(/\./g, '_');
+                var rowId = hostRows[hostRowKey];
+
+                $('#advancedViewUtilization_' + rowId).html(u);
+                $('#' + rowId + '_status').html(s.status_name);
 
                 if (testmode == true || overtemp == true) {
-                    $('#fpp_' + ips + '_warnings').removeAttr('style'); // Remove 'display: none' style
+                    $('#' + rowId + '_warnings').removeAttr('style'); // Remove 'display: none' style
                     // Handle tablesorter bug not assigning same color to child rows
-                    if ($('#fpp_' + ips).hasClass('odd'))
-                        $('#fpp_' + ips + '_warnings').addClass('odd');
+                    if ($('#' + rowId).hasClass('odd'))
+                        $('#' + rowId + '_warnings').addClass('odd');
 
                         var wHTML = "";
                         if (testmode == true) wHTML += "<span class='warning-text'>Controller Test mode is active</span><br>";
                         if (overtemp == true) wHTML += "<span class='warning-text'>Pixel brightness reduced due to high temperatures</span><br>";
 
-                       $('#fpp_' + ips + '_warningCell').html(wHTML);
+                       $('#' + rowId + '_warningCell').html(wHTML);
                 }
             });
             if ($('#MultiSyncRefreshStatus').is(":checked")) {
@@ -1282,8 +1317,11 @@ function getWLEDControllerStatus(ipAddresses, refreshing = false) {
             u += "<tr><td>Uptime:</td><td>" + uptime + "</td></tr>";
             u += "</table>";
 
-            $('#advancedViewUtilization_fpp_' + ips).html(u);
-            $('#fpp_' + ips + '_status').html(data.status_name);
+            var hostRowKey = ip.replace(/\./g, '_');
+            var rowId = hostRows[hostRowKey];
+
+            $('#advancedViewUtilization_' + rowId).html(u);
+            $('#' + rowId + '_status').html(data.status_name);
         });
 
         if (Array.isArray(ipAddresses) && $('#MultiSyncRefreshStatus').is(":checked")) {
@@ -1330,13 +1368,16 @@ function getGeniusControllerStatus(ipAddresses, refreshing = false) {
            //u += "<tr><td>RSSI:</td><td>" + rssi + "dBm / " + quality + "%</td></tr>";
             u += "<tr><td>Uptime:</td><td>" + uptime + "</td></tr>";
             u += "</table>";
-            $('#advancedViewUtilization_fpp_' + ips).html(u);
 
-            var origDesc = $('#fpp_' + ips + '_desc').html();
+            var hostRowKey = ip.replace(/\./g, '_');
+            var rowId = hostRows[hostRowKey];
+            $('#advancedViewUtilization_' + rowId).html(u);
+
+            var origDesc = $('#' + rowId + '_desc').html();
             if (origDesc == '') {
-                $('#fpp_' + ips + '_desc').html(data.system.friendly_name);
+                $('#' + rowId + '_desc').html(data.system.friendly_name);
             }
-            $('#fpp_' + ips + '_status').html(data.status_name);
+            $('#' + rowId + '_status').html(data.status_name);
         });
 
         if (Array.isArray(ipAddresses) && $('#MultiSyncRefreshStatus').is(":checked")) {
@@ -1764,6 +1805,31 @@ function shutdownSelectedSystems() {
     });
 }
 
+function changeBranch(rowID) {
+    streamCount++;
+    EnableDisableStreamButtons();
+
+    showLogsRow(rowID);
+    addLogsDivider(rowID);
+
+    var ip = ipFromRowID(rowID);
+    var branch = $("#branchSelect").val();
+    StreamURL('changeRemoteBranch.php?branch=' + branch + '&ip=' + ip, rowID + '_logText', 'actionDone', 'actionFailed');
+}
+function changeBranchSelectedSystems() {
+	$('input.remoteCheckbox').each(function() {
+		if ($(this).is(":checked")) {
+            var rowID = $(this).closest('tr').attr('id');
+            if ($('#' + rowID).hasClass('filtered')) {
+                return true;
+            }
+
+            $(this).prop('checked', false);
+            changeBranch(rowID);
+        }
+    });
+}
+
 function copyFilesToSystem(rowID) {
     streamCount++;
     EnableDisableStreamButtons();
@@ -1971,6 +2037,7 @@ function performMultiAction() {
         case 'remoteMode':     setSelectedSystemsMode('remote');     break;
         case 'playerMode':     setSelectedSystemsMode('player');     break;
         case 'addProxy':       proxySelectedIPs();                    break;
+        case 'changeBranch':   changeBranchSelectedSystems();   break;
         default:               alert('You must select an action first.'); break;
     }
 
@@ -1984,7 +2051,8 @@ function multiActionChanged() {
 
     switch (action) {
         case 'copyFiles':      $('#copyOptions').show();      break;
-        case 'copyOSFiles' :   $('#copyOSOptions').show();      break;
+        case 'copyOSFiles' :   $('#copyOSOptions').show();    break;
+        case 'changeBranch' :   $('#changeBranchOptions').show();    break;
     }
 }
 
@@ -2052,6 +2120,9 @@ include 'menu.inc';?>
                         <option value='playerMode'>Set to Player</option>
                         <option value='remoteMode'>Set to Remote</option>
                         <option value='addProxy'>Add as Proxy</option>
+                        <?if ($uiLevel > 0) {?>
+                        <option value='changeBranch'>Change Branch</option>
+                        <?}?>
                     </select>
                     <button id='performActionButton' type='button' class='buttons btn-success' value='Run' onClick='performMultiAction();'><i class="fas fa-chevron-right"></i> Run</button>
                     <input type='button' class='buttons' value='Clear List' onClick='clearSelected();'>
@@ -2067,6 +2138,12 @@ include 'menu.inc';?>
                     <span class="warning-text">No .fppos files found on this system.</span>
                 </div>
                 <b>The rsync daemon must be enabled on the remote system(s) to use this functionality.  rsync can be enabled by going to the System tab on the Settings page of the remote system.</b>
+            </div>
+            <div id = 'changeBranchOptions' class='actionOptions'>
+                <h2>Change to branch:
+                <select id="branchSelect">
+                </select>
+                </h2>
             </div>
             <span class='actionOptions' id='copyOptions'>
                 <br>
@@ -2135,7 +2212,15 @@ $(document).ready(function() {
         getFPPSystems();
         getLocalFpposFiles();
     });
+    $.get("api/git/branches", function(data) {
 
+        $.each(data, function (i, item) {
+            $('#branchSelect').append($('<option>', {
+                value: item,
+                text : item
+            }));
+        });
+    });
 
     var $table = $('#fppSystemsTable');
 
@@ -2224,7 +2309,7 @@ $(document).ready(function() {
                 3: {
                     "Master": function(e,n,f,i,$r,c,data) { return e === "Master"; }, // Can this be removed now?
                     "Player": function(e,n,f,i,$r,c,data) { return e === "Player"; },
-		    "Multisync": function(e,n,f,i,$r,c,data) { return e === "Player w/ Multisync"; },
+                    "Multisync": function(e,n,f,i,$r,c,data) { return e === "Player w/ Multisync"; },
                     "Bridge": function(e,n,f,i,$r,c,data) { return e === "Bridge"; },
                     "Remote": function(e,n,f,i,$r,c,data) { return e === "Remote"; }
                 }

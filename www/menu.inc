@@ -83,11 +83,7 @@ function list_plugin_entries($menu) {
     <div class="headerCenter">
       <div class="headerCenterRow headerHost">
 <?
-    if ((!$settings["IsDesktop"]) || ($settings['uiLevel'] > 2) ) {
-        echo("<span class=\"headerHostName headerBox\" id=\"header_host\"><span title=\"Host: ".$settings["HostName"]."\"><a href='networkconfig.php#tab-host-dns' class='nonULLink'>".$settings['HostName']."</a></span></span>");
-    } else {
-        echo("<span class=\"headerHostName headerBox\" id=\"header_host\"><span title=\"Host: ".$settings["HostName"]."\">".$settings["HostName"]."</span></span>");
-    }
+    echo("<span class=\"headerHostName headerBox\" id=\"header_host\"><a href='index.php' class='nonULLink'>".$settings['HostName']."</a></span>");
 
     $currentHeaderSensor = "1";
     if (isset($settings['currentHeaderSensor'])) {
@@ -292,7 +288,11 @@ if ((!$settings["IsDesktop"]) || ($settings['uiLevel'] > 2) ) {
         <div class="dropdown-menu dropdown-with-icons" aria-labelledby="navbarDropdownMenuLink">
         <a class="dropdown-item" href="uploadfile.php"><i class="fas fa-upload"></i> File Manager</a>
           <a class="dropdown-item" href="playlists.php"><i class="fas fa-list-ol"></i> Playlists</a>
+
+<? if ($settings['fppMode'] == 'player') { ?>
           <a class="dropdown-item" href="scheduler.php"><i class="fas fa-clock"></i> Scheduler</a>
+<? } ?>
+
           <a class="dropdown-item" href="scriptbrowser.php"><i class="fas fa-scroll"></i> Script Repository Browser</a>
           <a class="dropdown-item" href="plugins.php"><i class="fas fa-puzzle-piece"></i> Plugin Manager</a>
           <?php list_plugin_entries("content"); ?>

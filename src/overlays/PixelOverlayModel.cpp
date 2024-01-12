@@ -73,6 +73,10 @@ static uint8_t* createChannelDataMemory(const std::string& dataName, uint32_t si
             ftruncate(f, size);
         }
     }
+    if (size < 8) {
+        // cannot mmap 0 size which some models happen to have
+        size = 8;
+    }
     uint8_t* channelData = (uint8_t*)mmap(0, size, PROT_READ | PROT_WRITE, flags, f, 0);
     if (channelData == MAP_FAILED) {
         //mmap is failing, but we need channelData so just do malloc
@@ -846,7 +850,7 @@ void PixelOverlayModel::toJson(Json::Value& result) {
 }
 
 int32_t PixelOverlayModel::updateRunningEffects() {
-    std::unique_lock<std::mutex> l(effectLock);
+    std::unique_lock<std::recursive_mutex> l(effectLock);
     if (runningEffect) {
         int32_t v = runningEffect->update();
         if (v == 0) {
@@ -859,7 +863,7 @@ int32_t PixelOverlayModel::updateRunningEffects() {
 }
 
 void PixelOverlayModel::setRunningEffect(RunningEffect* ef, int32_t firstUpdateMS) {
-    std::unique_lock<std::mutex> l(effectLock);
+    std::unique_lock<std::recursive_mutex> l(effectLock);
     if (runningEffect) {
         if (runningEffect != ef) {
             delete runningEffect;

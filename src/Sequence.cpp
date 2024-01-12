@@ -81,9 +81,13 @@ Sequence::Sequence() :
 
     m_blankBetweenSequences = getSettingInt("blankBetweenSequences");
     m_prioritize_sequence_over_bridge = false;
-    std::string bridgeDataPriority = getSetting("bridgeDataPriority", "Prioritize Bridge");
+    m_warn_if_bridging = false;
+    std::string bridgeDataPriority = getSetting("bridgeDataPriority", "Warn If Sequence Running");
     if (bridgeDataPriority == "Prioritize Sequence") {
         m_prioritize_sequence_over_bridge = true;
+    } else if (bridgeDataPriority == "Warn If Sequence Running") {
+        m_prioritize_sequence_over_bridge = true;
+        m_warn_if_bridging = true;
     }
 }
 
@@ -149,6 +153,7 @@ void ReadSequenceDataThread(Sequence* sequence) {
     sequence->ReadFramesLoop();
 }
 void Sequence::ReadFramesLoop() {
+    SetThreadName("FPP-ReadFrames");
     std::unique_lock<std::mutex> lock(frameCacheLock);
     while (true) {
         if (m_shuttingDown) {
@@ -699,25 +704,31 @@ void Sequence::ProcessSequenceData(int ms) {
 
 void Sequence::SendSequenceData() {
     if (m_lastFrameData) {
-        std::map<std::string, std::string> keywords;
-        keywords["SEQUENCE_NAME"] = m_seqFilename;
         uint32_t frame = m_lastFrameData->frame;
-        const auto& p = commandPresets.find(frame);
-        if (p != commandPresets.end()) {
-            for (auto& cmd : p->second) {
-                CommandManager::INSTANCE.TriggerPreset(cmd, keywords);
+        if (!commandPresets.empty()) {
+            std::map<std::string, std::string> keywords;
+            keywords["SEQUENCE_NAME"] = m_seqFilename;
+            const auto& p = commandPresets.find(frame);
+            if (p != commandPresets.end()) {
+                for (auto& cmd : p->second) {
+                    CommandManager::INSTANCE.TriggerPreset(cmd, keywords);
+                }
             }
         }
-        const auto& eop = effectsOn.find(frame);
-        if (p != effectsOn.end()) {
-            for (auto& eff : eop->second) {
-                StartEffect(eff, 0, 1);
+        if (!effectsOn.empty()) {
+            const auto& eop = effectsOn.find(frame);
+            if (eop != effectsOn.end()) {
+                for (auto& eff : eop->second) {
+                    StartEffect(eff, 0, 1);
+                }
             }
         }
-        const auto& efp = effectsOff.find(frame);
-        if (efp != effectsOff.end()) {
-            for (auto& eff : efp->second) {
-                StopEffect(eff);
+        if (!effectsOff.empty()) {
+            const auto& efp = effectsOff.find(frame);
+            if (efp != effectsOff.end()) {
+                for (auto& eff : efp->second) {
+                    StopEffect(eff);
+                }
             }
         }
     }
@@ -788,8 +799,13 @@ void Sequence::CloseSequenceFile(void) {
 }
 
 void Sequence::SetBridgeData(uint8_t* data, int startChannel, int len, uint64_t expireMS) {
-    if (m_prioritize_sequence_over_bridge && this->IsSequenceRunning()) {
-        return;
+    if (this->IsSequenceRunning()) {
+        if (m_warn_if_bridging) {
+            WarningHolder::AddWarningTimeout("Received bridging data while sequence is running.", 60);
+        }
+        if (m_prioritize_sequence_over_bridge) {
+            return;
+        }
     }
 
     if (!m_bridgeData) {

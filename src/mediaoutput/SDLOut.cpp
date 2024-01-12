@@ -27,9 +27,9 @@ extern "C" {
 #include <SDL2/SDL.h>
 }
 
+#include "../common.h"
 #include "../log.h"
 #include "../settings.h"
-#include "../common.h"
 
 #include "../MultiSync.h"
 #include "../Warnings.h"
@@ -143,6 +143,7 @@ public:
             swr_free(&au_convert_ctx);
         }
 
+        delete[] sampleBuffer;
         delete[] outBuffer;
     }
 
@@ -438,6 +439,7 @@ public:
     int numChannels() { return _channels; }
 
     static void decodeThreadEntry(SDL* sdl) {
+        SetThreadName("FPP-SDLDecode");
         sdl->runDecode();
     }
     bool Start(SDLInternalData* d, int msTime) {

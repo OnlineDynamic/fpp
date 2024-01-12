@@ -13,6 +13,7 @@
 
 #include <string>
 #include <vector>
+#include <cstdint>
 
 class CapeInfo;
 namespace Json
@@ -26,6 +27,7 @@ public:
 
     enum class CapeStatus {
         NOT_PRESENT,
+        CORRUPT,
         UNSIGNED,
         SIGNED_GENERIC,
         SIGNED

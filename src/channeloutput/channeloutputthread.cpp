@@ -109,6 +109,8 @@ static inline bool forceOutput() {
  * Main loop in channel output thread
  */
 void* RunChannelOutputThread(void* data) {
+    SetThreadName("FPP-ChannelOut");
+
     static long long lastStatTime = 0;
     long long startTime;
     long long sendTime;
@@ -148,10 +150,7 @@ void* RunChannelOutputThread(void* data) {
     while (RunThread) {
         startTime = GetTime();
         if (multiSync->isMultiSyncEnabled() && sequence->IsSequenceRunning()) {
-            multiSync->SendSeqSyncPacket(
-                sequence->m_seqFilename, channelOutputFrame,
-                (mediaElapsedSeconds > 0) ? mediaElapsedSeconds
-                                          : 1.0 * channelOutputFrame / RefreshRate);
+            multiSync->SendSeqSyncPacket(sequence->m_seqFilename, channelOutputFrame, 1.0 * ((float)channelOutputFrame) / RefreshRate);
         }
 
         doForceOutput |= forceOutput();
@@ -413,7 +412,8 @@ void UpdateMasterPosition(int frameNumber) {
 void CalculateNewChannelOutputDelay(float mediaPosition) {
     static float nextSyncCheck = 0.5;
 
-    mediaElapsedSeconds = mediaPosition;
+    float offsetMediaPosition = mediaPosition - mediaOffset;
+    mediaElapsedSeconds = offsetMediaPosition < 0.0 ? 0.0 : offsetMediaPosition;
 
     if (getFPPmode() == REMOTE_MODE || !sequence->IsSequenceRunning())
         return;
@@ -423,8 +423,6 @@ void CalculateNewChannelOutputDelay(float mediaPosition) {
         return;
 
     nextSyncCheck = mediaPosition + (20.0 / RefreshRate);
-
-    float offsetMediaPosition = mediaPosition - mediaOffset;
 
     int expectedFramesSent = (int)(offsetMediaPosition * RefreshRate);
 

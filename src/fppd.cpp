@@ -254,6 +254,7 @@ static bool dumpstack_gdb(void) {
     return false;
 }
 
+static std::string SystemUUID;
 static void handleCrash(int s) {
     static volatile bool inCrashHandler = false;
     if (inCrashHandler) {
@@ -263,7 +264,9 @@ static void handleCrash(int s) {
     inCrashHandler = true;
     int crashLog = getSettingInt("ShareCrashData", 3);
     LogErr(VB_ALL, "Crash handler called:  %d\n", s);
-
+    if (!sequence->m_seqFilename.empty()) {
+        LogErr(VB_ALL, "   while playing  %s  at  %d ms\n", sequence->m_seqFilename.c_str(), sequence->m_seqMSElapsed);
+    }
     if (!dumpstack_gdb()) {
         void* callstack[128];
         int i, frames = backtrace(callstack, 128);
@@ -339,15 +342,15 @@ static void handleCrash(int s) {
 #else
             char sysType[] = "Unknown";
 #endif
-            char zfName[128];
-            snprintf(zfName, sizeof(zfName), "crashes/fpp-%s-%s-%s.zip", sysType, getFPPVersion(), tbuffer);
+            char zfName[256];
+            snprintf(zfName, sizeof(zfName), "crashes/fpp-%s-%s-%s-%s.zip", sysType, getFPPVersion(), SystemUUID.c_str(), tbuffer);
 
             char zName[1024];
             snprintf(zName, sizeof(zfName), "zip -r %s /tmp/fppd_crash.log", zfName);
             if (crashLog > 1) {
                 strcat(zName, " settings");
                 if (crashLog > 2) {
-                    strcat(zName, " config tmp logs/fppd.log logs/apache2-error.log playlists");
+                    strcat(zName, " config tmp logs/fppd.log logs/apache2-error.log playlists /etc/fppd");
                 }
             }
             system(zName);
@@ -481,13 +484,13 @@ void usage(char* appname) {
            "                                  \"master\", or \"remote\"\n"
            "  -l, --log-file FILENAME       - Set the log file\n"
            "  -H  --detect-hardware         - Detect Falcon hardware on SPI port\n"
-           "  -C  --configure-hardware      - Configured detected Falcon hardware on SPI\n"
+           "  -C  --configure-hardware      - Configure detected Falcon hardware on SPI\n"
            "  -h, --help                    - This menu.\n"
            "      --log-level LEVEL         - Set the global log output level (all loggers):\n"
            "                                  \"info\", \"warn\", \"debug\", \"excess\")\n"
-           "      --log-level LEVEL:logger  - Set the loger level for one or more loggers.\n"
-           "                                  each level should be spereated by semicolon\n"
-           "                                  with one or more loggers seperated by comma\n"
+           "      --log-level LEVEL:logger  - Set the log level for one or more loggers.\n"
+           "                                  each level should be separated by semicolons\n"
+           "                                  with one or more loggers separated by commas.\n"
            "                                  example: debug:schedule,player;excess:mqtt \n"
            "                                  valid loggers are: \n"
            "                                    ChannelData - channel data itself\n"
@@ -616,6 +619,11 @@ int main(int argc, char* argv[]) {
     setupExceptionHandlers();
     FPPLogger::INSTANCE.Init();
     LoadSettings(argv[0]);
+
+    // save the UUID so crash reports can add that to the filename 
+    // to make it easier to collect crashes from a single system
+    // for analysis
+    SystemUUID = getSetting("SystemUUID", "unknown");
 
     curl_global_init(CURL_GLOBAL_ALL);
 
@@ -1054,6 +1062,7 @@ void CreateDaemon(void) {
 }
 
 void PublishStatsForce(std::string reason) {
+    SetThreadName("FPP-PubStats");
     std::string result("");
     urlPost("http://localhost/api/statistics/usage?reason=" + reason, "", result);
     LogInfo(VB_GENERAL, "Publishing statistics because of \"%s\" = %s\n", reason.c_str(), result.c_str());

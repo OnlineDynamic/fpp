@@ -20,6 +20,13 @@ shopt -s nullglob
 export KVERS=($(ls /usr/src/ | colrm 1 14))
 shopt -u nullglob
 
+# new wifi drivers take a bit of memory to compile
+# Add some swap space
+fallocate -l 256M /swapfile
+chmod 600 /swapfile
+mkswap /swapfile
+swapon /swapfile
+
 # new kernel may not include the linker script that some of the builds below require
 for i in "${KVERS[@]}"; do
     if [ ! -f "/usr/src/linux-headers-$i/arch/arm/kernel/module.lds" ]; then
@@ -173,20 +180,20 @@ rm -rf rtl8188fu
 git clone https://github.com/morrownr/rtl8852bu
 cd rtl8852bu/
 for i in "${KVERS[@]}"; do
-    KVER=$i ARCH=arm make clean
-    KVER=$i ARCH=arm make -j ${CPUS}
-    KVER=$i ARCH=arm make install
+    KVER=$i ARCH=arm make clean "KVER=$i" "KSRC=/lib/modules/$i/build"
+    KVER=$i ARCH=arm make -j ${CPUS} "KVER=$i" "KSRC=/lib/modules/$i/build"
+    KVER=$i ARCH=arm make install "KVER=$i" "KSRC=/lib/modules/$i/build"
 done
 cd /opt/wifi
 rm -rf rtl8852bu
 
-git clone https://github.com/morrownr/rtl8852au
+git clone https://github.com/lwfinger/rtl8852au
 cd rtl8852au/
-mkdir /usr/lib/systemd/system-sleep/
+mkdir -p /usr/lib/systemd/system-sleep/
 for i in "${KVERS[@]}"; do
-    KVER=$i ARCH=arm make clean
-    KVER=$i ARCH=arm make -j ${CPUS}
-    KVER=$i ARCH=arm make install
+    KVER=$i ARCH=arm make clean "KVER=$i" "KSRC=/lib/modules/$i/build"
+    KVER=$i ARCH=arm make -j ${CPUS} "KVER=$i" "KSRC=/lib/modules/$i/build"
+    KVER=$i ARCH=arm make install "KVER=$i" "KSRC=/lib/modules/$i/build"
 done
 cd /opt/wifi
 rm -rf rtl8852au
@@ -223,3 +230,5 @@ echo "blacklist r8188eu" >> /etc/modprobe.d/blacklist-native-wifi.conf
 
 rm -f /etc/modprobe.d/blacklist-8192cu.conf
 
+swapoff /swapfile
+rm -f /swapfile

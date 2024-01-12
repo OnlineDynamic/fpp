@@ -37,6 +37,7 @@ public:
         zstd,
         zlib
     };
+    constexpr static const char* CompressionTypeStrings[] = { "none", "zstd", "zlib" };
 
 protected:
     //open file for reading
@@ -185,6 +186,10 @@ public:
         if (ver >= 1) {
             m_allowExtendedBlocks = true;
         }
+    }
+
+    [[nodiscard]] std::string CompressionTypeString() const {
+        return CompressionTypeStrings[(int)m_compressionType];
     }
 
     CompressionType m_compressionType;

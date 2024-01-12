@@ -210,6 +210,11 @@ MultiSync::MultiSync() :
  */
 MultiSync::~MultiSync() {
     ShutdownSync();
+    for (auto& a : m_syncStats) {
+        MultiSyncStats* stats = (MultiSyncStats*)a.second;
+        delete stats;
+    }
+    m_syncStats.clear();
 }
 
 /*
@@ -611,6 +616,8 @@ std::string MultiSync::GetTypeString(MultiSyncSystemType type, bool local) {
         return "Falcon F16v4";
     case kSysTypeFalconF48v4:
         return "Falcon F48v4";
+    case kSysTypeFalconF16v5:
+        return "Falcon F16v5";
     case kSysTypeExperienceGP16:
         return "Genius Pixel 16";
     case kSysTypeExperienceGP8:

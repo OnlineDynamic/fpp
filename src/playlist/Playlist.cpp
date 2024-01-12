@@ -224,6 +224,11 @@ Json::Value Playlist::LoadJSON(const char* filename) {
 
     Json::Value root;
 
+    if (!strlen(filename)) {
+        LogErr(VB_PLAYLIST, "Playlist::LoadJSON() called with empty filename\n");
+        return root;
+    }
+
     if (!LoadJsonFromFile(filename, root)) {
         std::string warn = "Could not load playlist ";
         warn += filename;
@@ -289,99 +294,111 @@ std::string sanitizeMediaName(std::string mediaName) {
 int Playlist::Load(const char* filename) {
     LogDebug(VB_PLAYLIST, "Playlist::Load(%s)\n", filename);
 
+    if (!strlen(filename)) {
+        LogErr(VB_PLAYLIST, "Playlist::Load() called with empty filename\n");
+        return 0;
+    }
+
     Events::Publish("playlist/name/status", filename);
 
-    Json::Value root;
-    std::string tmpFilename = filename;
+    try {
+        Json::Value root;
+        std::string tmpFilename = filename;
 
-    std::unique_lock<std::recursive_mutex> lck(m_playlistMutex);
+        std::unique_lock<std::recursive_mutex> lck(m_playlistMutex);
 
-    if (endsWith(tmpFilename, ".fseq")) {
-        m_filename = FPP_DIR_SEQUENCE("/" + tmpFilename);
+        if (endsWith(tmpFilename, ".fseq")) {
+            m_filename = FPP_DIR_SEQUENCE("/" + tmpFilename);
 
-        root["name"] = tmpFilename;
-        root["repeat"] = 0;
-        root["loopCount"] = 0;
-
-        std::string mediaName;
-        FSEQFile* src = FSEQFile::openFSEQFile(m_filename);
-        if (src && !src->getVariableHeaders().empty()) {
-            for (auto& head : src->getVariableHeaders()) {
-                if ((head.code[0] == 'm') && (head.code[1] == 'f')) {
-                    if (strchr((char*)&head.data[0], '/')) {
-                        mediaName = (char*)(strrchr((char*)&head.data[0], '/') + 1);
-                    } else if (strchr((char*)&head.data[0], '\\')) {
-                        mediaName = (char*)(strrchr((char*)&head.data[0], '\\') + 1);
-                    } else {
-                        mediaName = (const char*)&head.data[0];
-                    }
-                    std::string tmpMedia = sanitizeMediaName(mediaName);
-                    if (tmpMedia == "") {
-                        std::string warn = "fseq \"" + tmpFilename + "\" lists a media file of \"" + mediaName + "\" but it can not be found";
-
-                        WarningHolder::AddWarningTimeout(warn, 60);
-                        LogDebug(VB_PLAYLIST, "%s\n", warn.c_str());
-                        mediaName = "";
-                    }
-                    // Set the Media to the correct name
-                    mediaName = tmpMedia;
-                }
-            }
-        }
-
-        if (src)
-            delete src;
-
-        Json::Value mp(Json::arrayValue);
-        Json::Value pe;
-        if (mediaName.empty()) {
-            pe["type"] = "sequence";
-            LogDebug(VB_PLAYLIST, "Generated an on-the-fly playlist for %s\n", tmpFilename.c_str());
-        } else {
-            pe["type"] = "both";
-            pe["mediaName"] = mediaName;
-            LogDebug(VB_PLAYLIST, "Generated an on-the-fly playlist for %s/%s\n", tmpFilename.c_str(), mediaName.c_str());
-        }
-
-        pe["enabled"] = 1;
-        pe["playOnce"] = 0;
-        pe["sequenceName"] = tmpFilename;
-        pe["videoOut"] = "--Default--";
-
-        mp.append(pe);
-        root["mainPlaylist"] = mp;
-
-    } else {
-        if (IsExtensionAudio(GetFileExtension(tmpFilename)) || IsExtensionVideo(GetFileExtension(tmpFilename))) {
             root["name"] = tmpFilename;
             root["repeat"] = 0;
             root["loopCount"] = 0;
 
+            std::string mediaName;
+            FSEQFile* src = FSEQFile::openFSEQFile(m_filename);
+            if (src && !src->getVariableHeaders().empty()) {
+                for (auto& head : src->getVariableHeaders()) {
+                    if ((head.code[0] == 'm') && (head.code[1] == 'f')) {
+                        if (strchr((char*)&head.data[0], '/')) {
+                            mediaName = (char*)(strrchr((char*)&head.data[0], '/') + 1);
+                        } else if (strchr((char*)&head.data[0], '\\')) {
+                            mediaName = (char*)(strrchr((char*)&head.data[0], '\\') + 1);
+                        } else {
+                            mediaName = (const char*)&head.data[0];
+                        }
+                        std::string tmpMedia = sanitizeMediaName(mediaName);
+                        if (tmpMedia == "") {
+                            std::string warn = "fseq \"" + tmpFilename + "\" lists a media file of \"" + mediaName + "\" but it can not be found";
+
+                            WarningHolder::AddWarningTimeout(warn, 60);
+                            LogDebug(VB_PLAYLIST, "%s\n", warn.c_str());
+                            mediaName = "";
+                        }
+                        // Set the Media to the correct name
+                        mediaName = tmpMedia;
+                    }
+                }
+            }
+
+            if (src)
+                delete src;
+
             Json::Value mp(Json::arrayValue);
             Json::Value pe;
-
-            pe["type"] = "media";
-            pe["mediaName"] = tmpFilename;
-
-            LogDebug(VB_PLAYLIST, "Generated an on-the-fly playlist for %s\n", tmpFilename.c_str());
+            if (mediaName.empty()) {
+                pe["type"] = "sequence";
+                LogDebug(VB_PLAYLIST, "Generated an on-the-fly playlist for %s\n", tmpFilename.c_str());
+            } else {
+                pe["type"] = "both";
+                pe["mediaName"] = mediaName;
+                LogDebug(VB_PLAYLIST, "Generated an on-the-fly playlist for %s/%s\n", tmpFilename.c_str(), mediaName.c_str());
+            }
 
             pe["enabled"] = 1;
             pe["playOnce"] = 0;
+            pe["sequenceName"] = tmpFilename;
             pe["videoOut"] = "--Default--";
+
             mp.append(pe);
             root["mainPlaylist"] = mp;
 
         } else {
-            m_filename = FPP_DIR_PLAYLIST("/" + filename + ".json");
-            root = LoadJSON(m_filename.c_str());
+            if (IsExtensionAudio(GetFileExtension(tmpFilename)) || IsExtensionVideo(GetFileExtension(tmpFilename))) {
+                if (IsExtensionAudio(GetFileExtension(tmpFilename)))
+                    m_filename = FPP_DIR_MUSIC("/" + filename);
+                else
+                    m_filename = FPP_DIR_VIDEO("/" + filename);
+
+                root["name"] = tmpFilename;
+                root["repeat"] = 0;
+                root["loopCount"] = 0;
+
+                Json::Value mp(Json::arrayValue);
+                Json::Value pe;
+
+                pe["type"] = "media";
+                pe["mediaName"] = tmpFilename;
+
+                LogDebug(VB_PLAYLIST, "Generated an on-the-fly playlist for %s\n", tmpFilename.c_str());
+
+                pe["enabled"] = 1;
+                pe["playOnce"] = 0;
+                pe["videoOut"] = "--Default--";
+                mp.append(pe);
+                root["mainPlaylist"] = mp;
+
+            } else {
+                m_filename = FPP_DIR_PLAYLIST("/" + filename + ".json");
+                root = LoadJSON(m_filename.c_str());
+            }
         }
+        return Load(root);
+    } catch (std::exception& er) {
+        std::string warn = "Playlist " + GetPlaylistName() + " is invalid: " + er.what();
+        LogWarn(VB_PLAYLIST, warn.c_str());
+        WarningHolder::AddWarningTimeout(warn, 60);
+        return 0;
     }
-
-    int res = Load(root);
-
-    GetConfigStr();
-
-    return res;
 }
 
 /*
@@ -435,6 +452,11 @@ PlaylistEntryBase* Playlist::LoadPlaylistEntry(Json::Value entry) {
 int Playlist::ReloadPlaylist(void) {
     LogDebug(VB_PLAYLIST, "Playlist::ReloadPlaylist()\n");
 
+    if (m_filename == "") {
+        LogErr(VB_PLAYLIST, "Playlist::ReloadPlaylist() called but m_filename is empty\n");
+        return 0;
+    }
+
     std::unique_lock<std::recursive_mutex> lck(m_playlistMutex);
     std::string currentSectionStr = m_currentSectionStr;
     int repeat = m_repeat;
@@ -456,8 +478,6 @@ int Playlist::ReloadPlaylist(void) {
     m_sectionPosition = 0;
     m_currentSectionStr = "MainPlaylist";
     m_currentSection = &m_mainPlaylist;
-
-    GetConfigStr();
 
     return 1;
 }
@@ -678,8 +698,11 @@ int Playlist::IsPlaying(void) {
  *
  */
 int Playlist::FileHasBeenModified(void) {
-    if (endsWith(m_filename, ".fseq"))
+    if ((endsWith(m_filename, ".fseq")) ||
+        (IsExtensionAudio(GetFileExtension(m_filename))) ||
+        (IsExtensionVideo(GetFileExtension(m_filename)))) {
         return 0;
+    }
 
     struct stat attr;
     stat(m_filename.c_str(), &attr);
@@ -1365,7 +1388,9 @@ Json::Value Playlist::GetCurrentEntry(void) {
 
     if (m_currentState == "idle" || m_currentSection == nullptr)
         return result;
-    result = m_currentSection->at(m_sectionPosition)->GetConfig();
+
+    if (m_sectionPosition < m_currentSection->size())
+        result = m_currentSection->at(m_sectionPosition)->GetConfig();
 
     return result;
 }
@@ -1498,7 +1523,7 @@ Json::Value Playlist::GetMqttStatusJSON(void) {
     result["status"] = m_currentState; // Works because single playlist
     Json::Value playlistArray = Json::Value(Json::arrayValue);
 
-    if (m_currentState != "idle") {
+    if (m_currentState != "idle" && m_currentSection != nullptr && m_sectionPosition < m_currentSection->size()) {
         Json::Value entryArray = Json::Value(Json::arrayValue);
         Json::Value playlist;
         // Only one entry right now.
@@ -1605,8 +1630,12 @@ void Playlist::GetParentPlaylistNames(std::list<std::string>& names) {
  */
 Json::Value Playlist::GetInfo(void) {
     Json::Value result;
-    std::unique_lock<std::recursive_mutex> lck(m_playlistMutex);
+    GetInfo(result);
+    return result;
+}
 
+void Playlist::GetInfo(Json::Value& result) {
+    std::unique_lock<std::recursive_mutex> lck(m_playlistMutex);
     result["currentState"] = m_currentState;
     if (m_currentState == "idle") {
         result["name"] = "";
@@ -1631,18 +1660,13 @@ Json::Value Playlist::GetInfo(void) {
         result["blankAtEnd"] = m_blankAtEnd;
         result["size"] = GetSize();
     }
-
     result["currentEntry"] = GetCurrentEntry();
-
-    return result;
 }
 
 /*
  *
  */
 std::string Playlist::GetConfigStr(void) {
-    std::unique_lock<std::recursive_mutex> lck(m_playlistMutex);
-
     return SaveJsonToString(GetConfig());
 }
 
@@ -1650,34 +1674,32 @@ std::string Playlist::GetConfigStr(void) {
  *
  */
 Json::Value Playlist::GetConfig(void) {
-    Json::Value result = GetInfo();
-
-    // FIXME, need to test the performance of not having this on the Pi/BBB
-    //	if (m_configTime > m_fileTime)
-    //		return m_config;
+    Json::Value result;
+    std::unique_lock<std::recursive_mutex> lck(m_playlistMutex);
+    GetInfo(result);
 
     if (m_leadIn.size()) {
-        Json::Value jsonArray(Json::arrayValue);
-        for (int c = 0; c < m_leadIn.size(); c++)
+        result["leadIn"] = Json::Value(Json::arrayValue);
+        Json::Value& jsonArray = result["leadIn"];
+        for (int c = 0; c < m_leadIn.size(); c++) {
             jsonArray.append(m_leadIn[c]->GetConfig());
-
-        result["leadIn"] = jsonArray;
+        }
     }
 
     if (m_mainPlaylist.size()) {
-        Json::Value jsonArray(Json::arrayValue);
-        for (int c = 0; c < m_mainPlaylist.size(); c++)
+        result["mainPlaylist"] = Json::Value(Json::arrayValue);
+        Json::Value& jsonArray = result["mainPlaylist"];
+        for (int c = 0; c < m_mainPlaylist.size(); c++) {
             jsonArray.append(m_mainPlaylist[c]->GetConfig());
-
-        result["mainPlaylist"] = jsonArray;
+        }
     }
 
     if (m_leadOut.size()) {
-        Json::Value jsonArray(Json::arrayValue);
-        for (int c = 0; c < m_leadOut.size(); c++)
+        result["leadOut"] = Json::Value(Json::arrayValue);
+        Json::Value& jsonArray = result["leadOut"];
+        for (int c = 0; c < m_leadOut.size(); c++) {
             jsonArray.append(m_leadOut[c]->GetConfig());
-
-        result["leadOut"] = jsonArray;
+        }
     }
 
     m_configTime = time(NULL);
