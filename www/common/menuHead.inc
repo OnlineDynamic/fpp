@@ -11,12 +11,14 @@ if (((!isset($settings['initialSetup-02'])) || ($settings['initialSetup-02'] == 
     <!-- <script src="https://code.jquery.com/jquery-migrate-3.4.1.js"></script> -->
 	<script type="text/javascript" src="js/jquery-ui.min.js"></script>
 	<script type="text/javascript" src="js/jquery.ui.touch-punch.js"></script>
+    <script type="text/javascript" src="js/jquery-ui-slider-pips.min.js"></script>
 	<script type="text/javascript" src="js/jquery.jgrowl.min.js"></script>
 	<script type="text/javascript" src="js/zebra_pin.min.js"></script>
     <script type="text/javascript" src="jquery/jquery.floatThead/jquery.floatThead.min.js"></script>
 	<script type="text/javascript" src="js/bootstrap.bundle.min.js?ref=<?= filemtime('js/bootstrap.bundle.min.js'); ?>"></script>
 
 	<link rel="stylesheet" href="css/jquery-ui.css" >
+    <link rel="stylesheet" href="css/jquery-ui-slider-pips.min.css" >
 	<link rel="stylesheet" href="css/jquery.jgrowl.min.css" >
 	<link rel="stylesheet" href="css/classicTheme/style.css" media="all" >
  

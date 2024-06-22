@@ -235,6 +235,16 @@ body .ui-tabs .ui-tabs-nav li {
     background-color: #adb5bd;    
 }
 
+
+
+.fppMinMaxSliderRange .ui-slider-tip {
+    visibility: visible;
+    opacity: 1;
+    top: -30px;
+}
+
+
+
 @media(min-width:991px) {
     .header {
         position: fixed;
