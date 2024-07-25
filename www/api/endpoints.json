@@ -1216,6 +1216,18 @@
             }
         },
         {
+            "endpoint": "gpio/config",
+            "methods": {
+                "GET": {
+                    "desc": "Returns the config status of the gpio's installed on the device including any on capes ",
+                    "output": {
+                        "status": "OK",
+                        "log": "On branch master\nYour branch is up to date with 'origin/master'."
+                    }
+                }
+            }
+        },
+        {
             "endpoint": "media",
             "methods": {
                 "GET": {
