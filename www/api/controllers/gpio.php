@@ -95,7 +95,7 @@ function GPIOConfig()
                             $all_gpios[$k]['ConfigError'] = true;
                         }
                         $all_gpios[$k]['Input'] = true;
-                        $all_gpios[$k]['Function'] = 'Cape Input Actions';
+                        $all_gpios[$k]['Function'] = 'Cape - Input Actions';
                         $all_gpios[$k]['InUse'] = true;
                         $all_gpios[$k]['Description'] = "Action: " . $a['action'];
                     }
@@ -113,16 +113,16 @@ function GPIOConfig()
             $cape_pwm_config_json = file_get_contents("$mediaDirectory/tmp/pwm/$file");
             $cape_pwm_config = json_decode($cape_pwm_config_json, true);
 
-            foreach ($cape_pwm_config['outputs'] as $x) {
+            foreach ($cape_pwm_config['outputs'] as $z => $x) {
                 foreach ($all_gpios as $k => $gp) {
                     if ($gp['pin'] == $x['pin']) {
                         if ($gp['InUse'] == true) {
                             $all_gpios[$k]['ConfigError'] = true;
                         }
                         $all_gpios[$k]['Output'] = true;
-                        $all_gpios[$k]['Function'] = 'Cape PWM Output';
+                        $all_gpios[$k]['Function'] = 'Cape - PWM Output';
                         $all_gpios[$k]['InUse'] = true;
-                        $all_gpios[$k]['Description'] = 'Cape PWM #';
+                        $all_gpios[$k]['Description'] = 'Cape PWM #' . ($z + 1);
                     }
                 }
             }
@@ -145,9 +145,9 @@ function GPIOConfig()
                             $all_gpios[$z]['ConfigError'] = true;
                         }
                         $all_gpios[$z]['Output'] = true;
-                        $all_gpios[$z]['Function'] = 'Cape String Output';
+                        $all_gpios[$z]['Function'] = 'Cape - String Output';
                         $all_gpios[$z]['InUse'] = true;
-                        $all_gpios[$z]['Description'] = 'Cape Pixel Port #' . ($k + 1);
+                        $all_gpios[$z]['Description'] = 'Pixel Port #' . ($k + 1);
                     }
                 }
             }
