@@ -5,6 +5,7 @@ function GPIOConfig()
 {
     global $fppDir;
     global $configDirectory;
+    global $mediaDirectory;
 
     $basejson = file_get_contents('http://localhost/api/gpio');
     $all_gpios = json_decode($basejson, true);
@@ -65,26 +66,74 @@ function GPIOConfig()
             }
         }
     }
-    //cape-inputs.json (cape hardwired gpios)
-    if (file_exists("$configDirectory/cape-inputs.json")) {
-        $cape_inputs_config_json = file_get_contents("$configDirectory/cape-inputs.json");
+
+    //Load in settings from Cape configs
+    //cape-inputs.json (cape hardwired gpios - buttons etc)
+    if (file_exists("$mediaDirectory/tmp/cape-inputs.json")) {
+        $cape_inputs_config_json = file_get_contents("$mediaDirectory/tmp/cape-inputs.json");
         $cape_inputs_config = json_decode($cape_inputs_config_json, true);
         $cape_inputs_config_gpio = array_filter_by_value($cape_inputs_config['inputs'], 'type', 'gpiod');
 
         foreach ($cape_inputs_config_gpio as $x) {
+            //detect interrupt pins
             foreach ($all_gpios as $k => $gp) {
-                if ($gp['gpio'] == $x['gpio'] && $x['type'] == "gpiod") {
+                if ($gp['pin'] == $x['pin'] && $x['type'] == "gpiod") {
                     if ($gp['InUse'] == true) {
                         $all_gpios[$k]['ConfigError'] = true;
                     }
                     $all_gpios[$k]['Input'] = true;
-                    $all_gpios[$k]['Function'] = 'Cape Controls';
+                    $all_gpios[$k]['Function'] = 'Cape Input Interrupt';
                     $all_gpios[$k]['InUse'] = true;
                     $all_gpios[$k]['Description'] = "Interrupt for: " + $x['chip'];
                 }
             }
+            //detect gpio lines on chips with assignments
+            foreach ($all_gpios as $k => $gp) {
+                foreach ($x['actions'] as $a) {
+                    if ($gp['pin'] == ($x['pin'] + '-' + $a['line'])) {
+                        if ($gp['InUse'] == true) {
+                            $all_gpios[$k]['ConfigError'] = true;
+                        }
+                        $all_gpios[$k]['Input'] = true;
+                        $all_gpios[$k]['Function'] = 'Cape Input Actions';
+                        $all_gpios[$k]['InUse'] = true;
+                        $all_gpios[$k]['Description'] = "Action: " + $a['action'];
+                    }
+                }
+            }
+
         }
     }
+
+    //Cape - PWM Outputs
+    //TO DO
+
+    //Cape - String Outputs
+    $str_files = scandir("$mediaDirectory/tmp/strings");
+    //print_r($str_files);
+    foreach ($str_files as $file) {
+        if (file_exists($file)) {
+            $cape_strings_config_json = file_get_contents($file);
+            $cape_strings_config = json_decode($co_other_config_json, true);
+
+            foreach ($cape_strings_config['outputs'] as $x) {
+                foreach ($all_gpios as $k => $gp) {
+                    if ($gp['pin'] == $x['pin']) {
+                        if ($gp['InUse'] == true) {
+                            $all_gpios[$k]['ConfigError'] = true;
+                        }
+                        $all_gpios[$k]['Output'] = true;
+                        $all_gpios[$k]['Function'] = 'Cape String Output';
+                        $all_gpios[$k]['InUse'] = true;
+                        $all_gpios[$k]['Description'] = 'Cape Pixel Port #';
+                    }
+                }
+            }
+        }
+    }
+
+    //panels - do they have special config?
+
 
 
     //Return Result
@@ -95,6 +144,7 @@ function GPIOConfig()
 // Function to filter a multi-dimensional array based on a specific value in a specified index
 function array_filter_by_value($my_array, $index, $value)
 {
+
     // Check if the input is a non-empty array
     if (is_array($my_array) && count($my_array) > 0) {
         // Loop through the keys of the input array
