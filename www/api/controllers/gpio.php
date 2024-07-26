@@ -6,6 +6,9 @@ function GPIOConfig()
     global $fppDir;
     global $configDirectory;
     global $mediaDirectory;
+    global $settings;
+
+    $capeName = $settings['cape-info']['name'];
 
     $basejson = file_get_contents('http://localhost/api/gpio');
     $all_gpios = json_decode($basejson, true);
@@ -16,11 +19,62 @@ function GPIOConfig()
         $all_gpios[$x]['Input'] = false;
         $all_gpios[$x]['Output'] = false;
         $all_gpios[$x]['CurrentValue'] = null;
-        $all_gpios[$x]['Function'] = null;
+        $all_gpios[$x]['Function'] = "--Available--";
         $all_gpios[$x]['Description'] = null;
-        $all_gpios[$x]['ConfigError'] = null;
+        $all_gpios[$x]['ConfigError'] = false;
+        $all_gpios[$x]['ConfigConflict'] = null;
     }
 
+    //print_r($settings);
+
+    //set default usage specific to platform
+    if ($settings['Platform'] == 'Raspberry Pi') {
+        foreach ($all_gpios as $k => $gp) {
+
+            if ($gp['pin'] == "P1-3") {
+                if ($gp['InUse'] == true) {
+                    $all_gpios[$k]['ConfigError'] = true;
+                }
+                $all_gpios[$k]['Input'] = true;
+                $all_gpios[$k]['Output'] = true;
+                $all_gpios[$k]['Function'] = 'I2C-1';
+                $all_gpios[$k]['InUse'] = true;
+                $all_gpios[$k]['Description'] = "SDA";
+            }
+
+            if ($gp['pin'] == "P1-5") {
+                if ($gp['InUse'] == true) {
+                    $all_gpios[$k]['ConfigError'] = true;
+                }
+                $all_gpios[$k]['Input'] = true;
+                $all_gpios[$k]['Output'] = true;
+                $all_gpios[$k]['Function'] = 'I2C-1';
+                $all_gpios[$k]['InUse'] = true;
+                $all_gpios[$k]['Description'] = "SCL";
+            }
+
+            if ($gp['pin'] == "P1-27") {
+                if ($gp['InUse'] == true) {
+                    $all_gpios[$k]['ConfigError'] = true;
+                }
+                $all_gpios[$k]['Input'] = true;
+                $all_gpios[$k]['Output'] = true;
+                $all_gpios[$k]['Function'] = 'I2C-0';
+                $all_gpios[$k]['InUse'] = true;
+                $all_gpios[$k]['Description'] = "SDA";
+            }
+            if ($gp['pin'] == "P1-28") {
+                if ($gp['InUse'] == true) {
+                    $all_gpios[$k]['ConfigError'] = true;
+                }
+                $all_gpios[$k]['Input'] = true;
+                $all_gpios[$k]['Output'] = true;
+                $all_gpios[$k]['Function'] = 'I2C-0';
+                $all_gpios[$k]['InUse'] = true;
+                $all_gpios[$k]['Description'] = "SCL";
+            }
+        }
+    }
 
     //check configs to pull in details of gpio assignments
     //gpio.json
@@ -35,6 +89,11 @@ function GPIOConfig()
                 if ($gp['pin'] == $x['pin']) {
                     if ($gp['InUse'] == true) {
                         $all_gpios[$k]['ConfigError'] = true;
+                        if (is_null($all_gpios[$k]['ConfigConflict'])) {
+                            $all_gpios[$k]['ConfigConflict'] = '{' . $all_gpios[$k]['Function'] . ' : ' . $all_gpios[$k]['Description'] . '}' . '{GPIO Input : ' . $x['desc'] . '}';
+                        } else {
+                            $all_gpios[$k]['ConfigConflict'] = $all_gpios[$k]['ConfigConflict'] . '{ GPIO Input : ' . $x['desc'] . '}';
+                        }
                     }
                     $all_gpios[$k]['Input'] = true;
                     $all_gpios[$k]['Function'] = 'GPIO Input';
@@ -57,6 +116,12 @@ function GPIOConfig()
                 if ($gp['gpio'] == $x['gpio']) {
                     if ($gp['InUse'] == true) {
                         $all_gpios[$k]['ConfigError'] = true;
+                        if (is_null($all_gpios[$k]['ConfigConflict'])) {
+                            $all_gpios[$k]['ConfigConflict'] = '{' . $all_gpios[$k]['Function'] . ' : ' . $all_gpios[$k]['Description'] . '}' . '{Channel Output : ' . $x['description'] . '}';
+                        } else {
+                            $all_gpios[$k]['ConfigConflict'] = $all_gpios[$k]['ConfigConflict'] . '{ Channel Output : ' . $x['description'] . '}';
+                        }
+
                     }
                     $all_gpios[$k]['Output'] = true;
                     $all_gpios[$k]['Function'] = 'Channel Output';
@@ -80,6 +145,11 @@ function GPIOConfig()
                 if ($gp['pin'] == $x['pin'] && $x['type'] == "gpiod") {
                     if ($gp['InUse'] == true) {
                         $all_gpios[$k]['ConfigError'] = true;
+                        if (is_null($all_gpios[$k]['ConfigConflict'])) {
+                            $all_gpios[$k]['ConfigConflict'] = '{' . $all_gpios[$k]['Function'] . ' : ' . $all_gpios[$k]['Description'] . '}' . '{Cape Input Interrupt : ' . " Interrupt for: " . $x['chip'] . '}';
+                        } else {
+                            $all_gpios[$k]['ConfigConflict'] = $all_gpios[$k]['ConfigConflict'] . '{ Cape Input Interrupt : ' . " Interrupt for: " . $x['chip'] . '}';
+                        }
                     }
                     $all_gpios[$k]['Input'] = true;
                     $all_gpios[$k]['Function'] = 'Cape Input Interrupt';
@@ -93,9 +163,15 @@ function GPIOConfig()
                     if ($gp['pin'] == ($x['pin'] . '-' . $a['line'])) {
                         if ($gp['InUse'] == true) {
                             $all_gpios[$k]['ConfigError'] = true;
+                            if (is_null($all_gpios[$k]['ConfigConflict'])) {
+                                $all_gpios[$k]['ConfigConflict'] = '{' . $all_gpios[$k]['Function'] . ' : ' . $all_gpios[$k]['Description'] . '}' . '{' . $capeName . ' - Input Actions : ' . "Action: " . $a['action'] . '}';
+                            } else {
+                                $all_gpios[$k]['ConfigConflict'] = $all_gpios[$k]['ConfigConflict'] . '{' . $capeName . ' - Input Actions : ' . "Action: " . $a['action'] . '}';
+                            }
+
                         }
                         $all_gpios[$k]['Input'] = true;
-                        $all_gpios[$k]['Function'] = 'Cape - Input Actions';
+                        $all_gpios[$k]['Function'] = $capeName . ' - Input Actions';
                         $all_gpios[$k]['InUse'] = true;
                         $all_gpios[$k]['Description'] = "Action: " . $a['action'];
                     }
@@ -118,11 +194,16 @@ function GPIOConfig()
                     if ($gp['pin'] == $x['pin']) {
                         if ($gp['InUse'] == true) {
                             $all_gpios[$k]['ConfigError'] = true;
+                            if (is_null($all_gpios[$k]['ConfigConflict'])) {
+                                $all_gpios[$k]['ConfigConflict'] = '{' . $all_gpios[$k]['Function'] . ' : ' . $all_gpios[$k]['Description'] . '}' . '{' . $capeName . ' - PWM Output : ' . 'PWM #' . ($z + 1) . '}';
+                            } else {
+                                $all_gpios[$k]['ConfigConflict'] = $all_gpios[$k]['ConfigConflict'] . '{' . $capeName . ' - PWM Output : ' . 'PWM #' . ($z + 1) . '}';
+                            }
                         }
                         $all_gpios[$k]['Output'] = true;
-                        $all_gpios[$k]['Function'] = 'Cape - PWM Output';
+                        $all_gpios[$k]['Function'] = $capeName . ' - PWM Output';
                         $all_gpios[$k]['InUse'] = true;
-                        $all_gpios[$k]['Description'] = 'Cape PWM #' . ($z + 1);
+                        $all_gpios[$k]['Description'] = 'PWM #' . ($z + 1);
                     }
                 }
             }
@@ -143,9 +224,14 @@ function GPIOConfig()
                     if ($gp['pin'] == $x['pin']) {
                         if ($gp['InUse'] == true) {
                             $all_gpios[$z]['ConfigError'] = true;
+                            if (is_null($all_gpios[$z]['ConfigConflict'])) {
+                                $all_gpios[$z]['ConfigConflict'] = '{' . $all_gpios[$z]['Function'] . ' : ' . $all_gpios[$z]['Description'] . '}' . '{' . $capeName . ' - String Output : ' . 'Pixel Port #' . ($k + 1) . '}';
+                            } else {
+                                $all_gpios[$z]['ConfigConflict'] = $all_gpios[$z]['ConfigConflict'] . '{' . $capeName . ' - String Output : ' . 'Pixel Port #' . ($k + 1) . '}';
+                            }
                         }
                         $all_gpios[$z]['Output'] = true;
-                        $all_gpios[$z]['Function'] = 'Cape - String Output';
+                        $all_gpios[$z]['Function'] = $capeName . ' - String Output';
                         $all_gpios[$z]['InUse'] = true;
                         $all_gpios[$z]['Description'] = 'Pixel Port #' . ($k + 1);
                     }
@@ -154,7 +240,7 @@ function GPIOConfig()
         }
     }
 
-    //panels - do they have special config?
+    //panels - do they have special config for outputs?
 
 
 

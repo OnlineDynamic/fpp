@@ -455,7 +455,28 @@
 
   </script>
 
-  <title>GPIO Configuration Map</title>
+  <style>
+    #tblGPIO tbody tr.table-danger {
+      background-color: lightcoral;
+    }
+
+    #tblGPIO tbody tr.table-success {
+      background-color: lightgreen;
+    }
+
+    #tblGPIO tbody tr.table-info {
+      background-color: lightcyan;
+    }
+
+    #tblGPIO tbody td:first-of-type,
+    td:nth-of-type(2),
+    td:nth-of-type(3) {
+      text-align:
+        center;
+    }
+  </style>
+
+  <title>Hardware Interface Configuration Maps</title>
 
 </head>
 
@@ -465,7 +486,7 @@
     $activeParentMenuItem = 'help';
     include 'menu.inc'; ?>
     <div class="container">
-      <div class="title">GPIO Configuration Map</div>
+      <div class="title">Hardware Interface Config Maps</div>
       <div class="pageContent">
 
         <div style="margin:0 auto;">
@@ -476,16 +497,15 @@
               <div id='mapping'>
                 <h2>GPIO Mapping Table:</h2>
                 <div class="backdrop">
-                  <table id="tblGPIO" class="tablesorter">
+                  <table id="tblGPIO" class="table tablesorter">
                     <thead>
                       <tr>
                         <th class="tablesorter-header">GPIO</th>
                         <th class="tablesorter-header">PIN</th>
-                        <th class="tablesorter-header">Input</th>
-                        <th class="tablesorter-header">Output</th>
-                        <th class="tablesorter-header">Error</th>
+                        <th class="tablesorter-header">Data Direction</th>
                         <th class="tablesorter-header">Function</th>
                         <th class="tablesorter-header">Description</th>
+                        <th class="tablesorter-header">Conflicting Configs</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -495,14 +515,28 @@
 
                       foreach ($json as $member) {
                         ?>
-                        <tr>
+                        <tr class="<? if ($member->ConfigError == true) {
+                          echo 'table-danger';
+                        }
+                        if (($member->ConfigError == false || null) && $member->InUse == true) {
+                          echo 'table-success';
+                        }
+                        if ($member->ConfigError == false && $member->InUse == false) {
+                          echo 'table-info';
+                        }
+                        ?>">
                           <td><?php echo $member->gpio ?></td>
                           <td><?php echo $member->pin ?></td>
-                          <td><?php echo $member->Input ?></td>
-                          <td><?php echo $member->Output ?></td>
-                          <td><?php echo $member->ConfigError ?></td>
+                          <td><? if ($member->Input) {
+                            echo '<i class="fa-solid fa-arrow-right-to-bracket"></i>';
+                          }
+                          if ($member->Output) {
+                            echo '<i class="fa-solid fa-arrow-right-from-bracket"></i>';
+                          } ?>
+                          </td>
                           <td><?php echo $member->Function ?></td>
                           <td><?php echo $member->Description ?></td>
+                          <td><?php echo $member->ConfigConflict ?></td>
                         </tr>
                         <?php
                       }
