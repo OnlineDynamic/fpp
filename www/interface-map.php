@@ -12,11 +12,13 @@
   <script type="text/javascript" src="jquery/jquery.tablesorter/jquery.tablesorter.widgets.min.js"></script>
   <script type="text/javascript" src="jquery/jquery.tablesorter/parsers/parser-metric.min.js"></script>
   <script type="text/javascript" src="jquery/jquery.tablesorter/widgets/widget-cssStickyHeaders.min.js"></script>
+  <script type="text/javascript" src="jquery/jquery.tablesorter/widgets/widget-resizable.min.js"></script>
   <script type="text/javascript" src="jquery/jquery.tablesorter/extras/jquery.metadata.min.js"></script>
   <script>
 
     function pageSpecific_PageLoad_PostDOMLoad_ActionsSetup() {
       $('#tblGPIO').tablesorter(tablesorterOptions);
+      $('#tblGPIO').trigger('applyWidgetId', 'cssStickyHeaders');
     }
 
     var tablesorterOptions = {
@@ -28,7 +30,7 @@
       // themes variable. Look for "$.extend($.tablesorter.themes.jui"
       // at the bottom of this window
       // this option only adds a table class name "tablesorter-{theme}"
-      theme: 'jui',
+      theme: 'fpp',
 
       // fix the column widths
       widthFixed: false,
@@ -90,9 +92,12 @@
       // these can also be set using data-attributes or class names
       headers: {
         //  set "sorter : false" (no quotes) to disable the column
-        0: { sorter: 'text', sortInitialOrder: 'asc' },
-        1: { sorter: 'metric' },
-        2: { sorter: 'text' }
+        0: { sorter: 'metric', sortInitialOrder: 'asc' },
+        1: { sorter: 'text' },
+        2: { sorter: 'text' },
+        3: { sorter: 'text' },
+        4: { sorter: 'text' },
+        5: { sorter: 'text' }
       },
 
       // ignore case while sorting
@@ -171,11 +176,11 @@
       // 'columns', 'filter', 'stickyHeaders' & 'resizable'
       // 'uitheme' is another widget, but requires loading
       // a different skin and a jQuery UI theme.
-      widgets: ['columns', 'uitheme', 'cssStickyHeaders', 'filter'],
+      widgets: ['columns', 'cssStickyHeaders', 'filter', 'resizable'],
 
       widgetOptions: {
         //cssStickyHeader config
-        cssStickyHeaders_attachTo: null,
+        cssStickyHeaders_attachTo: '#divGPIOData',
         cssStickyHeaders_addCaption: false,
         cssStickyHeaders_includeCaption: false,
         cssStickyHeaders_filteredToTop: true,
@@ -319,7 +324,7 @@
         resizable_addLastColumn: false,
 
         // Resizable widget: Set this option to the starting & reset header widths
-        resizable_widths: [],
+        resizable_widths: ['10pc', '10pc', '20pc', '20pc', '20pc', '20pc'],
 
         // Resizable widget: Set this option to throttle the resizable events
         // set to true (5ms) or any number 0-10 range
@@ -496,7 +501,7 @@
 
               <div id='mapping'>
                 <h2>GPIO Mapping Table:</h2>
-                <div class="backdrop">
+                <div id="divGPIOData" class="backdrop">
                   <table id="tblGPIO" class="table tablesorter">
                     <thead>
                       <tr>
@@ -527,11 +532,14 @@
                         ?>">
                           <td><?php echo $member->gpio ?></td>
                           <td><?php echo $member->pin ?></td>
-                          <td><? if ($member->Input) {
-                            echo '<i class="fa-solid fa-arrow-right-to-bracket"></i>';
+                          <td><? if ($member->Input && !$member->Output) {
+                            echo 'Input <i class="fa-solid fa-arrow-left"></i>';
                           }
-                          if ($member->Output) {
-                            echo '<i class="fa-solid fa-arrow-right-from-bracket"></i>';
+                          if ($member->Output && !$member->Input) {
+                            echo 'Output <i class="fa-solid fa-arrow-right"></i>';
+                          }
+                          if ($member->Output && $member->Input) {
+                            echo 'Bi-Directional <i class="fa-solid fa-arrow-right-arrow-left"></i>';
                           } ?>
                           </td>
                           <td><?php echo $member->Function ?></td>
