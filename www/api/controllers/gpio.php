@@ -25,7 +25,19 @@ function GPIOConfig()
         $all_gpios[$x]['ConfigConflict'] = null;
     }
 
-    //print_r($settings);
+    //Mark pins with UART as in use
+    for ($x = 0, $z = count($all_gpios); $x < $z; $x++) {
+        if ($all_gpios[$x]['uart'] !== "" && $all_gpios[$x]['uart'] !== null) {
+            $all_gpios[$x]['InUse'] = true;
+            $all_gpios[$x]['Function'] = "UART " + $all_gpios[$x]['uart'];
+            if (substr($all_gpios[$x]['uart'], -2) === "tx") {
+                $all_gpios[$x]['Output'] = true;
+            }
+            if (substr($all_gpios[$x]['uart'], -2) === "rx") {
+                $all_gpios[$x]['Input'] = true;
+            }
+        }
+    }
 
     //set default usage specific to platform
     if ($settings['Platform'] == 'Raspberry Pi') {
@@ -85,7 +97,6 @@ function GPIOConfig()
 
         foreach ($gpio_config_enabled as $x) {
             foreach ($all_gpios as $k => $gp) {
-                // print_r($x['pin']);
                 if ($gp['pin'] == $x['pin']) {
                     if ($gp['InUse'] == true) {
                         $all_gpios[$k]['ConfigError'] = true;
@@ -210,17 +221,19 @@ function GPIOConfig()
         }
     }
 
-    //Cape - String Outputs
+    //Cape - String Outputs (inc fuses and other cape gpio usage)
     $str_files = preg_grep('~\.(json)$~', scandir("$mediaDirectory/tmp/strings"));
 
     foreach ($str_files as $file) {
         if (file_exists("$mediaDirectory/tmp/strings/$file")) {
             $cape_strings_config_json = file_get_contents("$mediaDirectory/tmp/strings/$file");
             $cape_strings_config = json_decode($cape_strings_config_json, true);
-            //print_r($cape_strings_config);
-            foreach ($cape_strings_config['outputs'] as $k => $x) {
 
+            //work through each 'output'
+            foreach ($cape_strings_config['outputs'] as $k => $x) {
+                //capture pins assigned to data output
                 foreach ($all_gpios as $z => $gp) {
+                    //simple pin mapping (no latches)
                     if ($gp['pin'] == $x['pin']) {
                         if ($gp['InUse'] == true) {
                             $all_gpios[$z]['ConfigError'] = true;
@@ -235,10 +248,35 @@ function GPIOConfig()
                         $all_gpios[$z]['InUse'] = true;
                         $all_gpios[$z]['Description'] = 'Pixel Port #' . ($k + 1);
                     }
+                    //latched gpio (1 gpio controlling multiple strings
+                    if ($gp['pru'] == $x['pru'] && $gp['pruPin'] == $x['pin']) {
+                        $firstUsage = true;
+                        if ($gp['InUse'] == true && $firstUsage == true) {
+                            $firstUsage = false;
+                            $all_gpios[$z]['ConfigError'] = true;
+                            if (is_null($all_gpios[$z]['ConfigConflict'])) {
+                                $all_gpios[$z]['ConfigConflict'] = '{' . $all_gpios[$z]['Function'] . ' : ' . $all_gpios[$z]['Description'] . '}' . '{' . $capeName . ' - String Output : ' . 'Pixel Port #' . ($k + 1) . '}';
+                            } else {
+                                $all_gpios[$z]['ConfigConflict'] = $all_gpios[$z]['ConfigConflict'] . '{' . $capeName . ' - String Output}';
+                            }
+                        }
+                        $all_gpios[$z]['Output'] = true;
+                        $all_gpios[$z]['Function'] = $capeName . ' - Latched String Output';
+                        $all_gpios[$z]['InUse'] = true;
+                        if ($firstUsage) {
+                            $all_gpios[$z]['Description'] = 'Pixel Port #' . ($k + 1);
+                        }
+                        if (!$firstUsage) {
+                            $all_gpios[$z]['Description'] += ', ' . ($k + 1);
+                        }
+                    }
+
                 }
             }
         }
     }
+
+    /* NEED TO ADD SECTION FOR enablePin / EfusePin / falconV5ListenerConfig */
 
     //panels - do they have special config for outputs?
 
