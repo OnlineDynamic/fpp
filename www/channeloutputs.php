@@ -99,8 +99,7 @@
             // don't support virtual strings
             ?>
             #PixelString tr>th:nth-of-type(3),
-            div[aria-labelledby="PixelString"] .floatThead-table tr>th:nth-of-type(3)
-            #PixelString tr>td:nth-of-type(3) {
+            div[aria-labelledby="PixelString"] .floatThead-table tr>th:nth-of-type(3) #PixelString tr>td:nth-of-type(3) {
                 display: none;
             }
 
@@ -160,18 +159,19 @@
             for (i = 0; i < channelOutputs.channelOutputs.length; i++) {
                 channelOutputsLookup[channelOutputs.channelOutputs[i].type + "-Enabled"] = channelOutputs.channelOutputs[i].enabled;
                 if (channelOutputs.channelOutputs[i].type == "LEDPanelMatrix") {
-                    channelOutputsLookup["LEDPanelMatrix"] = channelOutputs.channelOutputs[i];
+                    if (!channelOutputsLookup.includes("LEDPanelMatrices")) { channelOutputsLookup["LEDPanelMatrices"] = []; }
+                    channelOutputsLookup["LEDPanelMatrices"][channelOutputs.channelOutputs[i].panelMatrixID] = channelOutputs.channelOutputs[i];
 
                     var p = 0;
                     for (p = 0; p < channelOutputs.channelOutputs[i].panels.length; p++) {
                         var r = channelOutputs.channelOutputs[i].panels[p].row;
                         var c = channelOutputs.channelOutputs[i].panels[p].col;
 
-                        channelOutputsLookup["LEDPanelOutputNumber_" + r + "_" + c]
+                        channelOutputsLookup["LEDPanelMatrices"][channelOutputs.channelOutputs[i].panelMatrixID]["LEDPanelOutputNumber_" + r + "_" + c]
                             = channelOutputs.channelOutputs[i].panels[p];
-                        channelOutputsLookup["LEDPanelPanelNumber_" + r + "_" + c]
+                        channelOutputsLookup["LEDPanelMatrices"][channelOutputs.channelOutputs[i].panelMatrixID]["LEDPanelPanelNumber_" + r + "_" + c]
                             = channelOutputs.channelOutputs[i].panels[p];
-                        channelOutputsLookup["LEDPanelColorOrder_" + r + "_" + c]
+                        channelOutputsLookup["LEDPanelMatrices"][channelOutputs.channelOutputs[i].panelMatrixID]["LEDPanelColorOrder_" + r + "_" + c]
                             = channelOutputs.channelOutputs[i].panels[p];
                     }
                 }
@@ -183,9 +183,12 @@
 
             config.channelOutputs = [];
 
-            var lpc = GetLEDPanelConfig();
-            config.channelOutputs.push(lpc);
-
+            //loop round the displayed tabs and gather up their configs
+            for ($i = 0; $i < $('.tab-content #divPanelMatrixID').length; $i++) {
+                var panelID = $('#divPanelMatrixID .tab-pane')[$i].innerText;
+                var lpc = GetLEDPanelConfigFromUI(panelID);
+                config.channelOutputs.push(lpc);
+            }
             channelOutputs = config;
             UpdateChannelOutputLookup();
             var result = JSON.stringify(config);
@@ -236,9 +239,10 @@
 
         // If led panels are enabled, make sure the page is displayed even if the cape is a string cape (could be a colorlight output)
         if ($channelOutputs != null && $channelOutputs['channelOutputs'] != null && $channelOutputs['channelOutputs'][0] != null) {
-            if ($channelOutputs['channelOutputs'][0]['type'] == "LEDPanelMatrix" && $channelOutputs['channelOutputs'][0]['enabled'] == 1) {
-                $currentCapeInfo["provides"][] = 'panels';
-            }
+            foreach ($channelOutputsi['channelOutputs'] as $i)
+                if ($channelOutputs['channelOutputs'][$i]['type'] == "LEDPanelMatrix" && $channelOutputs['channelOutputs'][$i]['enabled'] == 1) {
+                    $currentCapeInfo["provides"][] = 'panels';
+                }
         }
 
         ?>
@@ -383,7 +387,7 @@
                             $pwmTabText = "PWM";
                             if (isset($currentCapeInfo["labels"]) && isset($currentCapeInfo["labels"]["pwm"])) {
                                 $pwmTabText = $currentCapeInfo["labels"]["pwm"];
-                            } 
+                            }
                             ?>
                             <li class="nav-item">
                                 <a class="nav-link" id="tab-pwm-tab" type="button" tabType='PWM' data-bs-toggle="pill"
@@ -394,7 +398,7 @@
                             <?
                         }
 
-                        $ledTabText = "LED Panels";
+                        $ledTabText = "LED Panel Matrices";
                         if (
                             (isset($settings['cape-info'])) &&
                             ((in_array('all', $settings['cape-info']["provides"])) || (in_array('panels', $settings['cape-info']["provides"]))) &&

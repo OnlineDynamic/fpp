@@ -3618,3 +3618,7 @@ a.api-anchor {
     display: block;
     text-align: left;
 }
+
+#divLEDPanelMatrices a.nav-link.active{
+    color: blue;
+}
