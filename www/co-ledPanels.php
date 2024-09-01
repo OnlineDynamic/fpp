@@ -60,6 +60,9 @@ if ($settings['BeaglePlatform']) {
 $maxLEDPanels = $LEDPanelOutputs * $LEDPanelPanelsPerOutput;
 $maxLEDPanels = 96; // Override to allow different panel configs using ColorLight cards
 
+echo $settings;
+
+
 if (isset($settings['LEDPanelsLayout'])) {
     $parts = explode('x', $settings['LEDPanelsLayout']);
     if (count($parts) == 2) {
@@ -354,12 +357,12 @@ function DrawLEDPanelTable()
 	}
 }
 
-function InitializeLEDPanels()
+function InitializeLEDPanelMatrix(panelMatrixID)
 {
 	if (("LEDPanelMatrix-Enabled" in channelOutputsLookup) &&
 			(channelOutputsLookup["LEDPanelMatrix-Enabled"])) {
-		$('#LEDPanelsEnabled').prop('checked', true);
-        $('#tab-LEDPanels-LI').show();
+		$("'#panelMatrix"+panelMatrixID+" #LEDPanelsEnabled'").prop('checked', true);
+        $("'#panelMatrix"+panelMatrixID+" #tab-LEDPanels-LI'").show();
     }
 
 	if ("LEDPanelMatrix" in channelOutputsLookup)
@@ -465,7 +468,9 @@ if ($settings['Platform'] == "Raspberry Pi" || $settings['BeaglePlatform']) {
     UpdateLegacyLEDPanelLayout();
 }
 
-function GetLEDPanelConfig()
+
+
+function GetLEDPanelConfigFromUI(PanelMatrixID)
 {
 	var config = new Object();
 	var panels = "";
@@ -474,10 +479,13 @@ function GetLEDPanelConfig()
 	var yDiff = 0;
     var advanced = 0;
 
-    if (($('#LEDPanelUIAdvancedLayout').is(":checked")) &&
+    var matrixDivName = 'panelMatrix'+1;
+    var matrixDiv = document.querySelector(".tab-content div[id=\""+matrixDivName+"\"]"); 
+
+    if (matrixDiv.find(('#LEDPanelUIAdvancedLayout').is(":checked")) &&
         (typeof channelOutputsLookup["LEDPanelMatrix"] !== 'undefined'))
         advanced = 1;
-
+console.log('sdjksakdjhaskjdh');
 	config.type = "LEDPanelMatrix";
 <?
 if ($settings['BeaglePlatform']) {
@@ -491,59 +499,59 @@ if ($settings['BeaglePlatform']) {
 
 	config.enabled = 0;
 	config.cfgVersion = 2;
-	config.startChannel = parseInt($('#LEDPanelsStartChannel').val());
-   	config.channelCount = parseInt($('#LEDPanelsChannelCount').html());
-	config.colorOrder = $('#LEDPanelsColorOrder').val();
-    config.gamma = $('#LEDPanelsGamma').val();
-	if (($('#LEDPanelsConnection').val() === "ColorLight5a75") || ($('#LEDPanelsConnection').val() === "X11PanelMatrix"))
+	config.startChannel = parseInt(matrixDiv.find('#LEDPanelsStartChannel').val());
+   	config.channelCount = parseInt(matrixDiv.find('#LEDPanelsChannelCount').html());
+	config.colorOrder = matrixDiv.find('#LEDPanelsColorOrder').val();
+    config.gamma = matrixDiv.find('#LEDPanelsGamma').val();
+	if ((matrixDiv.find('#LEDPanelsConnection').val() === "ColorLight5a75") || (matrixDiv.find('#LEDPanelsConnection').val() === "X11PanelMatrix"))
 	{
-		config.subType = $('#LEDPanelsConnection').val();
-        if ($('#LEDPanelsConnection').val() != "X11PanelMatrix")
-            config.interface = $('#LEDPanelsInterface').val();
+		config.subType = matrixDiv.find('#LEDPanelsConnection').val();
+        if (matrixDiv.find('#LEDPanelsConnection').val() != "X11PanelMatrix")
+            config.interface = matrixDiv.find('#LEDPanelsInterface').val();
 
 	}
 <?
 if ($settings['Platform'] == "Raspberry Pi" || $settings['BeaglePlatform']) {
     ?>
-	config.wiringPinout = $('#LEDPanelsWiringPinout').val();
-    config.brightness = parseInt($('#LEDPanelsBrightness').val());
+	config.wiringPinout = matrixDiv.find('#LEDPanelsWiringPinout').val();
+    config.brightness = parseInt(matrixDiv.find('#LEDPanelsBrightness').val());
 <?
 }
 
 if ($settings['Platform'] == "Raspberry Pi") {
     ?>
-		config.gpioSlowdown = parseInt($('#LEDPanelsGPIOSlowdown').val());
+		config.gpioSlowdown = parseInt(matrixDiv.find('#LEDPanelsGPIOSlowdown').val());
 <?
 }
 ?>
 
-    config.panelColorDepth = parseInt($('#LEDPanelsColorDepth').val());
-    config.gamma = $('#LEDPanelsGamma').val();
-	config.invertedData = parseInt($('#LEDPanelsStartCorner').val());
-    config.ledPanelsLayout = $('#LEDPanelsLayoutCols').val() + "x" + $('#LEDPanelsLayoutRows').val();
+    config.panelColorDepth = parseInt(matrixDiv.find('#LEDPanelsColorDepth').val());
+    config.gamma = matrixDiv.find('#LEDPanelsGamma').val();
+	config.invertedData = parseInt(matrixDiv.find('#LEDPanelsStartCorner').val());
+    config.ledPanelsLayout = matrixDiv.find('#LEDPanelsLayoutCols').val() + "x" + matrixDiv.find('#LEDPanelsLayoutRows').val();
     config.panelWidth = LEDPanelWidth;
 	config.panelHeight = LEDPanelHeight;
     config.panelScan = LEDPanelScan;
     <?if ($settings['Platform'] == "Raspberry Pi" || $settings['BeaglePlatform']) {?>
-        config.panelOutputOrder = $('#LEDPanelsOutputByRow').is(':checked');
-        config.panelOutputBlankRow = $('#LEDPanelsOutputBlankRow').is(':checked');
+        config.panelOutputOrder = matrixDiv.find('#LEDPanelsOutputByRow').is(':checked');
+        config.panelOutputBlankRow = matrixDiv.find('#LEDPanelsOutputBlankRow').is(':checked');
     <?}?>
     <?if ($settings['Platform'] == "Raspberry Pi") {?>
-        config.cpuPWM = $('#LEDPanelsOutputCPUPWM').is(':checked');
+        config.cpuPWM = matrixDiv.find('#LEDPanelsOutputCPUPWM').is(':checked');
     <?}?>
 
     if (LEDPanelAddressing) {
         config.panelAddressing = LEDPanelAddressing;
     }
-    if ($('#LEDPanelRowAddressType').val() != "0") {
-        config.panelRowAddressType = parseInt($('#LEDPanelRowAddressType').val());
+    if (matrixDiv.find('#LEDPanelRowAddressType').val() != "0") {
+        config.panelRowAddressType = parseInt(matrixDiv.find('#LEDPanelRowAddressType').val());
     }
-    if ($('#LEDPanelInterleave').val() != "0") {
-        config.panelInterleave = $('#LEDPanelInterleave').val();
+    if (matrixDiv.find('#LEDPanelInterleave').val() != "0") {
+        config.panelInterleave = matrixDiv.find('#LEDPanelInterleave').val();
     }
 	config.panels = [];
 
-	if ($('#LEDPanelsEnabled').is(":checked"))
+	if (matrixDiv.find('#LEDPanelsEnabled').is(":checked"))
 		config.enabled = 1;
 
     if (advanced) {
@@ -559,16 +567,16 @@ if ($settings['Platform'] == "Raspberry Pi") {
 				var id = "";
 
 				id = "#LEDPanelOutputNumber_" + r + "_" + c;
-				panel.outputNumber = parseInt($(id).val());
+				panel.outputNumber = parseInt(matrixDiv.find(id).val());
 
 				id = "#LEDPanelPanelNumber_" + r + "_" + c;
-				panel.panelNumber = parseInt($(id).val());
+				panel.panelNumber = parseInt(matrixDiv.find(id).val());
 
 				id = "#LEDPanelColorOrder_" + r + "_" + c;
-				panel.colorOrder = $(id).val();
+				panel.colorOrder = matrixDiv.find(id).val();
 
 				id = "#LEDPanelOrientation_" + r + "_" + c;
-				var src = $(id).attr('src');
+				var src = matrixDiv.find(id).attr('src');
 
 				panel.xOffset = xOffset;
 				panel.yOffset = yOffset;
@@ -1274,6 +1282,40 @@ function TogglePanelTestPattern() {
     }
 }
 
+function AddPanelMatrixDialog(){
+	var options = {
+		id: 'AddPanelMatrixDialog',
+		title: 'Add a new LED Panel Matrix Output',
+		class: 'modal-sm',
+        noClose: false,
+        backdrop: 'static',
+		keyboard: true,
+        buttons: {
+			'Add Panel': {
+				disabled: false,
+				id: 'RebootButton',
+				class: 'btn-danger',
+				click: function () {
+					CloseModalDialog('AddPanelMatrixDialog');
+                    location.reload();
+				}
+			},
+			Abort: {
+				disabled: false,
+				id: 'AbortButton',
+				click: function () {
+					CloseModalDialog('AddPanelMatrixDialog');
+					location.reload();
+				}
+			}
+		}
+	};
+
+    options.body = document.querySelector("#AddPanelDialogCode").innerHTML;
+    DoModalDialog(options);
+	
+}
+
 function WarnIfSlowNIC() {
     var NicSpeed = parseInt($('#LEDPanelsInterface').find(":selected").text().split('(')[1].split('M')[0]);
     if (NicSpeed < 1000 && $('#LEDPanelsConnection').find(":selected").text()=="ColorLight" && $('#LEDPanelsEnabled').is(":checked")==true) {
@@ -1285,7 +1327,14 @@ function WarnIfSlowNIC() {
 }
 
 $(document).ready(function(){
-	InitializeLEDPanels();
+
+    document.querySelector('#panelMatrix1').innerHTML =  document.querySelector('#divLEDPanelsTemplate').innerHTML;
+    document.querySelector('#panelMatrix1  #divPanelMatrixID').innerHTML =  1;
+    document.querySelector('#panelMatrix2').innerHTML =  document.querySelector('#divLEDPanelsTemplate').innerHTML;
+    document.querySelector('#panelMatrix2  #divPanelMatrixID').innerHTML =  2;
+
+
+	InitializeLEDPanelMatrix(1);
 	LEDPanelsConnectionChanged();
 
     SetupAdvancedUISelects();
@@ -1312,30 +1361,80 @@ WarnIfSlowNIC();
 });
 
 </script>
-
-	<div id='divLEDPanels'>
-        <div class="row tableTabPageHeader">
-            <div class="col-md"><h2><span class='capeNamePanels'>LED Panels</span> </h2></div>
-            <div class="col-md-auto ms-lg-auto">
-                <div class="form-actions">
-                    <input id="PanelTestPatternButton" type='button' class="buttons ms-1" onClick='TogglePanelTestPattern();' value='Test Pattern'>
-                    <input type='button' class="buttons btn-success ms-1" onClick='SaveChannelOutputsJSON();' value='Save'>
-                </div>
+<div id="divLEDPanelMatrices">
+    <div id="divLEDPanelWarnings">
+    </div>
+    <div class="row tableTabPageHeader">
+        <div class="col-md">
+            <h2><span class='capeNamePanels'>LED Panel Matrices</span> </h2>
+        </div>
+        <div class="col-md-auto ms-lg-auto">
+            <div class="form-actions">
+                <input id="PanelTestPatternButton" type='button' class="buttons ms-1" onClick='AddPanelMatrixDialog();' value='Add Panel Matrix'>
+                <input id="PanelTestPatternButton" type='button' class="buttons ms-1" onClick='TogglePanelTestPattern();' value='Test Pattern'>
+                <input type='button' class="buttons btn-success ms-1" onClick='SaveChannelOutputsJSON();' value='Save'>
             </div>
         </div>
-        <div id="divLEDPanelWarnings">
+    </div>
+                <!-- LED Panel Matrix Tabs --->
+                <ul class="nav nav-tabs" id="panelTabs" role="tablist">
+                    <li class="nav-item"><a class="nav-link" href="#panelMatrix1" data-bs-toggle="tab" data-bs-target="#panelMatrix1">Panel Matrix 1</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#panelMatrix2" data-bs-toggle="tab" data-bs-target="#panelMatrix2">Panel Matrix 2</a></li>
+                    <li class="nav-item" style="display: none;"><a class="nav-link" href="#panelMatrix3" data-bs-toggle="tab" data-bs-target="#panelMatrix3">Panel Matrix 3</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#panelMatrix4" data-bs-toggle="tab" data-bs-target="#panelMatrix4">Panel Matrix 4</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#panelMatrix5" data-bs-toggle="tab" data-bs-target="#panelMatrix5">Panel Matrix 5</a></li>
+                </ul>
+          	
+                <!-- LED Panel Matrix Tab-Content --->
+          	
+              <div class="tab-content" style="border:1px;border-style: solid;">
+                <div class="tab-pane active" id="panelMatrix1">panel 1 content</div>
+          		<div class="tab-pane" id="panelMatrix2">panel 2 content</div>
+                <div class="tab-pane" id="panelMatrix3">panel 3 content</div>
+                <div class="tab-pane" id="panelMatrix4">panel 4 content</div>
+                <div class="tab-pane" id="panelMatrix5">panel 5 content</div>
+              </div>
 
-        </div>
+              <div id="divNotes">
+                <br>
+                <b>Notes and hints:</b>
+                <ul>
+<?if (count($panelCapes) == 1) {
+    if (isset($panelCapes[0]["warnings"][$settings["SubPlatform"]])) {
+        echo "<li><font color='red'>" . $panelCapes[0]["warnings"][$settings["SubPlatform"]] . "</font></li>\n";
+    }
+    if (isset($panelCapes[0]["warnings"]["all"])) {
+        echo "<li><font color='red'>" . $panelCapes[0]["warnings"]["all"] . "</font></li>\n";
+    }
+    if (isset($panelCapes[0]["warnings"]["*"])) {
+        echo "<li><font color='red'>" . $panelCapes[0]["warnings"]["*"] . "</font></li>\n";
+    }
+}?>
+                    <li><font color='red'>New Colorlight receiver firmware eg 13.x is currently incompatible with FPP, please see <a href="https://github.com/FalconChristmas/fpp/issues/1849">Issue 1849</a></font></li>
+                    <li>When wiring panels, divide the panels across as many outputs as possible.  Shorter chains on more outputs will have higher refresh than longer chains on fewer outputs.</li>
+                    <li>If not using all outputs, use all the outputs from 1 up to what is needed.   Data is always sent on outputs up to the highest configured, even if no panels are attached.</li>
+                    <?if ($settings['Platform'] == "Raspberry Pi") {?>
+                    <li>The FPP developers strongly encourage using either a BeagleBone based panel driver (Octoscroller, PocketScroller) or using a ColorLight controller.  The Raspberry Pi panel code performs poorly compared to the other options and supports a much more limited set of options.</li>
+                    <?}?>
+                </ul>
+                </div> <!--close notes div -->
+
+
+<!-- TEMPLATE HTML USED AS CODE BASE ON EACH PANEL TAB -->
+
+
+	<div id='divLEDPanelsTemplate' style="background-color: aquamarine;display:none;">
+        <div id="divPanelMatrixID" style="display:none;"></div>
         <div class="backdrop tableOptionsForm">
             <div class="row">
                 <div class="col-md-auto">
                     <div class="backdrop-dark form-inline enableCheckboxWrapper">
-                        <div><b>Enable <span class='capeNamePanels'>Led Panels</span>:&nbsp;</b></div>
+                        <div><b>Enable <span class='capeNamePanels'>Led Panel Matrix</span>:&nbsp;</b></div>
                         <div><input id='LEDPanelsEnabled' type='checkbox' onChange="WarnIfSlowNIC();"></div>
                     </div>
                 </div>
                 <div class="col-md-auto form-inline">
-                    <div id='LEDPanelsConnectionLabel'><b>Connection:&nbsp;</b></div>
+                    <div id='LEDPanelsConnectionLabel'><b>Connection Type:&nbsp;</b></div>
                     <div>
                     <select id='LEDPanelsConnection' onChange='LEDPanelsConnectionChanged();'>
 <?
@@ -1388,14 +1487,25 @@ if ((file_exists('/usr/include/X11/Xlib.h')) && ($settings['Platform'] == "Linux
 }?>
 					</select>
                 </div>
+
+                <div class="col-md-auto ms-lg-auto">
+                    <div class="form-actions">
+                        <input id="PanelTestPatternButton" type='button' class="buttons ms-1 btn-danger" onClick='RemovePanelMatrixConfig();' value='Remove Panel Matrix'>
+                    </div>
+                </div>
+
+
             </div>
         </div>
         <div id='divLEDPanelsData'>
             <div class="container-fluid settingsTable">
                 <div class="row">
-                    <div class="printSettingLabelCol col-md-2 col-lg-2"><span class='ledPanelSimpleUI'><b>Panel Layout:</b></span><span class='ledPanelCanvasUI'><b>Matrix Size (WxH):</b></span></div>
+                    <div class="printSettingLabelCol col-md-2 col-lg-2">
+                        <span class='ledPanelSimpleUI'><b>Panel Layout:</b></span><span class='ledPanelCanvasUI'><b>Matrix Size (WxH):</b></span>
+                    </div>
                     <div class="printSettingFieldCol col-md-3 col-lg-3"><span class='ledPanelSimpleUI'><?printLEDPanelLayoutSelect();?> <input type='button' class='buttons' onClick='AutoLayoutPanels();' value='Auto Layout'></span>
-                                    <span class='ledPanelCanvasUI'><span id='matrixSize'></span></span></div>
+                        <span class='ledPanelCanvasUI'><span id='matrixSize'></span></span>
+                    </div>
                     <div class="printSettingLabelCol col-md-2 col-lg-2"><b>Start Channel:</b></div>
                     <div class="printSettingFieldCol col-md-3 col-lg-3"><input id='LEDPanelsStartChannel' type=number min=1 max=<?=FPPD_MAX_CHANNELS?> value='1'></div>
                 </div>
@@ -1421,7 +1531,8 @@ if ((file_exists('/usr/include/X11/Xlib.h')) && ($settings['Platform'] == "Linux
                         <select id='LEDPanelsStartCorner'>
 							<option value='0'>Top Left</option>
 							<option value='1'>Bottom Left</option>
-						</select></div>
+						</select>
+                    </div>
                     <div class="printSettingLabelCol col-md-2 col-lg-2"><b>Default Panel Color Order:</b></div>
                     <div class="printSettingFieldCol col-md-3 col-lg-3">
                         <select id='LEDPanelsColorOrder'>
@@ -1534,7 +1645,7 @@ if ($settings['Platform'] == "Raspberry Pi") {
                     <div class="printSettingFieldCol col-md-3 col-lg-3"></div>
             <?}?>
         </div>
-  </div>
+  
 
 		<div id='divLEDPanelsLayoutData'>
 			<div style="padding: 10px;">
@@ -1606,29 +1717,45 @@ if ($settings['Platform'] == "Raspberry Pi") {
 		    		- C-(color) is color order if panel has different color order than default (C-Def).<br>
 	    			- Arrow <img src='images/arrow_N.png' height=17 width=17 alt="panel orientation"> indicates panel orientation, click arrow to rotate.<br>
                 </div>
-                <br>
-                <b>Notes and hints:</b>
-                <ul>
-<?if (count($panelCapes) == 1) {
-    if (isset($panelCapes[0]["warnings"][$settings["SubPlatform"]])) {
-        echo "<li><font color='red'>" . $panelCapes[0]["warnings"][$settings["SubPlatform"]] . "</font></li>\n";
-    }
-    if (isset($panelCapes[0]["warnings"]["all"])) {
-        echo "<li><font color='red'>" . $panelCapes[0]["warnings"]["all"] . "</font></li>\n";
-    }
-    if (isset($panelCapes[0]["warnings"]["*"])) {
-        echo "<li><font color='red'>" . $panelCapes[0]["warnings"]["*"] . "</font></li>\n";
-    }
-}?>
-                    <li><font color='red'>New Colorlight receiver firmware eg 13.x is currently incompatible with FPP, please see <a href="https://github.com/FalconChristmas/fpp/issues/1849">Issue 1849</a></font></li>
-                    <li>When wiring panels, divide the panels across as many outputs as possible.  Shorter chains on more outputs will have higher refresh than longer chains on fewer outputs.</li>
-                    <li>If not using all outputs, use all the outputs from 1 up to what is needed.   Data is always sent on outputs up to the highest configured, even if no panels are attached.</li>
-                    <?if ($settings['Platform'] == "Raspberry Pi") {?>
-                    <li>The FPP developers strongly encourage using either a BeagleBone based panel driver (Octoscroller, PocketScroller) or using a ColorLight controller.  The Raspberry Pi panel code performs poorly compared to the other options and supports a much more limited set of options.</li>
-                    <?}?>
-                </ul>
+            </div>             
+        </div>
+                
+            </div>
 		    </div>
-	    </div>
+
+
+
+
+
+    <div id="AddPanelDialogCode" style="display:none;">
+        <div id='LEDPanelsConnectionLabel'>
+            <b>Select Connection Type:&nbsp;</b>
+        </div>
+        <div>
+            <select id='LEDPanelsConnection' onChange='LEDPanelsConnectionChanged();'>
+                <?
+                if (
+                    in_array('all', $currentCapeInfo["provides"])
+                    || in_array('panels', $currentCapeInfo["provides"])
+                ) {
+                    if ($settings['Platform'] == "Raspberry Pi") {
+                        ?>
+                        <option value='RGBMatrix'>Hat/Cap/Cape</option>
+                        <?
+                    } else if ($settings['Platform'] == "BeagleBone Black") { ?>
+                            <option value='LEDscapeMatrix'>Hat/Cap/Cape</option>
+                    <? } ?>
+                    <?
+                } ?>
+                <option value='ColorLight5a75'>ColorLight</option>
+                <?
+                if ((file_exists('/usr/include/X11/Xlib.h')) && ($settings['Platform'] == "Linux")) {
+                    echo "<option value='X11PanelMatrix'>X11 Panel Matrix</option>\n";
+                }
+                ?>
+            </select>
+        </div>
+    </div>
 
 
 
