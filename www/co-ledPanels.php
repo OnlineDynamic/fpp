@@ -75,7 +75,7 @@ function printLEDPanelLayoutSelect()
 {
     global $maxLEDPanels, $LEDPanelCols, $LEDPanelRows;
 
-    echo "W: <select id='LEDPanelsLayoutCols' onChange='LEDPanelsLayoutChanged()'>\n";
+    echo "W: <select class='LEDPanelsLayoutCols' onChange='LEDPanelsLayoutChanged()'>\n";
     for ($r = 1; $r <= $maxLEDPanels; $r++) {
         if ($LEDPanelCols == $r) {
             echo "<option value='" . $r . "' selected>" . $r . "</option>\n";
@@ -85,7 +85,7 @@ function printLEDPanelLayoutSelect()
     }
     echo "</select>";
 
-    echo "&nbsp; H:<select id='LEDPanelsLayoutRows' onChange='LEDPanelsLayoutChanged()'>\n";
+    echo "&nbsp; H:<select class='LEDPanelsLayoutRows' onChange='LEDPanelsLayoutChanged()'>\n";
     for ($r = 1; $r <= $maxLEDPanels; $r++) {
         if ($LEDPanelRows == $r) {
             echo "<option value='" . $r . "' selected>" . $r . "</option>\n";
@@ -101,12 +101,14 @@ function printLEDPanelGammaSelect($platform, $gamma)
     if (!isset($gamma) || $gamma == "" || $gamma == "0") {
         $gamma = "2.2";
     }
-    echo "<input type='number' min='0.1' max='5.0' step='0.1' value='$gamma' id='LEDPanelsGamma'>";
+    echo "<input type='number' min='0.1' max='5.0' step='0.1' value='$gamma' class='LEDPanelsGamma'>";
 }
 
 function printLEDPanelInterleaveSelect($platform)
 {
-    echo "<select id='LEDPanelInterleave' onchange='LEDPanelLayoutChanged();'>";
+    //get currently visible panelMatrixID
+    //echo "panelMatrixID = $('.panelMatrix-tab-content .tab-pane.active .divPanelMatrixID')[0].innerHTML;\n";
+    echo "<select class='LEDPanelInterleave' onchange='LEDPanelLayoutChanged($('.panelMatrix-tab-content .tab-pane.active .divPanelMatrixID')[0].innerHTML);'>";
 
     $values = array();
     if ($platform == "BeagleBone Black") {
@@ -166,7 +168,9 @@ var LEDPanelGamma = <?echo $LEDPanelGamma; ?>;
 
 function UpdatePanelSize()
 {
-	var size = $('#LEDPanelsSize').val();
+    //get currently visible panelMatrixID
+    panelMatrixID = $('.panelMatrix-tab-content .tab-pane.active .divPanelMatrixID')[0].innerHTML;
+	var size = $(`#panelMatrix${panelMatrixID} .LEDPanelsSize`).val();
 	var sizeparts = size.split("x");
 	LEDPanelWidth = parseInt(sizeparts[0]);
 	LEDPanelHeight = parseInt(sizeparts[1]);
@@ -176,16 +180,18 @@ function UpdatePanelSize()
 
 function LEDPanelOrientationClicked(id)
 {
-	var src = $('#' + id).attr('src');
+    //get currently visible panelMatrixID
+    panelMatrixID = $('.panelMatrix-tab-content .tab-pane.active .divPanelMatrixID')[0].innerHTML;
+	var src = $(`#panelMatrix${panelMatrixID} .${id}`).attr('src');
 
 	if (src == 'images/arrow_N.png')
-		$('#' + id).attr('src', 'images/arrow_R.png');
+		$(`#panelMatrix${panelMatrixID} .${id}`).attr('src', 'images/arrow_R.png');
 	else if (src == 'images/arrow_R.png')
-		$('#' + id).attr('src', 'images/arrow_U.png');
+		$(`#panelMatrix${panelMatrixID} .${id}`).attr('src', 'images/arrow_U.png');
 	else if (src == 'images/arrow_U.png')
-		$('#' + id).attr('src', 'images/arrow_L.png');
+		$(`#panelMatrix${panelMatrixID} .${id}`).attr('src', 'images/arrow_L.png');
 	else if (src == 'images/arrow_L.png')
-		$('#' + id).attr('src', 'images/arrow_N.png');
+		$(`#panelMatrix${panelMatrixID} .${id}`).attr('src', 'images/arrow_N.png');
 }
 
 function GetLEDPanelNumberSetting(id, key, maxItems, selectedItem)
@@ -195,7 +201,7 @@ function GetLEDPanelNumberSetting(id, key, maxItems, selectedItem)
 	var o = 0;
 	var selected = "";
 
-	html = "<select id='" + key + "'>";
+	html = "<select class='" + key + "'>";
 	for (i = 0; i < maxItems; i++)
 	{
 		selected = "";
@@ -217,7 +223,7 @@ function GetLEDPanelColorOrder(key, selectedItem)
 	var selected = "";
 	var i = 0;
 
-	html += "<select id='" + key + "'>";
+	html += "<select class='" + key + "'>";
 	html += "<option value=''>C-Def</option>";
 	for (i = 0; i < colorOrders.length; i++)
 	{
@@ -233,51 +239,54 @@ function GetLEDPanelColorOrder(key, selectedItem)
 	return html;
 }
 
-function UpdateLegacyLEDPanelLayout()
+function UpdateLegacyLEDPanelLayout(panelMatrixID)
 {
-	LEDPanelCols = parseInt($('#LEDPanelsLayoutCols').val());
-	LEDPanelRows = parseInt($('#LEDPanelsLayoutRows').val());
+	LEDPanelCols = parseInt($(`#panelMatrix${panelMatrixID} .LEDPanelsLayoutCols`).val());
+	LEDPanelRows = parseInt($(`#panelMatrix${panelMatrixID} .LEDPanelsLayoutRows`).val());
 
 	UpdatePanelSize();
     if ((LEDPanelScan * 2) == LEDPanelHeight) {
-        $('#LEDPanelInterleave').attr("disabled", "disabled");
+        $(`#panelMatrix${panelMatrixID} .LEDPanelInterleave`).attr("disabled", "disabled");
     } else {
-        $('#LEDPanelInterleave').removeAttr("disabled");
+        $(`#panelMatrix${panelMatrixID} .LEDPanelInterleave`).removeAttr("disabled");
     }
 
     var pixelCount = LEDPanelCols * LEDPanelRows * LEDPanelWidth * LEDPanelHeight;
-    $('#LEDPanelsPixelCount').html(pixelCount);
+    $(`#panelMatrix${panelMatrixID} .LEDPanelsPixelCount`).html(pixelCount);
 
     var channelCount = pixelCount * 3;
-    $('#LEDPanelsChannelCount').html(channelCount);
+    $(`#panelMatrix${panelMatrixID} .LEDPanelsChannelCount`).html(channelCount);
 
-	DrawLEDPanelTable();
+	DrawLEDPanelTable(panelMatrixID);
 }
 
-function LEDPanelLayoutChanged()
+function LEDPanelLayoutChanged(panelMatrixID)
 {
-    UpdateLegacyLEDPanelLayout();
+    UpdateLegacyLEDPanelLayout(panelMatrixID);
 
     // update in-memory array
     GetChannelOutputConfig();
 
-    if ($('#LEDPanelUIAdvancedLayout').is(":checked")) {
+    if ($(`#panelMatrix${panelMatrixID} .LEDPanelUIAdvancedLayout`).is(":checked")) {
         for (var i = 0; i < channelOutputsLookup["LEDPanelMatrix"].panels.length; i++) {
             SetupCanvasPanel(i);
         }
-        UpdateMatrixSize();
+        UpdateMatrixSize(panelMatrixID);
     }
 }
 
 
 function LEDPanelsLayoutChanged() {
-    var value = $('#LEDPanelsLayoutCols').val() + "x" + $('#LEDPanelsLayoutRows').val();
+//get currently visible panelMatrixID
+panelMatrixID = $('.panelMatrix-tab-content .tab-pane.active .divPanelMatrixID')[0].innerHTML;
+
+    var value = $(`#panelMatrix${panelMatrixID} .LEDPanelsLayoutCols`).val() + "x" + $(`#panelMatrix${panelMatrixID} .LEDPanelsLayoutRows`).val();
 
     $.put('api/settings/LEDPanelsLayout', value)
         .done(function() {
             $.jGrowl('Panel Layout saved',{themeState:'success'});
             settings['LEDPanelsLayout'] = value;
-            LEDPanelLayoutChanged();
+            LEDPanelLayoutChanged(panelMatrixID);
             SetRestartFlag(2);
             common_ViewPortChange();
         }).fail(function() {
@@ -286,21 +295,21 @@ function LEDPanelsLayoutChanged() {
 }
 
 
-function FrontBackViewToggled() {
+function FrontBackViewToggled(panelMatrixID) {
     GetChannelOutputConfig(); // Refresh the in-memory config before redrawing
-    DrawLEDPanelTable();
+    DrawLEDPanelTable(panelMatrixID);
 }
 
-function DrawLEDPanelTable()
+function DrawLEDPanelTable(panelMatrixID)
 {
 	var r;
 	var c;
 	var key = "";
 	var frontView = 0;
 
-    var tbody = $('#LEDPanelTable tbody');
+    var tbody = $(`#panelMatrix${panelMatrixID} .LEDPanelTable tbody`);
     tbody.empty();
-	if ($('#LEDPanelUIFrontView').is(":checked")) {
+	if ($(`#panelMatrix${panelMatrixID} .LEDPanelUIFrontView`).is(":checked")) {
 		frontView = 1;
         tbody[0].insertRow(0).innerHTML = "<th colspan='" + LEDPanelCols + "'>Front View</th>";
 	} else {
@@ -332,7 +341,7 @@ function DrawLEDPanelTable()
 				html += "N";
 			}
 
-			html += ".png' height=17 width=17 id='LEDPanelOrientation_" + r + "_" + c + "' onClick='LEDPanelOrientationClicked(\"LEDPanelOrientation_" + r + "_" + c + "\");'><br>";
+			html += ".png' height=17 width=17 class='LEDPanelOrientation_" + r + "_" + c + "' onClick='LEDPanelOrientationClicked(\"LEDPanelOrientation_" + r + "_" + c + "\");'><br>";
 
 			key = "LEDPanelPanelNumber_" + r + "_" + c;
 			if (typeof channelOutputsLookup[key] !== 'undefined') {
@@ -360,32 +369,32 @@ function InitializeLEDPanelMatrix(panelMatrixID)
 {
 	if (("LEDPanelMatrix-Enabled" in channelOutputsLookup) &&
 			(channelOutputsLookup["LEDPanelMatrix-Enabled"])) {
-		$("'#panelMatrix"+panelMatrixID+" #LEDPanelsEnabled'").prop('checked', true);
-        $("'#panelMatrix"+panelMatrixID+" #tab-LEDPanels-LI'").show();
+		$(`#panelMatrix${panelMatrixID} .LEDPanelsEnabled`).prop('checked', true);
+        $(`#panelMatrix${panelMatrixID} .tab-LEDPanels-LI`).show();
     }
 
 	if ("LEDPanelMatrix" in channelOutputsLookup)
 	{
-		$('#LEDPanelsStartChannel').val(channelOutputsLookup["LEDPanelMatrix"].startChannel);
-		$('#LEDPanelsPixelCount').html(channelOutputsLookup["LEDPanelMatrix"].channelCount / 3);
-		$('#LEDPanelsChannelCount').html(channelOutputsLookup["LEDPanelMatrix"].channelCount);
-		$('#LEDPanelsColorOrder').val(channelOutputsLookup["LEDPanelMatrix"].colorOrder);
-		$('#LEDPanelsBrightness').val(channelOutputsLookup["LEDPanelMatrix"].brightness);
-        $('#LEDPanelsGamma').val(channelOutputsLookup["LEDPanelMatrix"].gamma);
-		$('#LEDPanelsConnection').val(channelOutputsLookup["LEDPanelMatrix"].subType);
+		$(`#panelMatrix${panelMatrixID} .LEDPanelsStartChannel`).val(channelOutputsLookup["LEDPanelMatrix"].startChannel);
+		$(`#panelMatrix${panelMatrixID} .LEDPanelsPixelCount`).html(channelOutputsLookup["LEDPanelMatrix"].channelCount / 3);
+		$(`#panelMatrix${panelMatrixID} .LEDPanelsChannelCount`).html(channelOutputsLookup["LEDPanelMatrix"].channelCount);
+		$(`#panelMatrix${panelMatrixID} .LEDPanelsColorOrder`).val(channelOutputsLookup["LEDPanelMatrix"].colorOrder);
+		$(`#panelMatrix${panelMatrixID} .LEDPanelsBrightness`).val(channelOutputsLookup["LEDPanelMatrix"].brightness);
+        $(`#panelMatrix${panelMatrixID} .LEDPanelsGamma`).val(channelOutputsLookup["LEDPanelMatrix"].gamma);
+		$(`#panelMatrix${panelMatrixID} .LEDPanelsConnection`).val(channelOutputsLookup["LEDPanelMatrix"].subType);
         if (channelOutputsLookup["LEDPanelMatrix"].interface != null) {
-            $('#LEDPanelsInterface').val(channelOutputsLookup["LEDPanelMatrix"].interface);
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsInterface`).val(channelOutputsLookup["LEDPanelMatrix"].interface);
         }
 <?
 if ($settings['Platform'] == "Raspberry Pi" || $settings['Platform'] == "BeagleBone Black") {
     ?>
-		$('#LEDPanelsWiringPinout').val(channelOutputsLookup["LEDPanelMatrix"].wiringPinout);
+		$(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinout`).val(channelOutputsLookup["LEDPanelMatrix"].wiringPinout);
 <?
 }
 
 if ($settings['Platform'] == "Raspberry Pi") {
     ?>
-		$('#LEDPanelsGPIOSlowdown').val(channelOutputsLookup["LEDPanelMatrix"].gpioSlowdown);
+		$(`#panelMatrix${panelMatrixID} .LEDPanelsGPIOSlowdown`).val(channelOutputsLookup["LEDPanelMatrix"].gpioSlowdown);
 <?
 }
 ?>
@@ -400,11 +409,11 @@ if ($settings['Platform'] == "Raspberry Pi") {
         }
         if (channelOutputsLookup["LEDPanelMatrix"].panelRowAddressType != null) {
             var RowAddressType = channelOutputsLookup["LEDPanelMatrix"].panelRowAddressType;
-            $('#LEDPanelRowAddressType').val(RowAddressType);
+            $(`#panelMatrix${panelMatrixID} .LEDPanelRowAddressType`).val(RowAddressType);
         }
         if (channelOutputsLookup["LEDPanelMatrix"].panelInterleave != null) {
             var interleave = channelOutputsLookup["LEDPanelMatrix"].panelInterleave;
-            $('#LEDPanelInterleave').val(interleave);
+            $(`#panelMatrix${panelMatrixID} .LEDPanelInterleave`).val(interleave);
         }
 
 <?if ($settings['Platform'] == "BeagleBone Black") {?>
@@ -416,11 +425,11 @@ if ($settings['Platform'] == "Raspberry Pi") {
             colordepth = -colordepth;
             outputByRow = true;
         }
-        $('#LEDPanelsOutputByRow').prop("checked", outputByRow);
-        $('#LEDPanelsOutputBlankRow').prop("checked", outputBlank);
+        $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputByRow`).prop("checked", outputByRow);
+        $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRow`).prop("checked", outputBlank);
         if (outputByRow == false) {
-            $('#LEDPanelsOutputBlankRow').hide();
-            $('#LEDPanelsOutputBlankLabel').hide();
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRow`).hide();
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankLabel`).hide();
         }
 <?} else if ($settings['Platform'] == "Raspberry Pi") {?>
         var cpuPWM = false;
@@ -428,11 +437,11 @@ if ($settings['Platform'] == "Raspberry Pi") {
         if (typeof cpuPWM === 'undefined') {
             cpuPWM = false;
         }
-        $('#LEDPanelsOutputCPUPWM').prop("checked", cpuPWM);
+        $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputCPUPWM`).prop("checked", cpuPWM);
 <?}?>
 
-        $('#LEDPanelsColorDepth').val(colordepth);
-		$('#LEDPanelsStartCorner').val(channelOutputsLookup["LEDPanelMatrix"].invertedData);
+        $(`#panelMatrix${panelMatrixID} .LEDPanelsColorDepth`).val(colordepth);
+		$(`#panelMatrix${panelMatrixID} .LEDPanelsStartCorner`).val(channelOutputsLookup["LEDPanelMatrix"].invertedData);
 
 		if ((channelOutputsLookup["LEDPanelMatrix"].subType == 'ColorLight5a75') ||
             (channelOutputsLookup["LEDPanelMatrix"].subType == 'X11PanelMatrix'))
@@ -448,14 +457,14 @@ if ($settings['Platform'] == "Raspberry Pi" || $settings['Platform'] == "BeagleB
 
     if (typeof KNOWN_PANEL_CAPE  !== 'undefined') {
         if (KNOWN_PANEL_CAPE["defaults"]["LEDPanelsWiringPinout"]  !== 'undefined') {
-            $('#LEDPanelsWiringPinout').val(KNOWN_PANEL_CAPE["defaults"]["LEDPanelsWiringPinout"]);
-            $('#LEDPanelsWiringPinout').hide();
-            $('#LEDPanelsWiringPinoutLabel').hide();
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinout`).val(KNOWN_PANEL_CAPE["defaults"]["LEDPanelsWiringPinout"]);
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinout`).hide();
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinoutLabel`).hide();
         }
         if (KNOWN_PANEL_CAPE["defaults"]["LEDPanelsConnection"]  !== 'undefined') {
-            $('#LEDPanelsConnection').val(KNOWN_PANEL_CAPE["defaults"]["LEDPanelsConnection"]);
-            $('#LEDPanelsConnection').hide();
-            $('#LEDPanelsConnectionLabel').hide();
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsConnection`).val(KNOWN_PANEL_CAPE["defaults"]["LEDPanelsConnection"]);
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsConnection`).hide();
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionLabel`).hide();
         }
         LEDPanelOutputs = KNOWN_PANEL_CAPE["outputs"].length;
     }
@@ -463,13 +472,13 @@ if ($settings['Platform'] == "Raspberry Pi" || $settings['Platform'] == "BeagleB
 }
 ?>
 
-    PanelSubtypeChanged();
-    UpdateLegacyLEDPanelLayout();
+    PanelSubtypeChanged(panelMatrixID);
+    UpdateLegacyLEDPanelLayout(panelMatrixID);
 }
 
 
 
-function GetLEDPanelConfigFromUI(PanelMatrixID)
+function GetLEDPanelConfigFromUI(panelMatrixID)
 {
 	var config = new Object();
 	var panels = "";
@@ -478,13 +487,12 @@ function GetLEDPanelConfigFromUI(PanelMatrixID)
 	var yDiff = 0;
     var advanced = 0;
 
-    var matrixDivName = 'panelMatrix'+1;
+    var matrixDivName = 'panelMatrix'+panelMatrixID;
     var matrixDiv = document.querySelector(".tab-content div[id=\""+matrixDivName+"\"]"); 
 
-    if (matrixDiv.find(('#LEDPanelUIAdvancedLayout').is(":checked")) &&
+    if (matrixDiv.find((`#panelMatrix${panelMatrixID} .LEDPanelUIAdvancedLayout`).is(":checked")) &&
         (typeof channelOutputsLookup["LEDPanelMatrix"] !== 'undefined'))
         advanced = 1;
-console.log('sdjksakdjhaskjdh');
 	config.type = "LEDPanelMatrix";
 <?
 if ($settings['Platform'] == "BeagleBone Black") {
@@ -498,59 +506,59 @@ if ($settings['Platform'] == "BeagleBone Black") {
 
 	config.enabled = 0;
 	config.cfgVersion = 2;
-	config.startChannel = parseInt(matrixDiv.find('#LEDPanelsStartChannel').val());
-   	config.channelCount = parseInt(matrixDiv.find('#LEDPanelsChannelCount').html());
-	config.colorOrder = matrixDiv.find('#LEDPanelsColorOrder').val();
-    config.gamma = matrixDiv.find('#LEDPanelsGamma').val();
-	if ((matrixDiv.find('#LEDPanelsConnection').val() === "ColorLight5a75") || (matrixDiv.find('#LEDPanelsConnection').val() === "X11PanelMatrix"))
+	config.startChannel = parseInt(matrixDiv.find('.LEDPanelsStartChannel').val());
+   	config.channelCount = parseInt(matrixDiv.find('.LEDPanelsChannelCount').html());
+	config.colorOrder = matrixDiv.find('.LEDPanelsColorOrder').val();
+    config.gamma = matrixDiv.find('.LEDPanelsGamma').val();
+	if ((matrixDiv.find('.LEDPanelsConnection').val() === "ColorLight5a75") || (matrixDiv.find('.LEDPanelsConnection').val() === "X11PanelMatrix"))
 	{
-		config.subType = matrixDiv.find('#LEDPanelsConnection').val();
-        if (matrixDiv.find('#LEDPanelsConnection').val() != "X11PanelMatrix")
-            config.interface = matrixDiv.find('#LEDPanelsInterface').val();
+		config.subType = matrixDiv.find('.LEDPanelsConnection').val();
+        if (matrixDiv.find('.LEDPanelsConnection').val() != "X11PanelMatrix")
+            config.interface = matrixDiv.find('.LEDPanelsInterface').val();
 
 	}
 <?
 if ($settings['Platform'] == "Raspberry Pi" || $settings['Platform'] == "BeagleBone Black") {
     ?>
-	config.wiringPinout = matrixDiv.find('#LEDPanelsWiringPinout').val();
-    config.brightness = parseInt(matrixDiv.find('#LEDPanelsBrightness').val());
+	config.wiringPinout = matrixDiv.find('.LEDPanelsWiringPinout').val();
+    config.brightness = parseInt(matrixDiv.find('.LEDPanelsBrightness').val());
 <?
 }
 
 if ($settings['Platform'] == "Raspberry Pi") {
     ?>
-		config.gpioSlowdown = parseInt(matrixDiv.find('#LEDPanelsGPIOSlowdown').val());
+		config.gpioSlowdown = parseInt(matrixDiv.find('.LEDPanelsGPIOSlowdown').val());
 <?
 }
 ?>
 
-    config.panelColorDepth = parseInt(matrixDiv.find('#LEDPanelsColorDepth').val());
-    config.gamma = matrixDiv.find('#LEDPanelsGamma').val();
-	config.invertedData = parseInt(matrixDiv.find('#LEDPanelsStartCorner').val());
-    config.ledPanelsLayout = matrixDiv.find('#LEDPanelsLayoutCols').val() + "x" + matrixDiv.find('#LEDPanelsLayoutRows').val();
+    config.panelColorDepth = parseInt(matrixDiv.find('.LEDPanelsColorDepth').val());
+    config.gamma = matrixDiv.find('.LEDPanelsGamma').val();
+	config.invertedData = parseInt(matrixDiv.find('.LEDPanelsStartCorner').val());
+    config.ledPanelsLayout = matrixDiv.find('.LEDPanelsLayoutCols').val() + "x" + matrixDiv.find('.LEDPanelsLayoutRows').val();
     config.panelWidth = LEDPanelWidth;
 	config.panelHeight = LEDPanelHeight;
     config.panelScan = LEDPanelScan;
     <?if ($settings['Platform'] == "Raspberry Pi" || $settings['Platform'] == "BeagleBone Black") {?>
-        config.panelOutputOrder = matrixDiv.find('#LEDPanelsOutputByRow').is(':checked');
-        config.panelOutputBlankRow = matrixDiv.find('#LEDPanelsOutputBlankRow').is(':checked');
+        config.panelOutputOrder = matrixDiv.find('.LEDPanelsOutputByRow').is(':checked');
+        config.panelOutputBlankRow = matrixDiv.find('.LEDPanelsOutputBlankRow').is(':checked');
     <?}?>
     <?if ($settings['Platform'] == "Raspberry Pi") {?>
-        config.cpuPWM = matrixDiv.find('#LEDPanelsOutputCPUPWM').is(':checked');
+        config.cpuPWM = matrixDiv.find('.LEDPanelsOutputCPUPWM').is(':checked');
     <?}?>
 
     if (LEDPanelAddressing) {
         config.panelAddressing = LEDPanelAddressing;
     }
-    if (matrixDiv.find('#LEDPanelRowAddressType').val() != "0") {
-        config.panelRowAddressType = parseInt(matrixDiv.find('#LEDPanelRowAddressType').val());
+    if (matrixDiv.find('.LEDPanelRowAddressType').val() != "0") {
+        config.panelRowAddressType = parseInt(matrixDiv.find('.LEDPanelRowAddressType').val());
     }
-    if (matrixDiv.find('#LEDPanelInterleave').val() != "0") {
-        config.panelInterleave = matrixDiv.find('#LEDPanelInterleave').val();
+    if (matrixDiv.find('.LEDPanelInterleave').val() != "0") {
+        config.panelInterleave = matrixDiv.find('.LEDPanelInterleave').val();
     }
 	config.panels = [];
 
-	if (matrixDiv.find('#LEDPanelsEnabled').is(":checked"))
+	if (matrixDiv.find('.LEDPanelsEnabled').is(":checked"))
 		config.enabled = 1;
 
     if (advanced) {
@@ -565,16 +573,16 @@ if ($settings['Platform'] == "Raspberry Pi") {
 				var panel = new Object();
 				var id = "";
 
-				id = "#LEDPanelOutputNumber_" + r + "_" + c;
+				id = ".LEDPanelOutputNumber_" + r + "_" + c;
 				panel.outputNumber = parseInt(matrixDiv.find(id).val());
 
-				id = "#LEDPanelPanelNumber_" + r + "_" + c;
+				id = ".LEDPanelPanelNumber_" + r + "_" + c;
 				panel.panelNumber = parseInt(matrixDiv.find(id).val());
 
-				id = "#LEDPanelColorOrder_" + r + "_" + c;
+				id = ".LEDPanelColorOrder_" + r + "_" + c;
 				panel.colorOrder = matrixDiv.find(id).val();
 
-				id = "#LEDPanelOrientation_" + r + "_" + c;
+				id = ".LEDPanelOrientation_" + r + "_" + c;
 				var src = matrixDiv.find(id).attr('src');
 
 				panel.xOffset = xOffset;
@@ -636,75 +644,78 @@ function PopulateEthernetInterfaces()
 }
 ?>
 
-function LEDPanelsConnectionChanged()
+function LEDPanelsConnectionChanged(panelMatrixID)
 {
-    WarnIfSlowNIC();
+    WarnIfSlowNIC(panelMatrixID);
 
-	if (($('#LEDPanelsConnection').val() === "ColorLight5a75") || ($('#LEDPanelsConnection').val() === "X11PanelMatrix")) {
-		$('#LEDPanelsGPIOSlowdownLabel').hide();
-		$('#LEDPanelsGPIOSlowdown').hide();
-        $('#LEDPanelsBrightness').hide();
-        $('#LEDPanelsColorDepth').hide();
-        $('#LEDPanelsBrightnessLabel').hide();
-        $('#LEDPanelsColorDepthLabel').hide();
-        $('#LEDPanelsWiringPinoutLabel').hide();
-        $('#LEDPanelsWiringPinout').hide();
+	if (($(`#panelMatrix${panelMatrixID} .LEDPanelsConnection`).val() === "ColorLight5a75") || ($(`#panelMatrix${panelMatrixID} .LEDPanelsConnection`).val() === "X11PanelMatrix")) {
+		$(`#panelMatrix${panelMatrixID} .LEDPanelsGPIOSlowdownLabel`).hide();
+		$(`#panelMatrix${panelMatrixID} .LEDPanelsGPIOSlowdown`).hide();
+        $(`#panelMatrix${panelMatrixID} .LEDPanelsBrightness`).hide();
+        $(`#panelMatrix${panelMatrixID} .LEDPanelsColorDepth`).hide();
+        $(`#panelMatrix${panelMatrixID} .LEDPanelsBrightnessLabel`).hide();
+        $(`#panelMatrix${panelMatrixID} .LEDPanelsColorDepthLabel`).hide();
+        $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinoutLabel`).hide();
+        $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinout`).hide();
 
-        if ($('#LEDPanelsConnection').val() === "X11PanelMatrix") {
-            $('#LEDPanelsConnectionInterface').hide();
-            $('#LEDPanelsInterface').hide();
+        if ($(`#panelMatrix${panelMatrixID} .LEDPanelsConnection`).val() === "X11PanelMatrix") {
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionInterface`).hide();
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsInterface`).hide();
         } else {
-            $('#LEDPanelsConnectionInterface').show();
-            $('#LEDPanelsInterface').show();
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionInterface`).show();
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsInterface`).show();
         }
 
-<?
-if ($settings['Platform'] == "BeagleBone Black") {
-    echo "        $('#LEDPanelsRowAddressTypeLabel').hide();\n";
-    echo "        $('#LEDPanelRowAddressType').hide();\n";
-    echo "        $('#LEDPanelsInterleaveLabel').hide();\n";
-    echo "        $('#LEDPanelInterleave').hide();\n";
-    echo "        $('#LEDPanelsOutputByRowLabel').hide();\n";
-    echo "        $('#LEDPanelsOutputByRow').hide();\n";
-    echo "        $('#LEDPanelsOutputBlankRowLabel').hide();\n";
-    echo "        $('#LEDPanelsOutputBlankRow').hide();\n";
-}
-if ($settings['Platform'] == "Raspberry Pi") {
-    echo "        $('#LEDPanelsInterleaveLabel').hide();\n";
-    echo "        $('#LEDPanelInterleave').hide();\n";
-    echo "        $('#LEDPanelsOutputCPUPWMLabel').hide();\n";
-    echo "        $('#LEDPanelsOutputCPUPWM').hide();\n";
-}
-?>
+<? 
+//NEEDS FIXING FOR MULTI MATRIX
+if ($settings['Platform'] == "BeagleBone Black") { ?>
+    $(`#panelMatrix${panelMatrixID} .LEDPanelsRowAddressTypeLabel`).hide();
+    $(`#panelMatrix${panelMatrixID} .LEDPanelRowAddressType`).hide();
+    $(`#panelMatrix${panelMatrixID} .LEDPanelsInterleaveLabel`).hide();
+    $(`#panelMatrix${panelMatrixID} .LEDPanelInterleave`).hide();
+    $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputByRowLabel`).hide();
+    $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputByRow`).hide();
+    $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRowLabel`).hide();
+    $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRow`).hide();
+<? } ?>
+
+
+<? if ($settings['Platform'] == "Raspberry Pi") { ?>
+    $(`#panelMatrix${panelMatrixID} .LEDPanelsInterleaveLabel`).hide();
+    $(`#panelMatrix${panelMatrixID} .LEDPanelInterleave`).hide();
+    $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputCPUPWMLabel`).hide();
+    $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputCPUPWM`).hide();
+<? } ?>
 
 		LEDPanelOutputs = 24;
-	}
+}
 	else
-	{
-		$('#LEDPanelsConnectionInterface').hide();
-		$('#LEDPanelsInterface').hide();
-        $('#LEDPanelsBrightness').show();
-        $('#LEDPanelsColorDepth').show();
-        $('#LEDPanelsBrightnessLabel').show();
-        $('#LEDPanelsColorDepthLabel').show();
-        $('#LEDPanelsWiringPinoutLabel').show();
-        $('#LEDPanelsWiringPinout').show();
+	{ 
+		$(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionInterface`).hide();
+		$(`#panelMatrix${panelMatrixID} .LEDPanelsInterface`).hide();
+        $(`#panelMatrix${panelMatrixID} .LEDPanelsBrightness`).show();
+        $(`#panelMatrix${panelMatrixID} .LEDPanelsColorDepth`).show();
+        $(`#panelMatrix${panelMatrixID} .LEDPanelsBrightnessLabel`).show();
+        $(`#panelMatrix${panelMatrixID} .LEDPanelsColorDepthLabel`).show();
+        $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinoutLabel`).show();
+        $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinout`).show();
 
+<? //NEEDS FIX
+if ($settings['Platform'] == "BeagleBone Black") { ?>
+    $(`#panelMatrix${panelMatrixID} .LEDPanelsInterleaveLabel`).show();
+    $(`#panelMatrix${panelMatrixID} .LEDPanelInterleave`).show();
+    $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputByRowLabel`).show();
+    $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputByRow`).show();
+    var checked = $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputByRow`).is(':checked');
+        if (checked != false) {
+           $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRowLabel`).show();
+           $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRow`).show();
+           } else {
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRowLabel`).hide();
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRow`).hide();
+           }
+            
 <?
-if ($settings['Platform'] == "BeagleBone Black") {
-    echo "        $('#LEDPanelsInterleaveLabel').show();\n";
-    echo "        $('#LEDPanelInterleave').show();\n";
-    echo "        $('#LEDPanelsOutputByRowLabel').show();\n";
-    echo "        $('#LEDPanelsOutputByRow').show();\n";
-    echo "        var checked = $('#LEDPanelsOutputByRow').is(':checked')\n";
-    echo "        if (checked != false) {\n";
-    echo "            $('#LEDPanelsOutputBlankRowLabel').show();\n";
-    echo "            $('#LEDPanelsOutputBlankRow').show();\n";
-    echo "        } else {\n";
-    echo "            $('#LEDPanelsOutputBlankRowLabel').hide();\n";
-    echo "            $('#LEDPanelsOutputBlankRow').hide();\n";
-    echo "        }\n";
-
     if (strpos($settings['SubPlatform'], 'Green Wireless') !== false) {
         echo "        LEDPanelOutputs = 5;\n";
     } else if (strpos($settings['SubPlatform'], 'PocketBeagle') !== false) {
@@ -712,23 +723,23 @@ if ($settings['Platform'] == "BeagleBone Black") {
     } else {
         echo "        LEDPanelOutputs = 8;\n";
     }
-    ?>
-    $('#LEDPanelsGPIOSlowdownLabel').hide();
-    $('#LEDPanelsGPIOSlowdown').hide();
-<?
+    ?> //////
+    $(`#panelMatrix${panelMatrixID} .LEDPanelsGPIOSlowdownLabel`).hide();
+    $(`#panelMatrix${panelMatrixID} .LEDPanelsGPIOSlowdown`).hide();
+<? //NEEDS FIX
 } else {
-    if ($settings['Platform'] == "Raspberry Pi") {
-        echo "        $('#LEDPanelsRowAddressTypeLabel').show();\n";
-        echo "        $('#LEDPanelRowAddressType').show();\n";
-        echo "        $('#LEDPanelsInterleaveLabel').show();\n";
-        echo "        $('#LEDPanelInterleave').show();\n";
-        echo "        $('#LEDPanelsOutputCPUPWMLabel').show();\n";
-        echo "        $('#LEDPanelsOutputCPUPWM').show();\n";
-    }
-    ?>
+    if ($settings['Platform'] == "Raspberry Pi") { ?>
+        $(`#panelMatrix${panelMatrixID} .LEDPanelsRowAddressTypeLabel`).show();
+        $(`#panelMatrix${panelMatrixID} .LEDPanelRowAddressType`).show();
+        $(`#panelMatrix${panelMatrixID} .LEDPanelsInterleaveLabel`).show();
+        $(`#panelMatrix${panelMatrixID} .LEDPanelInterleave`).show();
+        $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputCPUPWMLabel`).show();
+        $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputCPUPWM`).show();
+   <? }
+    ?> /////
 		LEDPanelOutputs = 3;
-		$('#LEDPanelsGPIOSlowdownLabel').show();
-		$('#LEDPanelsGPIOSlowdown').show();
+		$(`#panelMatrix${panelMatrixID} .LEDPanelsGPIOSlowdownLabel`).show();
+		$(`#panelMatrix${panelMatrixID} .LEDPanelsGPIOSlowdown`).show();
 <?
 }
 ?>
@@ -736,34 +747,34 @@ if ($settings['Platform'] == "BeagleBone Black") {
 
     if (typeof KNOWN_PANEL_CAPE  !== 'undefined') {
         if (KNOWN_PANEL_CAPE["defaults"]["LEDPanelsWiringPinout"]  !== 'undefined') {
-            $('#LEDPanelsWiringPinout').val(KNOWN_PANEL_CAPE["defaults"]["LEDPanelsWiringPinout"]);
-            $('#LEDPanelsWiringPinout').hide();
-            $('#LEDPanelsWiringPinoutLabel').hide();
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinout`).val(KNOWN_PANEL_CAPE["defaults"]["LEDPanelsWiringPinout"]);
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinout`).hide();
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinoutLabel`).hide();
         }
         if (KNOWN_PANEL_CAPE["defaults"]["LEDPanelsConnection"]  !== 'undefined') {
-            $('#LEDPanelsConnection').val(KNOWN_PANEL_CAPE["defaults"]["LEDPanelsConnection"]);
-            $('#LEDPanelsConnection').hide();
-            $('#LEDPanelsConnectionLabel').hide();
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsConnection`).val(KNOWN_PANEL_CAPE["defaults"]["LEDPanelsConnection"]);
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsConnection`).hide();
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionLabel`).hide();
         }
         LEDPanelOutputs = KNOWN_PANEL_CAPE["outputs"].length;
     }
 
-    PanelSubtypeChanged();
-	DrawLEDPanelTable();
+    PanelSubtypeChanged(panelMatrixID);
+	DrawLEDPanelTable(panelMatrixID);
 }
 
-<?if ($settings['Platform'] == "BeagleBone Black") {
-    echo "function outputByRowClicked() {\n";
-    echo "        var checked = $('#LEDPanelsOutputByRow').is(':checked')\n";
-    echo "        if (checked != false) {\n";
-    echo "            $('#LEDPanelsOutputBlankRowLabel').show();\n";
-    echo "            $('#LEDPanelsOutputBlankRow').show();\n";
-    echo "        } else {\n";
-    echo "            $('#LEDPanelsOutputBlankRowLabel').hide();\n";
-    echo "            $('#LEDPanelsOutputBlankRow').hide();\n";
-    echo "        }\n";
-    echo "    }\n";
-}
+<?if ($settings['Platform'] == "BeagleBone Black") { ?>
+    function outputByRowClicked() {
+            var checked = $('#LEDPanelsOutputByRow').is(':checked')
+            if (checked != false) {
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRowLabel`).show();
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRow`).show();
+            } else {
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRowLabel`).hide();
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRow`).hide();
+            }
+        }
+<? }
 ?>
 
 /////////////////////////////////
@@ -861,18 +872,18 @@ function panelSelectedHandler(evt) {
         panelGroups['panel-' + selectedPanel].panel.set({'stroke':'black'});
 
     if (!o) {
-        $('#cpOutputNumber').val(0);
-        $('#cpPanelNumber').val(0);
-        $('#cpColorOrder').val('');
-        $('#cpXOffset').html('');
-        $('#cpYOffset').html('');
+        $('.cpOutputNumber').val(0);
+        $('.cpPanelNumber').val(0);
+        $('.cpColorOrder').val('');
+        $('.cpXOffset').html('');
+        $('.cpYOffset').html('');
         selectedPanel = -1;
     } else {
-        $('#cpOutputNumber').val(o.outputNumber);
-        $('#cpPanelNumber').val(o.panelNumber);
-        $('#cpColorOrder').val(o.colorOrder);
-        $('#cpXOffset').html(Math.round(o.left / uiScale));
-        $('#cpYOffset').html(Math.round(o.top / uiScale));
+        $('.cpOutputNumber').val(o.outputNumber);
+        $('.cpPanelNumber').val(o.panelNumber);
+        $('.cpColorOrder').val(o.colorOrder);
+        $('.cpXOffset').html(Math.round(o.left / uiScale));
+        $('.cpYOffset').html(Math.round(o.top / uiScale));
         selectedPanel = panelGroups[o.name].panelNumber;
         panelGroups[o.name].panel.set({'stroke':'rgb(255,255,0)'});
     }
@@ -1028,7 +1039,7 @@ function SetupCanvasPanel(panelNumber) {
     panelSelectedHandler();
 }
 
-function UpdateMatrixSize() {
+function UpdateMatrixSize(panelMatrixID) {
     var matrixWidth = 0;
     var matrixHeight = 0;
 
@@ -1053,18 +1064,18 @@ function UpdateMatrixSize() {
     var matrixPixels = matrixWidth * matrixHeight;
     var matrixChannels = matrixPixels * 3;
 
-	$('#matrixSize').html('' + matrixWidth + 'x' + matrixHeight);
-	$('#LEDPanelsChannelCount').html(matrixChannels);
-	$('#LEDPanelsPixelCount').html(matrixPixels);
+	$(`#panelMatrix${panelMatrixID} .matrixSize`).html('' + matrixWidth + 'x' + matrixHeight);
+	$(`#panelMatrix${panelMatrixID} .LEDPanelsChannelCount`).html(matrixChannels);
+	$(`#panelMatrix${panelMatrixID} .LEDPanelsPixelCount`).html(matrixPixels);
 
     var resized = 0;
-    if (matrixWidth > parseInt($('#LEDPanelUIPixelsWide').val())) {
+    if (matrixWidth > parseInt($(`#panelMatrix${panelMatrixID} .LEDPanelUIPixelsWide`).val())) {
         resized = 1;
-        $('#LEDPanelUIPixelsWide').val(matrixWidth);
+        $(`#panelMatrix${panelMatrixID} .LEDPanelUIPixelsWide`).val(matrixWidth);
     }
-    if (matrixHeight > parseInt($('#LEDPanelUIPixelsHigh').val())) {
+    if (matrixHeight > parseInt($(`#panelMatrix${panelMatrixID} .LEDPanelUIPixelsHigh`).val())) {
         resized = 1;
-        $('#LEDPanelUIPixelsHigh').val(matrixHeight);
+        $(`#panelMatrix${panelMatrixID} .LEDPanelUIPixelsHigh`).val(matrixHeight);
     }
     if (resized)
         SetCanvasSize();
@@ -1114,26 +1125,29 @@ function InitializeCanvas(reinit) {
 }
 
 function ToggleAdvancedLayout() {
-    if ($('#LEDPanelUIAdvancedLayout').is(":checked")) {
+//get currently visible panelMatrixID
+panelMatrixID = $('.panelMatrix-tab-content .tab-pane.active .divPanelMatrixID')[0].innerHTML;
+
+    if ($(`#panelMatrix${panelMatrixID}  .LEDPanelUIAdvancedLayout`).is(":checked")) {
         if (typeof channelOutputsLookup["LEDPanelMatrix"] === 'undefined') {
             SaveChannelOutputsJSON();
         }
 
-        $('#LEDPanelUIPixelsWide').val(LEDPanelWidth * (LEDPanelCols + 1));
-        $('#LEDPanelUIPixelsHigh').val(LEDPanelHeight * (LEDPanelRows + 1));
+        $(`#panelMatrix${panelMatrixID} .LEDPanelUIPixelsWide`).val(LEDPanelWidth * (LEDPanelCols + 1));
+        $(`#panelMatrix${panelMatrixID} .LEDPanelUIPixelsHigh`).val(LEDPanelHeight * (LEDPanelRows + 1));
 
         if (canvasInitialized)
             InitializeCanvas(1);
         else
             InitializeCanvas(0);
 
-        UpdateMatrixSize();
-        $('.ledPanelSimpleUI').hide();
-        $('.ledPanelCanvasUI').show();
+        UpdateMatrixSize(panelMatrixID);
+        $(`#panelMatrix${panelMatrixID} .ledPanelSimpleUI`).hide();
+        $(`#panelMatrix${panelMatrixID} .ledPanelCanvasUI`).show();
     } else {
-        UpdateLegacyLEDPanelLayout();
-        $('.ledPanelCanvasUI').hide();
-        $('.ledPanelSimpleUI').show();
+        UpdateLegacyLEDPanelLayout(panelMatrixID);
+        $(`#panelMatrix${panelMatrixID} .ledPanelCanvasUI`).hide();
+        $(`#panelMatrix${panelMatrixID} .ledPanelSimpleUI`).show();
     }
 }
 
@@ -1141,7 +1155,7 @@ function cpOutputNumberChanged() {
     if (selectedPanel < 0)
         return;
 
-    var co = channelOutputsLookup["LEDPanelMatrix"].panels[selectedPanel].outputNumber = parseInt($('#cpOutputNumber').val());
+    var co = channelOutputsLookup["LEDPanelMatrix"].panels[selectedPanel].outputNumber = parseInt($('.cpOutputNumber').val());
     SetupCanvasPanel(selectedPanel);
 }
 
@@ -1149,7 +1163,7 @@ function cpPanelNumberChanged() {
     if (selectedPanel < 0)
         return;
 
-    var co = channelOutputsLookup["LEDPanelMatrix"].panels[selectedPanel].panelNumber = parseInt($('#cpPanelNumber').val());
+    var co = channelOutputsLookup["LEDPanelMatrix"].panels[selectedPanel].panelNumber = parseInt($('.cpPanelNumber').val());
     SetupCanvasPanel(selectedPanel);
 }
 
@@ -1157,21 +1171,21 @@ function cpColorOrderChanged() {
     if (selectedPanel < 0)
         return;
 
-    var co = channelOutputsLookup["LEDPanelMatrix"].panels[selectedPanel].colorOrder = $('#cpColorOrder').val();
+    var co = channelOutputsLookup["LEDPanelMatrix"].panels[selectedPanel].colorOrder = $('.cpColorOrder').val();
     SetupCanvasPanel(selectedPanel);
 }
 
 function SetupAdvancedUISelects() {
     for (var i = 0; i < LEDPanelOutputs; i++) {
-        $('#cpOutputNumber').append("<option value='" + i + "'>" + (i+1) + "</option>");
+        $('.cpOutputNumber').append("<option value='" + i + "'>" + (i+1) + "</option>");
     }
 
     for (var i = 0; i < LEDPanelPanelsPerOutput; i++) {
-        $('#cpPanelNumber').append("<option value='" + i + "'>" + (i+1) + "</option>");
+        $('.cpPanelNumber').append("<option value='" + i + "'>" + (i+1) + "</option>");
     }
 }
 
-function SetSinglePanelSize() {
+function SetSinglePanelSize(panelMatrixID) {
     if (!("LEDPanelMatrix" in channelOutputsLookup))
         return;
 
@@ -1182,14 +1196,14 @@ function SetSinglePanelSize() {
     if ("panelAddressing" in channelOutputsLookup) {
         singlePanelSize = [singlePanelSize, channelOutputsLookup["LEDPanelMatrix"].panelAddressing].join('x');
     }
-    $('#LEDPanelsSize').val(singlePanelSize.toString());
+    $(`#panelMatrix${panelMatrixID} .LEDPanelsSize`).val(singlePanelSize.toString());
 }
 
-function PanelSubtypeChanged() {
-    var select = document.getElementsByClassName("printSettingFieldCola col-md-3 col-lg-3")
+function PanelSubtypeChanged(panelMatrixID) {
+    var select = document.getElementById("panelMatrix"+panelMatrixID).getElementsByClassName("printSettingFieldCola col-md-3 col-lg-3");
     var html = "";
 
-    html += "<select id='LEDPanelsSize' onchange='LEDPanelsSizeChanged();'>"
+    html += "<select class='LEDPanelsSize' onchange='LEDPanelsSizeChanged(${panelMatrixID});'>"
 
     <?if ($settings['Platform'] == "BeagleBone Black") {?>
     html += "<option value='32x16x8'>32x16 1/8 Scan</option>"
@@ -1218,7 +1232,7 @@ function PanelSubtypeChanged() {
     html +="<option value='64x32x16'>64x32 1/16 Scan</option>"
     html +="<option value='64x32x8'>64x32 1/8 Scan</option>"
     html +="<option value='64x64x8'>64x64 1/8 Scan</option>"
-    if ($('#LEDPanelsConnection').val() === 'ColorLight5a75') {
+    if ($(`#panelMatrix${panelMatrixID}`+" .LEDPanelsConnection").val() === 'ColorLight5a75') {
         html += "<option value='48x48x6'>48x48 1/6 Scan</option>"
         html += "<option value='80x40x10'>80x40 1/10 Scan</option>"
         html += "<option value='80x40x20'>80x40 1/20 Scan</option>"
@@ -1230,29 +1244,31 @@ function PanelSubtypeChanged() {
 
     select.item(0).innerHTML = html
 
-    SetSinglePanelSize();
+    SetSinglePanelSize(panelMatrixID);
 }
 
-function AutoLayoutPanels() {
+function AutoLayoutPanels(panelMatrixID) {
     var sure = prompt('WARNING: This will re-configure all output and panel numbers with one output per row and all panels facing in an upwards direction.  Are you sure? [Y/N]', 'N');
 
     if (sure.toUpperCase() != 'Y')
         return;
 
-    var panelsWide = parseInt($('#LEDPanelsLayoutCols').val());
-    var panelsHigh = parseInt($('#LEDPanelsLayoutRows').val());
+    var panelsWide = parseInt($(`#panelMatrix${panelMatrixID} .LEDPanelsLayoutCols`).val());
+    var panelsHigh = parseInt($(`#panelMatrix${panelMatrixID} .LEDPanelsLayoutRows`).val());
 
     for (var y = 0; y < panelsHigh; y++) {
         for (var x = 0; x < panelsWide; x++) {
             var panel = panelsWide - x - 1;
-            $('#LEDPanelPanelNumber_' + y + '_' + panel).val(x);
-            $('#LEDPanelOutputNumber_' + y + '_' + panel).val(y);
-            $('#LEDPanelOrientation_' + y + '_' + panel).attr('src', 'images/arrow_N.png');
-            $('#LEDPanelColorOrder_' + y + '_' + panel).val('');
+            $(`#panelMatrix${panelMatrixID} .LEDPanelPanelNumber_' + y + '_' + panel`).val(x);
+            $(`#panelMatrix${panelMatrixID} .LEDPanelOutputNumber_' + y + '_' + panel`).val(y);
+            $(`#panelMatrix${panelMatrixID} .LEDPanelOrientation_' + y + '_' + panel`).attr('src', 'images/arrow_N.png');
+            $(`#panelMatrix${panelMatrixID} .LEDPanelColorOrder_' + y + '_' + panel`).val('');
         }
     }
     SaveChannelOutputsJSON();
 }
+
+
 function TogglePanelTestPattern() {
     var val = $("#PanelTestPatternButton").val();
     if (val == "Test Pattern") {
@@ -1306,26 +1322,34 @@ function AddPanelMatrixDialog(){
 	
 }
 
-function WarnIfSlowNIC() {
-    var NicSpeed = parseInt($('#LEDPanelsInterface').find(":selected").text().split('(')[1].split('M')[0]);
-    if (NicSpeed < 1000 && $('#LEDPanelsConnection').find(":selected").text()=="ColorLight" && $('#LEDPanelsEnabled').is(":checked")==true) {
-        $('#divLEDPanelWarnings').html('<div class="alert alert-danger">Selected interface does not support 1000+ Mbps, which is the Colorlight minimum</div>');
+function WarnIfSlowNIC(panelMatrixID) {
+    var NicSpeed = parseInt($(`#panelMatrix${panelMatrixID} .LEDPanelsInterface`).find(":selected").text().split('(')[1].split('M')[0]);
+    if (NicSpeed < 1000 && $(`#panelMatrix${panelMatrixID} .LEDPanelsConnection`).find(":selected").text()=="ColorLight" && $(`#panelMatrix${panelMatrixID} .LEDPanelsEnabled`).is(":checked")==true) {
+        $(`#panelMatrix${panelMatrixID} .divLEDPanelWarnings`).html('<div class="alert alert-danger">Selected interface does not support 1000+ Mbps, which is the Colorlight minimum</div>');
     } else
     {
-        $('#divLEDPanelWarnings').html("");
+        $(`#panelMatrix${panelMatrixID} .divLEDPanelWarnings`).html("");
     }
+}
+
+function LEDPanelsSizeChanged(panelMatrixID) {
+    var value = $(`#panelMatrix${panelMatrixID} .LEDPanelsSize`).val();
+    SetSetting("LEDPanelsSize", value, 1, 0, false, null, function() {
+    settings['LEDPanelsSize'] = value;
+    LEDPanelLayoutChanged(panelMatrixID);
+            });
 }
 
 $(document).ready(function(){
 
     document.querySelector('#panelMatrix1').innerHTML =  document.querySelector('#divLEDPanelsTemplate').innerHTML;
-    document.querySelector('#panelMatrix1  #divPanelMatrixID').innerHTML =  1;
+    document.querySelector('#panelMatrix1  .divPanelMatrixID').innerHTML =  1;
     document.querySelector('#panelMatrix2').innerHTML =  document.querySelector('#divLEDPanelsTemplate').innerHTML;
-    document.querySelector('#panelMatrix2  #divPanelMatrixID').innerHTML =  2;
+    document.querySelector('#panelMatrix2  .divPanelMatrixID').innerHTML =  2;
 
 
 	InitializeLEDPanelMatrix(1);
-	LEDPanelsConnectionChanged();
+	LEDPanelsConnectionChanged(1);
 
     SetupAdvancedUISelects();
 
@@ -1350,7 +1374,7 @@ if ((isset($settings['cape-info'])) &&
 <?
 }
 ?>
-WarnIfSlowNIC();
+WarnIfSlowNIC(1);
 });
 
 </script>
@@ -1363,7 +1387,7 @@ WarnIfSlowNIC();
         </div>
         <div class="col-md-auto ms-lg-auto">
             <div class="form-actions">
-                <input id="PanelTestPatternButton" type='button' class="buttons ms-1" onClick='AddPanelMatrixDialog();' value='Add Panel Matrix'>
+                <input id="AddPanelMatrixButton" type='button' class="buttons ms-1" onClick='AddPanelMatrixDialog();' value='Add Panel Matrix'>
                 <input id="PanelTestPatternButton" type='button' class="buttons ms-1" onClick='TogglePanelTestPattern();' value='Test Pattern'>
                 <input type='button' class="buttons btn-success ms-1" onClick='SaveChannelOutputsJSON();' value='Save'>
             </div>
@@ -1380,7 +1404,7 @@ WarnIfSlowNIC();
           	
                 <!-- LED Panel Matrix Tab-Content --->
           	
-              <div class="tab-content" style="border:1px;border-style: solid;">
+              <div class="panelMatrix-tab-content tab-content" style="border:1px;border-style: solid;">
                 <div class="tab-pane active" id="panelMatrix1">panel 1 content</div>
           		<div class="tab-pane" id="panelMatrix2">panel 2 content</div>
                 <div class="tab-pane" id="panelMatrix3">panel 3 content</div>
@@ -1417,19 +1441,19 @@ WarnIfSlowNIC();
 
 
 	<div id='divLEDPanelsTemplate' style="background-color: aquamarine;display:none;">
-        <div id="divPanelMatrixID" style="display:none;"></div>
+        <div class="divPanelMatrixID" style="display:none;"></div>
         <div class="backdrop tableOptionsForm">
             <div class="row">
                 <div class="col-md-auto">
                     <div class="backdrop-dark form-inline enableCheckboxWrapper">
                         <div><b>Enable <span class='capeNamePanels'>Led Panel Matrix</span>:&nbsp;</b></div>
-                        <div><input id='LEDPanelsEnabled' type='checkbox' onChange="WarnIfSlowNIC();"></div>
+                        <div><input class='LEDPanelsEnabled' type='checkbox' onChange="WarnIfSlowNIC();"></div>
                     </div>
                 </div>
                 <div class="col-md-auto form-inline">
-                    <div id='LEDPanelsConnectionLabel'><b>Connection Type:&nbsp;</b></div>
+                    <div class='LEDPanelsConnectionLabel'><b>Connection Type:&nbsp;</b></div>
                     <div>
-                    <select id='LEDPanelsConnection' onChange='LEDPanelsConnectionChanged();'>
+                    <select class='LEDPanelsConnection' onChange='LEDPanelsConnectionChanged();'>
 <?
 if (in_array('all', $currentCapeInfo["provides"])
     || in_array('panels', $currentCapeInfo["provides"])) {
@@ -1451,15 +1475,15 @@ if ((file_exists('/usr/include/X11/Xlib.h')) && ($settings['Platform'] == "Linux
                        </select>
                     </div>
                 </div>
-                <div class="col-md-auto form-inline" id="LEDPanelsConnectionInterface">
+                <div class="col-md-auto form-inline" class="LEDPanelsConnectionInterface">
                     <b>Interface:</b>
-                    <select id='LEDPanelsInterface' type='hidden' onChange='WarnIfSlowNIC();'>
+                    <select class='LEDPanelsInterface' type='hidden' onChange='WarnIfSlowNIC();'>
                         <?PopulateEthernetInterfaces();?>
                     </select>
                 </div>
-                <div class="col-md-auto form-inline" id="LEDPanelsWiringPinoutLabel">
+                <div class="col-md-auto form-inline" class="LEDPanelsWiringPinoutLabel">
                     <b>Wiring Pinout:</b>
-                    <select id='LEDPanelsWiringPinout'>
+                    <select class='LEDPanelsWiringPinout'>
                                 <?if ($settings['Platform'] == "Raspberry Pi") {?>
                                     <option value='regular'>Standard</option>
                                     <option value='adafruit-hat'>Adafruit</option>
@@ -1490,45 +1514,36 @@ if ((file_exists('/usr/include/X11/Xlib.h')) && ($settings['Platform'] == "Linux
 
             </div>
         </div>
-        <div id='divLEDPanelsData'>
+        <div class='divLEDPanelsData'>
             <div class="container-fluid settingsTable">
                 <div class="row">
                     <div class="printSettingLabelCol col-md-2 col-lg-2">
                         <span class='ledPanelSimpleUI'><b>Panel Layout:</b></span><span class='ledPanelCanvasUI'><b>Matrix Size (WxH):</b></span>
                     </div>
                     <div class="printSettingFieldCol col-md-3 col-lg-3"><span class='ledPanelSimpleUI'><?printLEDPanelLayoutSelect();?> <input type='button' class='buttons' onClick='AutoLayoutPanels();' value='Auto Layout'></span>
-                        <span class='ledPanelCanvasUI'><span id='matrixSize'></span></span>
+                        <span class='ledPanelCanvasUI'><span class='matrixSize'></span></span>
                     </div>
                     <div class="printSettingLabelCol col-md-2 col-lg-2"><b>Start Channel:</b></div>
-                    <div class="printSettingFieldCol col-md-3 col-lg-3"><input id='LEDPanelsStartChannel' type=number min=1 max=<?=FPPD_MAX_CHANNELS?> value='1'></div>
+                    <div class="printSettingFieldCol col-md-3 col-lg-3"><input class='LEDPanelsStartChannel' type=number min=1 max=<?=FPPD_MAX_CHANNELS?> value='1'></div>
                 </div>
                 <div class="row">
                     <div class="printSettingLabelCol col-md-2 col-lg-2"><b>Single Panel Size (WxH):</b></div>
                     <div class="printSettingFieldCola col-md-3 col-lg-3">
-                        <script>
-                            function LEDPanelsSizeChanged() {
-                                var value = $('#LEDPanelsSize').val();
-                                SetSetting("LEDPanelsSize", value, 1, 0, false, null, function() {
-                                        settings['LEDPanelsSize'] = value;
-                                        LEDPanelLayoutChanged();
-                                });
-                            }
-                        </script>
                     </div>
                     <div class="printSettingLabelCol col-md-2 col-lg-2"><b>Channel Count:</b></div>
-                    <div class="printSettingFieldCol col-md-3 col-lg-3"><span id='LEDPanelsChannelCount'>1536</span>(<span id='LEDPanelsPixelCount'>512</span> Pixels)</div>
+                    <div class="printSettingFieldCol col-md-3 col-lg-3"><span class='LEDPanelsChannelCount'>1536</span>(<span class='LEDPanelsPixelCount'>512</span> Pixels)</div>
                 </div>
                 <div class="row">
                     <div class="printSettingLabelCol col-md-2 col-lg-2"><b>Model Start Corner:</b></div>
                     <div class="printSettingFieldCol col-md-3 col-lg-3">
-                        <select id='LEDPanelsStartCorner'>
+                        <select class='LEDPanelsStartCorner'>
 							<option value='0'>Top Left</option>
 							<option value='1'>Bottom Left</option>
 						</select>
                     </div>
                     <div class="printSettingLabelCol col-md-2 col-lg-2"><b>Default Panel Color Order:</b></div>
                     <div class="printSettingFieldCol col-md-3 col-lg-3">
-                        <select id='LEDPanelsColorOrder'>
+                        <select class='LEDPanelsColorOrder'>
                             <option value='RGB'>RGB</option>
                             <option value='RBG'>RBG</option>
                             <option value='GRB'>GRB</option>
@@ -1545,9 +1560,9 @@ if ((file_exists('/usr/include/X11/Xlib.h')) && ($settings['Platform'] == "Linux
                     <div class="printSettingFieldCol col-md-3 col-lg-3"></div>
                 </div>
                 <div class="row">
-                    <div class="printSettingLabelCol col-md-2 col-lg-2"><span id='LEDPanelsBrightnessLabel'><b>Brightness:</b></span></div>
+                    <div class="printSettingLabelCol col-md-2 col-lg-2"><span class='LEDPanelsBrightnessLabel'><b>Brightness:</b></span></div>
                     <div class="printSettingFieldCol col-md-3 col-lg-3">
-                        <select id='LEDPanelsBrightness'>
+                        <select class='LEDPanelsBrightness'>
                                 <?
 if ($settings['Platform'] == "Raspberry Pi") {
     for ($x = 100; $x >= 10; $x -= 5) {
@@ -1564,9 +1579,9 @@ if ($settings['Platform'] == "Raspberry Pi") {
 						</select>
                     </div>
     <?if ($settings['Platform'] == "Raspberry Pi") {?>
-                    <div class="printSettingLabelCol col-md-2 col-lg-2"><span id='LEDPanelsGPIOSlowdownLabel'><b>GPIO Slowdown:</b></span></div>
+                    <div class="printSettingLabelCol col-md-2 col-lg-2"><span class='LEDPanelsGPIOSlowdownLabel'><b>GPIO Slowdown:</b></span></div>
                     <div class="printSettingFieldCol col-md-3 col-lg-3">
-                        <select id='LEDPanelsGPIOSlowdown'>
+                        <select class='LEDPanelsGPIOSlowdown'>
                             <option value='0'>0 (Pi Zero and other single-core)</option>
                             <option value='1' selected>1 (multi-core Pi)</option>
                             <option value='2'>2 (slow panels)</option>
@@ -1577,8 +1592,8 @@ if ($settings['Platform'] == "Raspberry Pi") {
                     </div>
 
     <?} else if ($settings['Platform'] == "BeagleBone Black") {?>
-                    <div class="printSettingLabelCol col-md-2 col-lg-2"><span id='LEDPanelsOutputByRowLabel'><b>Output By Row:</b></div>
-                    <div class="printSettingFieldCol col-md-3 col-lg-3"><input id='LEDPanelsOutputByRow' type='checkbox' onclick='outputByRowClicked()'></div>
+                    <div class="printSettingLabelCol col-md-2 col-lg-2"><span class='LEDPanelsOutputByRowLabel'><b>Output By Row:</b></div>
+                    <div class="printSettingFieldCol col-md-3 col-lg-3"><input class='LEDPanelsOutputByRow' type='checkbox' onclick='outputByRowClicked()'></div>
     <?} else {?>
                     <div class="printSettingLabelCol col-md-2 col-lg-2"></div>
                     <div class="printSettingFieldCol col-md-3 col-lg-3"></div>
@@ -1586,25 +1601,25 @@ if ($settings['Platform'] == "Raspberry Pi") {
 
                 </div>
         <div class="row">
-                    <div class="printSettingLabelCol col-md-2 col-lg-2"><span id='LEDPanelsInterleaveLabel'><b>Panel Interleave:</b></span></div>
+                    <div class="printSettingLabelCol col-md-2 col-lg-2"><span class='LEDPanelsInterleaveLabel'><b>Panel Interleave:</b></span></div>
                     <div class="printSettingFieldCol col-md-3 col-lg-3">
                         <?printLEDPanelInterleaveSelect($settings['Platform']);?>
                     </div>
             <?if ($settings['Platform'] == "Raspberry Pi") {?>
-                    <div class="printSettingLabelCol col-md-2 col-lg-2"><span id='LEDPanelsOutputCPUPWMLabel'><b>Use CPU PWM:</b></span></div>
-                    <div class="printSettingFieldCol col-md-3 col-lg-3"><input id='LEDPanelsOutputCPUPWM' type='checkbox'></div>
+                    <div class="printSettingLabelCol col-md-2 col-lg-2"><span class='LEDPanelsOutputCPUPWMLabel'><b>Use CPU PWM:</b></span></div>
+                    <div class="printSettingFieldCol col-md-3 col-lg-3"><input class='LEDPanelsOutputCPUPWM' type='checkbox'></div>
             <?} else if ($settings['Platform'] == "BeagleBone Black") {?>
-                    <div class="printSettingLabelCol col-md-2 col-lg-2"><span id='LEDPanelsOutputBlankRowLabel'><b>Blank between rows:</b></span></div>
-                    <div class="printSettingFieldCol col-md-3 col-lg-3"><input id='LEDPanelsOutputBlankRow' type='checkbox'></div>
+                    <div class="printSettingLabelCol col-md-2 col-lg-2"><span class='LEDPanelsOutputBlankRowLabel'><b>Blank between rows:</b></span></div>
+                    <div class="printSettingFieldCol col-md-3 col-lg-3"><input class='LEDPanelsOutputBlankRow' type='checkbox'></div>
             <?} else {?>
                     <div class="printSettingLabelCol col-md-2 col-lg-2"></div>
                     <div class="printSettingFieldCol col-md-3 col-lg-3"></div>
             <?}?>
                 </div>
                 <div class="row">
-                    <div class="printSettingLabelCol col-md-2 col-lg-2"><span id='LEDPanelsColorDepthLabel'><b>Color Depth:</b></span></div>
+                    <div class="printSettingLabelCol col-md-2 col-lg-2"><span class='LEDPanelsColorDepthLabel'><b>Color Depth:</b></span></div>
                     <div class="printSettingFieldCol col-md-3 col-lg-3">
-                        <select id='LEDPanelsColorDepth'>
+                        <select class='LEDPanelsColorDepth'>
                             <?if ($settings['Platform'] == "BeagleBone Black") {?>
                                     <option value='12'>12 Bit</option>
                             <?}?>
@@ -1623,9 +1638,9 @@ if ($settings['Platform'] == "Raspberry Pi") {
         </div>
         <div class="row">
             <?if ($settings['Platform'] == "Raspberry Pi") {?>
-                    <div class="printSettingLabelCol col-md-2 col-lg-2"><span id='LEDPanelsRowAddressTypeLabel'><b>Panel Row Address Type:</b></span></div>
+                    <div class="printSettingLabelCol col-md-2 col-lg-2"><span class='LEDPanelsRowAddressTypeLabel'><b>Panel Row Address Type:</b></span></div>
                     <div class="printSettingFieldCol col-md-3 col-lg-3">
-                        <select id='LEDPanelRowAddressType'>
+                        <select class='LEDPanelRowAddressType'>
                             <option value='0' selected>Standard</option>
                             <option value='1'>AB-Addressed Panels</option>
                             <option value='2'>Direct Row Select</option>
@@ -1640,7 +1655,7 @@ if ($settings['Platform'] == "Raspberry Pi") {
         </div>
   
 
-		<div id='divLEDPanelsLayoutData'>
+		<div class='divLEDPanelsLayoutData'>
 			<div style="padding: 10px;">
                 <br>
                 <b>LED Panel Layout:</b><br>
@@ -1656,19 +1671,19 @@ if ($settings['Platform'] == "Raspberry Pi") {
                 <div style='overflow: auto;'>
                     <table class='ledPanelCanvasUI' style='display:none;'>
                         <tr>
-                            <td><canvas id='ledPanelCanvas' width='900' height='400' style='border: 2px solid rgb(0,0,0);'></canvas></td>
+                            <td><canvas class='ledPanelCanvas' width='900' height='400' style='border: 2px solid rgb(0,0,0);'></canvas></td>
                             <td></td>
                             <td>
                                 <b>Selected Panel:</b><br>
                                 <table>
                                     <tr><td>Output:</td><td>
-                                        <select id='cpOutputNumber' onChange='cpOutputNumberChanged();'>
+                                        <select class='cpOutputNumber' onChange='cpOutputNumberChanged();'>
                                         </select></td></tr>
                                     <tr><td>Panel:</td><td>
-                                        <select id='cpPanelNumber' onChange='cpPanelNumberChanged();'>
+                                        <select class='cpPanelNumber' onChange='cpPanelNumberChanged();'>
                                         </select></td></tr>
                                     <tr><td>Color:</td><td>
-                                        <select id='cpColorOrder' onChange='cpColorOrderChanged();'>
+                                        <select class='cpColorOrder' onChange='cpColorOrderChanged();'>
                                             <option value=''>Def</option>
                                             <option value='RGB'>RGB</option>
                                             <option value='RBG'>RBG</option>
@@ -1677,8 +1692,8 @@ if ($settings['Platform'] == "Raspberry Pi") {
                                             <option value='BGR'>BGR</option>
                                             <option value='BRG'>BRG</option>
                                         </select></td></tr>
-                                    <tr><td>X Pos:</td><td><span id='cpXOffset'></span></td></tr>
-                                    <tr><td>Y Pos:</td><td><span id='cpYOffset'></span></td></tr>
+                                    <tr><td>X Pos:</td><td><span class='cpXOffset'></span></td></tr>
+                                    <tr><td>Y Pos:</td><td><span class='cpYOffset'></span></td></tr>
                                     <tr><td colspan=2><input type='button' onclick='RotateCanvasPanel();' value='Rotate'></td></tr>
                                     <!--
                                     <tr><td>Snap:</td><td><input type='checkbox' id='cpSnap'></td></tr>
@@ -1700,7 +1715,7 @@ if ($settings['Platform'] == "Raspberry Pi") {
                         </tr>
                     </table>
                     <div class='ledPanelSimpleUI'>
-                        <table id='LEDPanelTable'>
+                        <table class='LEDPanelTable'>
                             <tbody>
                             </tbody>
                         </table>
@@ -1714,6 +1729,8 @@ if ($settings['Platform'] == "Raspberry Pi") {
         </div>
                 
             </div>
+<!-- END OF PANEL MATRIX TEMPLATE  -->
+
 		    </div>
 
 
