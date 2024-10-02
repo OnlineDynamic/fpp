@@ -1247,7 +1247,9 @@ function PanelSubtypeChanged(panelMatrixID) {
     SetSinglePanelSize(panelMatrixID);
 }
 
-function AutoLayoutPanels(panelMatrixID) {
+function AutoLayoutPanels() {
+    //get currently visible panelMatrixID
+    panelMatrixID = $('.panelMatrix-tab-content .tab-pane.active .divPanelMatrixID')[0].innerHTML;
     var sure = prompt('WARNING: This will re-configure all output and panel numbers with one output per row and all panels facing in an upwards direction.  Are you sure? [Y/N]', 'N');
 
     if (sure.toUpperCase() != 'Y')
@@ -1259,10 +1261,10 @@ function AutoLayoutPanels(panelMatrixID) {
     for (var y = 0; y < panelsHigh; y++) {
         for (var x = 0; x < panelsWide; x++) {
             var panel = panelsWide - x - 1;
-            $(`#panelMatrix${panelMatrixID} .LEDPanelPanelNumber_' + y + '_' + panel`).val(x);
-            $(`#panelMatrix${panelMatrixID} .LEDPanelOutputNumber_' + y + '_' + panel`).val(y);
-            $(`#panelMatrix${panelMatrixID} .LEDPanelOrientation_' + y + '_' + panel`).attr('src', 'images/arrow_N.png');
-            $(`#panelMatrix${panelMatrixID} .LEDPanelColorOrder_' + y + '_' + panel`).val('');
+            $(`#panelMatrix${panelMatrixID} .LEDPanelPanelNumber_${y}_${panel}`).val(x);
+            $(`#panelMatrix${panelMatrixID} .LEDPanelOutputNumber_${y}_${panel}`).val(y);
+            $(`#panelMatrix${panelMatrixID} .LEDPanelOrientation_${y}_${panel}`).attr('src', 'images/arrow_N.png');
+            $(`#panelMatrix${panelMatrixID} .LEDPanelColorOrder_${y}_${panel}`).val('');
         }
     }
     SaveChannelOutputsJSON();
