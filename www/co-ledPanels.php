@@ -1443,8 +1443,8 @@
 
     <div id='divLEDPanelsTemplate' style="background-color: aquamarine;display:none;">
         <div class="divPanelMatrixID" style="display:none;"></div>
-        <div class="backdrop tableOptionsForm">
-            <div class="row">
+        <div class="tableOptionsForm">
+            <div class="backdrop row">
                 <div class="col-md-auto">
                     <div class="backdrop-dark form-inline enableCheckboxWrapper">
                         <div><b>Enable <span class='capeNamePanels'>Led Panel Matrix</span>:&nbsp;</b></div>
