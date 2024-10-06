@@ -1325,12 +1325,16 @@
         });
     }
 
+    function populatePanelMatrixTab(panelMatrixID) {
+        document.querySelector(`#panelMatrix${panelMatrixID}`).innerHTML = document.querySelector('#divLEDPanelsTemplate').innerHTML;
+        document.querySelector(`#panelMatrix${panelMatrixID}  .divPanelMatrixID`).innerHTML = panelMatrixID;
+    }
+
     $(document).ready(function () {
 
-        document.querySelector('#panelMatrix1').innerHTML = document.querySelector('#divLEDPanelsTemplate').innerHTML;
-        document.querySelector('#panelMatrix1  .divPanelMatrixID').innerHTML = 1;
-        document.querySelector('#panelMatrix2').innerHTML = document.querySelector('#divLEDPanelsTemplate').innerHTML;
-        document.querySelector('#panelMatrix2  .divPanelMatrixID').innerHTML = 2;
+        populatePanelMatrixTab(1);
+        populatePanelMatrixTab(2);
+        populatePanelMatrixTab(3);
 
 
         InitializeLEDPanelMatrix(1);
