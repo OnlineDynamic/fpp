@@ -157,9 +157,9 @@
         function UpdateChannelOutputLookup() {
             var i = 0;
             for (i = 0; i < channelOutputs.channelOutputs.length; i++) {
-                channelOutputsLookup[channelOutputs.channelOutputs[i].type + "-Enabled"] = channelOutputs.channelOutputs[i].enabled;
+                //channelOutputsLookup[channelOutputs.channelOutputs[i].type + "-Enabled"] = channelOutputs.channelOutputs[i].enabled;
                 if (channelOutputs.channelOutputs[i].type == "LEDPanelMatrix") {
-                    if (!channelOutputsLookup.includes("LEDPanelMatrices")) { channelOutputsLookup["LEDPanelMatrices"] = []; }
+                    if (!channelOutputsLookup.hasOwnProperty("LEDPanelMatrices")) { channelOutputsLookup["LEDPanelMatrices"] = []; }
                     channelOutputsLookup["LEDPanelMatrices"][channelOutputs.channelOutputs[i].panelMatrixID] = channelOutputs.channelOutputs[i];
 
                     var p = 0;
@@ -184,9 +184,9 @@
             config.channelOutputs = [];
 
             //loop round the displayed tabs and gather up their configs
-            for ($i = 0; $i < $('.tab-content #divPanelMatrixID').length; $i++) {
-                var panelID = $('#divPanelMatrixID .tab-pane')[$i].innerText;
-                var lpc = GetLEDPanelConfigFromUI(panelID);
+            for ($i = 0; $i < $('.tab-content .divPanelMatrixID').length; $i++) {
+                var panelMatrixID = $('.tab-content .divPanelMatrixID')[$i].innerText;
+                var lpc = GetLEDPanelConfigFromUI(panelMatrixID);
                 config.channelOutputs.push(lpc);
             }
             channelOutputs = config;
