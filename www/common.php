@@ -120,7 +120,7 @@ function ReadSettingFromFile($settingName, $plugin = "")
 
 if (!function_exists('json_validate')) {
     /**
-     * Validates a JSON string.
+     * Validates a JSON string. This is standard in php >= 8.3
      * 
      * @param string $json The JSON string to validate.
      * @param int $depth Maximum depth. Must be greater than zero.
