@@ -68,7 +68,7 @@ sudo apt-get install php-xdebug
 ```
 
 Create `/etc/php/8.2/fpm/conf.d/99-xdebug.ini` and
-`/etc/php/8.2/cli/conf.d/99-xdebug.ini`
+`/etc/php/8.2/cli/conf.d/99-xdebug.ini`  (assuming php version 8.2 - adjust as new version come into play)
 
 add the lines:
 
@@ -79,7 +79,7 @@ xdebug.discover_client_host=1
 xdebug.start_with_request = yes
 ```
 
-to each file and restart php-fpm with: `service php8.2-fpm restart
+to each file and restart php-fpm with: `service php8.2-fpm restart`
 (any issues review [https://xdebug.org/docs/step_debug](https://) and [https://marketplace.visualstudio.com/items?itemName=xdebug.php-debug](https://) for your particular environment config)
 
 ## Clang Format Extension
