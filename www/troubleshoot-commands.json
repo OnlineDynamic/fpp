@@ -470,6 +470,23 @@
                 }
             }
         },
+        "PHP": {
+            "grpDisplayTitle": "PHP",
+            "grpDescription": "Listing of PHP Environment Setup",
+            "platforms": [
+                "all"
+            ],
+            "commands": {
+                "PHPInfo": {
+                    "title": "PHP Info",
+                    "description": "",
+                    "cmd": "php -i",
+                    "platforms": [
+                        "all"
+                    ]
+                }
+            }
+        },
         "RPISPECIFIC": {
             "grpDisplayTitle": "RPI Utils",
             "grpDescription": "Raspberry Pi System Info",
