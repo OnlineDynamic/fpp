@@ -51,22 +51,28 @@ function PutSetting()
         SendCommand("LogLevel,$setting,$value,");
     } else if ($setting == "HostName") {
         $value = preg_replace("/[^-a-zA-Z0-9]/", "", $value);
-        exec($SUDO . " sed -i 's/^.*\$/$value/' /etc/hostname ; " .
+        exec(
+            $SUDO . " sed -i 's/^.*\$/$value/' /etc/hostname ; " .
             $SUDO . " sed -i '/^127.0.1.1[^0-9]/d' /etc/hosts ; " .
             $SUDO . " sed -i '\$a127.0.1.1 $value' /etc/hosts ; " .
             $SUDO . " hostname $value ; " .
             $SUDO . " /etc/init.d/avahi-daemon restart ;" .
             $SUDO . " systemctl restart avahi-daemon.service",
-            $output, $return_val);
+            $output,
+            $return_val
+        );
         sleep(1); // Give Avahi time to restart before we return
     } else if ($setting == "EnableRouting") {
         if ($value != "1") {
             $value = "0";
         }
-        exec($SUDO . " sed -i '/net.ipv4.ip_forward/d' /etc/sysctl.conf; " .
+        exec(
+            $SUDO . " sed -i '/net.ipv4.ip_forward/d' /etc/sysctl.conf; " .
             $SUDO . " sed -i '\$anet.ipv4.ip_forward = $value' /etc/sysctl.conf ; " .
             $SUDO . " sysctl --system",
-            $output, $return_val);
+            $output,
+            $return_val
+        );
     } else if ($setting == "storageDevice") {
         if ($settings['Platform'] == "BeagleBone Black") {
             exec('findmnt -n -o SOURCE / | colrm 1 5', $output, $return_val);
@@ -161,4 +167,32 @@ function GetTime()
     //$result['time'] = date('D M d H:i:s T Y'); // Apache needs restarting after a timezone change
     $result['time'] = exec('date');
     return json($result);
+}
+
+function UpdateJSONValueSetting()
+{
+    global $SUDO;
+    $new_json_sub_value = file_get_contents('php://input');
+    $new_json_sub_value = trim($new_json_sub_value, " \t\n\r\0\x0B\"");
+    $new_json_sub_value = str_replace("\\", "", $new_json_sub_value);
+    $settingName = params('SettingName');
+
+    $orig_json_value = ReadSettingFromFile($settingName);
+
+    if (json_validate($orig_json_value) && json_validate($new_json_sub_value)) {
+
+        $OriginArrayData = json_decode($orig_json_value, true);
+
+        $replacementDataArray = json_decode($new_json_sub_value, true);
+
+        $newArrayData = array_replace_recursive($OriginArrayData, $replacementDataArray);
+        $new_json_value = json_encode($newArrayData);
+
+        WriteSettingToFile($settingName, $new_json_value);
+
+        $status = array("status" => "OK");
+    } else {
+        $status = array("status" => "Error updating JSON value");
+    }
+    return json($status);
 }
