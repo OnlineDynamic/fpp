@@ -1111,8 +1111,8 @@
 
     function SetCanvasSize() {
         panelMatrixID = GetCurrentActiveMatrixPanelID();
-        canvasWidth = parseInt($('#LEDPanelUIPixelsWide').val()) * uiScale;
-        canvasHeight = parseInt($('#LEDPanelUIPixelsHigh').val()) * uiScale;
+        canvasWidth = parseInt($(`#panelMatrix${panelMatrixID} .LEDPanelUIPixelsWide`).val()) * uiScale;
+        canvasHeight = parseInt($(`#panelMatrix${panelMatrixID} .LEDPanelUIPixelsHigh`).val()) * uiScale;
 
         ledPanelCanvas[panelMatrixID].setWidth(canvasWidth);
         ledPanelCanvas[panelMatrixID].setHeight(canvasHeight);
@@ -1810,11 +1810,11 @@
                                         <tr>
                                             <td><b>UI Layout Size:</b></td>
                                             <td>Pixels Wide:</td>
-                                            <td><? PrintSettingTextSaved("LEDPanelUIPixelsWide", 2, 0, 4, 4, "", "256", "SetCanvasSize"); ?>
+                                            <td><? PrintSettingTextSaved("LEDPanelUIPixelsWide", 2, 0, 4, 4, "", "256", "SetCanvasSize", "", "text", [], "class"); ?>
                                             </td>
                                             <td></td>
                                             <td>Pixels High:</td>
-                                            <td><? PrintSettingTextSaved("LEDPanelUIPixelsHigh", 2, 0, 4, 4, "", "128", "SetCanvasSize"); ?>
+                                            <td><? PrintSettingTextSaved("LEDPanelUIPixelsHigh", 2, 0, 4, 4, "", "128", "SetCanvasSize", "", "text", [], "class"); ?>
                                             </td>
                                         </tr>
                                     </table>
