@@ -40,8 +40,8 @@
     $maxLEDPanels = $LEDPanelOutputs * $LEDPanelPanelsPerOutput;
     $maxLEDPanels = 96; // Override to allow different panel configs using ColorLight cards
     
-    // echo $settings;
-    
+    echo $settings;
+
     if (isset(($settings["LEDPanelMatrices"]))) {
         $matricesArray = json_decode($settings["LEDPanelMatrices"], true);
         for ($z = 1; $z <= count($matricesArray["panelMatrices"]); $z++) {
