@@ -140,7 +140,6 @@ dispatch_get('/remotes', 'GetRemotes');
 
 dispatch_get('/sequence', 'GetSequences');
 dispatch_get('/sequence/current/step', 'GetSequenceStep');
-dispatch_get('/sequence/current/stepBack', 'GetSequenceStepBack');
 dispatch_get('/sequence/current/stop', 'GetSequenceStop');
 dispatch_get('/sequence/current/togglePause', 'GetSequenceTogglePause');
 dispatch_get('/sequence/:SequenceName', 'GetSequence');
@@ -181,6 +180,8 @@ dispatch_get('/system/volume', 'SystemGetAudio');
 dispatch_post('/system/volume', 'SystemSetAudio');
 dispatch_post('/system/proxies', 'PostProxies');
 dispatch_get('/system/proxies', 'GetProxies');
+dispatch_get('/system/packages', 'GetOSpackages');
+dispatch_get('/system/packages/info/:packageName', 'GetOSpackageInfo');
 
 dispatch_get('/testmode', 'testMode_Get');
 dispatch_post('/testmode', 'testMode_Set');

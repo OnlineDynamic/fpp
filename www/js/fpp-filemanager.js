@@ -95,6 +95,7 @@ function GetFiles (dir) {
 		},
 		complete: function () {
 			SetupTableSorter('tbl' + dir);
+			UpdateFileCount(dir);
 		}
 	});
 }
@@ -109,6 +110,7 @@ function GetAllFiles () {
 	GetFiles('Logs');
 	GetFiles('Uploads');
 	GetFiles('Crashes');
+	GetFiles('Backups');
 
 	pluginFileExtensions.forEach(ext => {
 		GetFiles(ext);
@@ -139,6 +141,27 @@ function GetSequenceInfo (file) {
 			}
 		});
 	});
+}
+
+function UpdateFileCount ($dir) {
+	$('#fileCount_' + $dir)[0].innerText = $('#tbl' + $dir + ' tbody tr')
+		.not('.unselectableRow')
+		.not('.filtered').length;
+	if ($('#tbl' + $dir + ' tbody tr.filtered').length > 0) {
+		//is filtered
+		$('#div' + $dir + ' .fileCountlabelHeading')[0].innerHTML =
+			'<span class="filtered">Filtered items:<span>';
+		$('#fileCount_' + $dir)
+			.removeClass('text-bg-secondary')
+			.addClass('text-bg-success');
+	} else {
+		//not filtered
+		$('#div' + $dir + ' .fileCountlabelHeading')[0].innerHTML =
+			'<span class="">Items:<span>';
+		$('#fileCount_' + $dir)
+			.removeClass('text-bg-success')
+			.addClass('text-bg-secondary');
+	}
 }
 
 function FileManagerFilterToggled () {
@@ -419,6 +442,10 @@ function pageSpecific_PageLoad_PostDOMLoad_ActionsSetup () {
 		HandleMouseClick(event, $(this), 'Crashes');
 	});
 
+	$('#tblBackups').on('mousedown', 'tbody tr', function (event, ui) {
+		HandleMouseClick(event, $(this), 'Backups');
+	});
+
 	const pond = FilePond.create(document.querySelector('#filepondInput'), {
 		labelIdle: `<b style="font-size: 1.3em;">Drag & Drop or Select Files to upload</b><br><br><span class="btn btn-dark filepond--label-action" style="text-decoration:none;">Select Files</span><br>`,
 		server: 'api/file/upload',
@@ -474,6 +501,9 @@ function pageSpecific_PageLoad_PostDOMLoad_ActionsSetup () {
 						break;
 					case 'tblCrashes':
 						$($t[0]).tablesorter(tablesorterOptions_Crashes);
+						break;
+					case 'tblBackups':
+						$($t[0]).tablesorter(tablesorterOptions_Backups);
 						break;
 					default:
 						var opts = eval('tablesorterOptions_' + $tableName.substring(3));
@@ -1312,6 +1342,17 @@ var tablesorterOptions_Override_Crashes = {
 	}
 };
 
+var tablesorterOptions_Override_Backups = {
+	theme: 'fpp',
+	headers: {
+		0: { sorter: 'text', sortInitialOrder: 'asc' },
+		1: { sorter: 'metric' },
+		2: { sorter: 'text' }
+	},
+	widgetOptions: {
+		cssStickyHeaders_attachTo: '#divBackupsData'
+	}
+};
 //create config options from common and table specific override settings as well as UI setting for filter on/off
 
 var tablesorterOptions_Sequences = $.extend(
@@ -1413,11 +1454,28 @@ var tablesorterOptions_Crashes = $.extend(
 		}
 	}
 );
+var tablesorterOptions_Backups = $.extend(
+	true,
+	{},
+	tablesorterOptions_Common,
+	tablesorterOptions_Override_Backups,
+	{
+		widgetOptions: {
+			filter_hideFilters: settings.fileManagerTableFilter == '1' ? false : true
+		}
+	}
+);
 
 function SetupTableSorter (tableName) {
 	var fileType = tableName.substring(3);
 	if ($('#' + tableName).find('tbody').length > 0) {
-		$('#' + tableName).tablesorter(eval('tablesorterOptions_' + fileType));
+		$('#' + tableName)
+			.tablesorter(eval('tablesorterOptions_' + fileType))
+			.bind('filterEnd', function (event, config) {
+				if (event.type === 'filterEnd') {
+					UpdateFileCount(fileType);
+				}
+			});
 		$('#' + tableName)[0].config.widgetOptions.filter_hideFilters =
 			settings.fileManagerTableFilter == '1' ? false : true;
 		$('#' + tableName).trigger('applyWidgets');

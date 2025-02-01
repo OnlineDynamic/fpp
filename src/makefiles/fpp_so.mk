@@ -3,6 +3,7 @@
 OBJECTS_fpp_so += \
 	channeloutput/ChannelOutput.o \
 	channeloutput/ThreadedChannelOutput.o \
+	channeloutput/SerialChannelOutput.o \
 	channeloutput/ChannelOutputSetup.o \
 	channeloutput/channeloutputthread.o \
 	channeloutput/ColorOrder.o \
@@ -20,6 +21,7 @@ OBJECTS_fpp_so += \
     channeloutput/processors/ColorOrderOutputProcessor.o \
     channeloutput/processors/ThreeToFourOutputProcessor.o \
 	channeloutput/processors/OverrideZeroOutputProcessor.o \
+    channeloutput/processors/FoldOutputProcessor.o \
 	channeloutput/stringtesters/PixelCountStringTester.o \
     channeloutput/stringtesters/PixelFadeStringTester.o \
 	channeloutput/stringtesters/PixelStringTester.o \
@@ -161,7 +163,7 @@ TARGETS += libfpp.$(SHLIB_EXT)
 OBJECTS_ALL+=$(OBJECTS_fpp_so)
 
 libfpp.$(SHLIB_EXT): $(OBJECTS_fpp_so) $(DEPS_fpp_so)
-	$(CCACHE) $(CC) -shared $(CFLAGS_$@) $(OBJECTS_fpp_so) $(LIBS_fpp_so) $(LDFLAGS) $(LDFLAGS_fpp_so) -o $@
+	$(CCACHE) $(CC) -shared $(CFLAGS_$@) $(OBJECTS_fpp_so) $(LIBS_fpp_so) $(LIBS_fpp_so_EXTRA) $(LDFLAGS) $(LDFLAGS_fpp_so) -o $@
 
 
 CXXFLAGS_overlays/wled/FX.o+=-Wno-deprecated-declarations

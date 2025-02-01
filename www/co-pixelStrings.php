@@ -21,7 +21,7 @@ function readCapes($cd, $capes)
 
             if ($string != "") {
                 $json = json_decode($string, true);
-                if ($json['numSerial'] != 0 && isset($settings['cape-info']) && $settings['cape-info']['id'] == "Unsupported") {
+                if (isset($settings['cape-info']) && $settings['cape-info']['id'] == "Unsupported" && $json['numSerial'] != 0) {
                     // unsupported
                     continue;
                 } else if (empty($currentCape) || (isset($json['capes']) && in_array($currentCape, $json['capes']))) {
@@ -157,7 +157,15 @@ function readCapes($cd, $capes)
     function SetPixelTestPattern() {
         var val = $("#PixelTestPatternType").val();
         if (val != "0") {
-            var data = '{"command":"Test Start","multisyncCommand":false,"multisyncHosts":"","args":["2000","Output Specific","--ALL--","' + val + '"]}';
+            <? if ($settings['Platform'] == "BeagleBone Black") { ?>
+                var outputType = "BBB Pixel Strings";
+            <? } else { ?>
+                var outtype = $('#PixelStringSubType').val();
+                var driver = MapPixelStringType(outtype);
+                var outputType = (driver == 'DPIPixels') ? "DPI Pixels" : "RPI Pixel Strings";
+            <? } ?>
+
+            var data = '{"command":"Test Start","multisyncCommand":false,"multisyncHosts":"","args":["2000","Output Specific","' + outputType + '","' + val + '"]}';
             $.post("api/command", data
             ).done(function (data) {
             }).fail(function () {
@@ -2082,7 +2090,7 @@ function readCapes($cd, $capes)
         }
     }
 
-    <? if ($settings['Platform'] == "BeagleBone Black") { ?>
+    <? if ($settings['BeaglePlatform']) { ?>
         var PIXEL_STRING_FILE_NAME = "co-bbbStrings";
     <? } else { ?>
         var PIXEL_STRING_FILE_NAME = "co-pixelStrings";
@@ -2272,6 +2280,7 @@ function readCapes($cd, $capes)
         $.post("api/channel/output/" + PIXEL_STRING_FILE_NAME, JSON.stringify(postData)).done(function (data) {
             $.jGrowl("Pixel String Output Configuration Saved", { themeState: 'success' });
             SetRestartFlag(1);
+            common_ViewPortChange();
         }).fail(function () {
             DialogError("Save Pixel String Outputs", "Save Failed");
         });
@@ -2311,8 +2320,8 @@ function readCapes($cd, $capes)
         <?
         if (
             (isset($settings['cape-info'])) &&
-            ((in_array('all', $settings['cape-info']["provides"])) ||
-                (in_array('strings', $settings['cape-info']["provides"])))
+            ((in_array('all', $currentCapeInfo["provides"])) ||
+                (in_array('strings', $currentCapeInfo["provides"])))
         ) {
             ?>
             if (currentCapeName != "" && currentCapeName != "Unknown") {

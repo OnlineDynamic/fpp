@@ -31,6 +31,14 @@
                         "all"
                     ]
                 },
+                "AvailableAPs": {
+                    "title": "Wifi AP Scan",
+                    "description": "A scan of all available wifi network Access Points near the fpp device",
+                    "cmd": "sudo bash /opt/fpp/scripts/wifi_scan.sh 2>/dev/null",
+                    "platforms": [
+                        "all"
+                    ]
+                },
                 "Routing": {
                     "title": "Routing",
                     "description": "",
@@ -401,6 +409,14 @@
                     "platforms": [
                         "all"
                     ]
+                },
+                "DMESGDLogs": {
+                    "title": "dmesg",
+                    "description": "",
+                    "cmd": "dmesg -T",
+                    "platforms": [
+                        "all"
+                    ]
                 }
             }
         },
@@ -480,7 +496,7 @@
                 "RPIINFO": {
                     "title": "RPI Info",
                     "description": "Raspberry Pi inbuilt info tool",
-                    "cmd": "/bin/raspinfo; rm -f raspinfo.txt",
+                    "cmd": "/bin/raspinfo | sed '/dmesg/q'; rm -f raspinfo.txt",
                     "platforms": [
                         "Raspberry Pi"
                     ]
@@ -507,6 +523,31 @@
                     "cmd": "dtc -I fs /proc/device-tree",
                     "platforms": [
                         "Raspberry Pi"
+                    ]
+                }
+            }
+        },
+        "Webserver": {
+            "grpDisplayTitle": "Webserver",
+            "grpDescription": "Information on the local web server",
+            "platforms": [
+                "all"
+            ],
+            "commands": {
+                "Server-Status": {
+                    "title": "Apache Server Status",
+                    "description": "Results from Apache mod_status extension",
+                    "cmd": "curl -s http://localhost/server-status",
+                    "platforms": [
+                        "all"
+                    ]
+                },
+                "PHPInfo": {
+                    "title": "PHP Info",
+                    "description": "Results from php_info() function",
+                    "cmd": "curl -s http://localhost/localonly/cleanedphpinfo.php",
+                    "platforms": [
+                        "all"
                     ]
                 }
             }

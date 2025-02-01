@@ -337,7 +337,7 @@
             "fppd": false,
             "methods": {
                 "GET": {
-                    "desc": "Returns the current configuration of the specified output in JSON format",
+                    "desc": "Returns the current configuration of the specified output in JSON format from /home/fpp/config. Common values of :file would be \"universeOutputs\", \"universeInputs\", \"co-other\", \"dmxInputs\", \"PixelnetDMX\", \"co-pwm\", \"PixelnetDMX\", \"co-bbbStrings\"",
                     "output": "JSON output varies based on file."
                 },
                 "POST": {
@@ -628,7 +628,20 @@
                 }
             }
         },
-        {
+	{
+	   "endpoint": "fppd/mqtt/cache",
+	   "fppd": true,
+	   "methods": {
+	      "GET": {
+	         "desc": "Returns a JSON map of the cached MQTT topic and values that were captured from the 'Subscribe Topic' setting. Note: value is always stored internally as a string.",
+			"output": {
+			   "/christmas/tag1": "true",
+			   "/christmas/tag2": "12345"
+			}
+		    }
+		}
+	}, 
+	{
             "endpoint": "fppd/multiSyncStats",
             "fppd": true,
             "methods": {
@@ -1510,7 +1523,7 @@
             "fppd": true,
             "methods": {
                 "PUT": {
-                    "desc": "Sets the state of the overlay model",
+                    "desc": "Sets the state of the overlay model. (0 = off, 1 = override, 2 = overlay)",
                     "input": {
                         "State": 1
                     },
@@ -1559,7 +1572,7 @@
             "fppd": true,
             "methods": {
                 "PUT": {
-                    "desc": "Displays text on the overlay model",
+                    "desc": "Displays text on the overlay model. Message: the text to display, Postion: Center, L2R, R2L, B2T, T2B. PixelsPerSecond: speed to move text across screen",
                     "input": {
                         "Message": "Hello",
                         "Position": "L2R",

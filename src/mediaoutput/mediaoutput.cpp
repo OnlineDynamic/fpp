@@ -36,7 +36,7 @@
 /////////////////////////////////////////////////////////////////////////////
 MediaOutputBase* mediaOutput = 0;
 float masterMediaPosition = 0.0;
-pthread_mutex_t mediaOutputLock;
+std::mutex mediaOutputLock;
 
 static bool firstOutCreate = true;
 
@@ -48,10 +48,6 @@ MediaOutputStatus mediaOutputStatus = {
  *
  */
 void InitMediaOutput(void) {
-    if (pthread_mutex_init(&mediaOutputLock, NULL) != 0) {
-        LogDebug(VB_MEDIAOUT, "ERROR: Media Output mutex init failed!\n");
-    }
-
 #ifndef PLATFORM_OSX
     int vol = getSettingInt("volume", -1);
     if (vol < 0) {
@@ -66,8 +62,6 @@ void InitMediaOutput(void) {
  */
 void CleanupMediaOutput(void) {
     CloseMediaOutput();
-
-    pthread_mutex_destroy(&mediaOutputLock);
 }
 
 #ifndef PLATFORM_OSX
@@ -113,11 +107,9 @@ void setVolume(int vol) {
     MacOSSetVolume(vol);
 #endif
 
-    pthread_mutex_lock(&mediaOutputLock);
+    std::unique_lock<std::mutex> lock(mediaOutputLock);
     if (mediaOutput)
         mediaOutput->SetVolume(vol);
-
-    pthread_mutex_unlock(&mediaOutputLock);
 }
 
 static std::set<std::string> AUDIO_EXTS = {
@@ -188,7 +180,12 @@ bool HasAudioForMedia(std::string& mediaFilename) {
     std::string hostname = getSetting("HostName");
     if (hostname != "") {
         std::size_t found = mediaFilename.find_last_of(".");
-        std::string hostMediaPath = mediaFilename.substr(0, found) + "-" + hostname + mediaFilename.substr(found);
+        std::string hostMediaPath;
+        if (found != std::string::npos) {
+            hostMediaPath = mediaFilename.substr(0, found) + "-" + hostname + mediaFilename.substr(found);
+        } else {
+            hostMediaPath = mediaFilename + "-" + hostname;
+        }
         if (FileExists(hostMediaPath)) {
             mediaFilename = hostMediaPath;
             return true;
@@ -219,6 +216,22 @@ bool HasVideoForMedia(std::string& filename) {
     return fp != "";
 }
 
+static bool IsHDMIOut(std::string& vOut) {
+    if (vOut == "--HDMI--" || vOut == "--hdmi--" || vOut == "HDMI") {
+        vOut = "HDMI-A-1";
+    }
+    if (vOut.starts_with("HDMI-") || vOut.starts_with("DSI-") || vOut.starts_with("Composite-")) {
+        for (int x = 0; x < 4; x++) {
+            std::string conn = "/sys/class/drm/card" + std::to_string(x) + "-" + vOut + "/status";
+            if (FileExists(conn)) {
+                std::string status = GetFileContents(conn);
+                return !contains(status, "disconnected");
+            }
+        }
+    }
+    return false;
+}
+
 MediaOutputBase* CreateMediaOutput(const std::string& mediaFilename, const std::string& vOut) {
     std::string tmpFile(mediaFilename);
     std::size_t found = mediaFilename.find_last_of(".");
@@ -228,7 +241,8 @@ MediaOutputBase* CreateMediaOutput(const std::string& mediaFilename, const std::
         return nullptr;
     }
     std::string ext = toLowerCopy(mediaFilename.substr(found + 1));
-
+    std::string vo = vOut;
+    mediaOutputStatus.output = "";
 #ifdef HAS_VLC
     if (IsExtensionAudio(ext)) {
         if (getFPPmode() == REMOTE_MODE) {
@@ -236,12 +250,13 @@ MediaOutputBase* CreateMediaOutput(const std::string& mediaFilename, const std::
         } else {
             return new SDLOutput(mediaFilename, &mediaOutputStatus, "--Disabled--");
         }
-    } else if (IsExtensionVideo(ext) && (vOut == "--HDMI--" || vOut == "HDMI")) {
-        return new VLCOutput(mediaFilename, &mediaOutputStatus, vOut);
+    } else if (IsExtensionVideo(ext) && IsHDMIOut(vo)) {
+        mediaOutputStatus.output = vo;
+        return new VLCOutput(mediaFilename, &mediaOutputStatus, vo);
     } else if (IsExtensionVideo(ext))
 #endif
     {
-        return new SDLOutput(mediaFilename, &mediaOutputStatus, vOut);
+        return new SDLOutput(mediaFilename, &mediaOutputStatus, vo);
     }
     return nullptr;
 }
@@ -250,104 +265,105 @@ static std::set<std::string> alreadyWarned;
 /*
  *
  */
-int OpenMediaOutput(const char* filename) {
-    LogDebug(VB_MEDIAOUT, "OpenMediaOutput(%s)\n", filename);
+int OpenMediaOutput(const std::string& filename) {
+    LogDebug(VB_MEDIAOUT, "OpenMediaOutput(%s)\n", filename.c_str());
 
-    pthread_mutex_lock(&mediaOutputLock);
-    if (mediaOutput) {
-        pthread_mutex_unlock(&mediaOutputLock);
-        CloseMediaOutput();
-    }
-    pthread_mutex_unlock(&mediaOutputLock);
+    std::unique_lock<std::mutex> lock(mediaOutputLock);
 
-    std::string tmpFile(filename);
-    std::size_t found = tmpFile.find_last_of(".");
-    if (found == std::string::npos) {
-        LogDebug(VB_MEDIAOUT, "Unable to determine extension of media file %s\n",
-                 tmpFile.c_str());
-        return 0;
-    }
-    std::string ext = toLowerCopy(tmpFile.substr(found + 1));
-
-    if (getFPPmode() == REMOTE_MODE) {
-        std::string orgTmp = tmpFile;
-        tmpFile = GetVideoFilenameForMedia(tmpFile, ext);
-        if (tmpFile == "" && HasAudioForMedia(orgTmp)) {
-            tmpFile = orgTmp;
+    try {
+        if (mediaOutput) {
+            lock.unlock();
+            CloseMediaOutput();
         }
+        lock.unlock();
 
-        if (tmpFile == "") {
-            // For v1.0 MultiSync, we can't sync audio to audio, so check for
-            // a video file if the master is playing an audio file
-            // video doesn't exist, punt
-            tmpFile = filename;
-            if (alreadyWarned.find(tmpFile) == alreadyWarned.end()) {
-                alreadyWarned.emplace(tmpFile);
-                LogDebug(VB_MEDIAOUT, "No video found for remote playing of %s\n", filename);
-            }
+        std::string tmpFile(filename);
+        std::size_t found = tmpFile.find_last_of(".");
+        if (found == std::string::npos) {
+            LogDebug(VB_MEDIAOUT, "Unable to determine extension of media file %s\n",
+                     tmpFile.c_str());
             return 0;
-        } else {
-            LogDebug(VB_MEDIAOUT,
-                     "Player is playing %s audio, remote will try %s\n",
-                     filename, tmpFile.c_str());
         }
-    }
+        std::string ext = toLowerCopy(tmpFile.substr(found + 1));
 
-    pthread_mutex_lock(&mediaOutputLock);
-    std::string vOut = getSetting("VideoOutput");
-    if (vOut == "") {
-#if !defined(PLATFORM_BBB)
-        vOut = "--HDMI--";
-#else
-        vOut = "--Disabled--";
-#endif
-    }
+        if (getFPPmode() == REMOTE_MODE) {
+            std::string orgTmp = tmpFile;
+            tmpFile = GetVideoFilenameForMedia(tmpFile, ext);
+            if (tmpFile == "" && HasAudioForMedia(orgTmp)) {
+                tmpFile = orgTmp;
+            }
 
-    mediaOutput = CreateMediaOutput(tmpFile, vOut);
-    if (!mediaOutput) {
-        pthread_mutex_unlock(&mediaOutputLock);
-        LogErr(VB_MEDIAOUT, "No Media Output handler for %s\n", tmpFile.c_str());
+            if (tmpFile == "") {
+                // For v1.0 MultiSync, we can't sync audio to audio, so check for
+                // a video file if the master is playing an audio file
+                // video doesn't exist, punt
+                tmpFile = filename;
+                if (alreadyWarned.find(tmpFile) == alreadyWarned.end()) {
+                    alreadyWarned.emplace(tmpFile);
+                    LogDebug(VB_MEDIAOUT, "No video found for remote playing of %s\n", filename.c_str());
+                }
+                return 0;
+            } else {
+                LogDebug(VB_MEDIAOUT,
+                         "Player is playing %s audio, remote will try %s\n",
+                         filename.c_str(), tmpFile.c_str());
+            }
+        }
+
+        lock.lock();
+        std::string vOut = getSetting("VideoOutput");
+        if (vOut == "") {
+            if (FileExists("/sys/class/drm/card0-HDMI-A-1/status") || FileExists("/sys/class/drm/card1-HDMI-A-1/status")) {
+                vOut = "--HDMI--";
+            } else {
+                vOut = "--Disabled--";
+            }
+        }
+        mediaOutput = CreateMediaOutput(tmpFile, vOut);
+        if (!mediaOutput) {
+            LogErr(VB_MEDIAOUT, "No Media Output handler for %s\n", tmpFile.c_str());
+            return 0;
+        }
+
+        Json::Value root;
+        root["currentEntry"]["type"] = "media";
+        root["currentEntry"]["mediaFilename"] = mediaOutput->m_mediaFilename;
+
+        if (getFPPmode() == REMOTE_MODE && firstOutCreate) {
+            firstOutCreate = false;
+            // need to "fake" a playlist start as some plugins will not initialize
+            // until a playlist is started, but remotes don't have playlists
+            root["name"] = "FPP Remote";
+            root["desc"] = "FPP Remote Mode";
+            root["loop"] = false;
+            root["repeat"] = false;
+            root["random"] = false;
+            root["size"] = 1;
+            PluginManager::INSTANCE.playlistCallback(root, "start", "Main", 0);
+        }
+        MediaDetails::INSTANCE.ParseMedia(mediaOutput->m_mediaFilename.c_str());
+        PluginManager::INSTANCE.mediaCallback(root, MediaDetails::INSTANCE);
+
+        if (multiSync->isMultiSyncEnabled()) {
+            multiSync->SendMediaOpenPacket(mediaOutput->m_mediaFilename);
+        }
+        return 1;
+    } catch (const std::system_error& e) {
+        LogErr(VB_MEDIAOUT, "System exception starting media for %s.  Code: %d   What: %s\n", filename.c_str(), e.code().value(), e.what());
         return 0;
     }
-
-    Json::Value root;
-    root["currentEntry"]["type"] = "media";
-    root["currentEntry"]["mediaFilename"] = mediaOutput->m_mediaFilename;
-
-    if (getFPPmode() == REMOTE_MODE && firstOutCreate) {
-        firstOutCreate = false;
-        // need to "fake" a playlist start as some plugins will not initialize
-        // until a playlist is started, but remotes don't have playlists
-        root["name"] = "FPP Remote";
-        root["desc"] = "FPP Remote Mode";
-        root["loop"] = false;
-        root["repeat"] = false;
-        root["random"] = false;
-        root["size"] = 1;
-        PluginManager::INSTANCE.playlistCallback(root, "start", "Main", 0);
-    }
-    MediaDetails::INSTANCE.ParseMedia(mediaOutput->m_mediaFilename.c_str());
-    PluginManager::INSTANCE.mediaCallback(root, MediaDetails::INSTANCE);
-
-    if (multiSync->isMultiSyncEnabled()) {
-        multiSync->SendMediaOpenPacket(mediaOutput->m_mediaFilename);
-    }
-
-    pthread_mutex_unlock(&mediaOutputLock);
-
-    return 1;
 }
-
-bool MatchesRunningMediaFilename(const char* filename) {
+bool MatchesRunningMediaFilename(const std::string& filename) {
     if (mediaOutput) {
         std::string tmpFile = filename;
         if (HasAudioForMedia(tmpFile)) {
-            if (mediaOutput->m_mediaFilename == tmpFile || !strcmp(mediaOutput->m_mediaFilename.c_str(), filename)) {
+            if (mediaOutput->m_mediaFilename == tmpFile || mediaOutput->m_mediaFilename == filename) {
                 return true;
             }
         }
+        tmpFile = filename;
         if (HasVideoForMedia(tmpFile)) {
-            if (mediaOutput->m_mediaFilename == tmpFile || !strcmp(mediaOutput->m_mediaFilename.c_str(), filename)) {
+            if (mediaOutput->m_mediaFilename == tmpFile || mediaOutput->m_mediaFilename == filename) {
                 return true;
             }
         }
@@ -355,7 +371,7 @@ bool MatchesRunningMediaFilename(const char* filename) {
     return false;
 }
 
-int StartMediaOutput(const char* filename) {
+int StartMediaOutput(const std::string& filename) {
     if (!MatchesRunningMediaFilename(filename)) {
         CloseMediaOutput();
     }
@@ -369,7 +385,7 @@ int StartMediaOutput(const char* filename) {
     if (!mediaOutput) {
         return 0;
     }
-    pthread_mutex_lock(&mediaOutputLock);
+    std::unique_lock<std::mutex> lock(mediaOutputLock);
     if (multiSync->isMultiSyncEnabled())
         multiSync->SendMediaSyncStartPacket(mediaOutput->m_mediaFilename);
 
@@ -377,12 +393,8 @@ int StartMediaOutput(const char* filename) {
         LogErr(VB_MEDIAOUT, "Could not start media %s\n", mediaOutput->m_mediaFilename.c_str());
         delete mediaOutput;
         mediaOutput = 0;
-        pthread_mutex_unlock(&mediaOutputLock);
         return 0;
     }
-
-    pthread_mutex_unlock(&mediaOutputLock);
-
     std::map<std::string, std::string> keywords;
     keywords["MEDIA_NAME"] = filename;
     CommandManager::INSTANCE.TriggerPreset("MEDIA_STARTED", keywords);
@@ -394,16 +406,15 @@ void CloseMediaOutput() {
 
     mediaOutputStatus.status = MEDIAOUTPUTSTATUS_IDLE;
 
-    pthread_mutex_lock(&mediaOutputLock);
+    std::unique_lock<std::mutex> lock(mediaOutputLock);
     if (!mediaOutput) {
-        pthread_mutex_unlock(&mediaOutputLock);
         return;
     }
 
     if (mediaOutput->IsPlaying()) {
-        pthread_mutex_unlock(&mediaOutputLock);
+        lock.unlock();
         mediaOutput->Stop();
-        pthread_mutex_lock(&mediaOutputLock);
+        lock.lock();
     }
 
     if (multiSync->isMultiSyncEnabled())
@@ -423,37 +434,31 @@ void CloseMediaOutput() {
     root["currentEntry"]["mediaFilename"] = "";
     MediaDetails::INSTANCE.Clear();
     PluginManager::INSTANCE.mediaCallback(root, MediaDetails::INSTANCE);
-
-    pthread_mutex_unlock(&mediaOutputLock);
 }
 
-void UpdateMasterMediaPosition(const char* filename, float seconds) {
+void UpdateMasterMediaPosition(const std::string& filename, float seconds) {
     if (getFPPmode() != REMOTE_MODE) {
         return;
     }
 
     if (MatchesRunningMediaFilename(filename)) {
         masterMediaPosition = seconds;
-        pthread_mutex_lock(&mediaOutputLock);
+        std::unique_lock<std::mutex> lock(mediaOutputLock);
         if (!mediaOutput) {
-            pthread_mutex_unlock(&mediaOutputLock);
             return;
         }
         mediaOutput->AdjustSpeed(seconds);
-        pthread_mutex_unlock(&mediaOutputLock);
         return;
     } else {
         // with VLC, we can jump forward a bit and get close
         OpenMediaOutput(filename);
         StartMediaOutput(filename);
         masterMediaPosition = seconds;
-        pthread_mutex_lock(&mediaOutputLock);
+        std::unique_lock<std::mutex> lock(mediaOutputLock);
         if (!mediaOutput) {
-            pthread_mutex_unlock(&mediaOutputLock);
             return;
         }
         mediaOutput->AdjustSpeed(seconds);
-        pthread_mutex_unlock(&mediaOutputLock);
         return;
     }
 }

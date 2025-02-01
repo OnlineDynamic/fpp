@@ -78,6 +78,7 @@ h6 {
     background-color: transparent;
     padding-top: 0.2em;
     padding-bottom: 0.2em;
+    border-bottom: 0px;
 }
 
 .statusPageLoading {
@@ -698,6 +699,21 @@ body.has-touch .pageContent-tabs>.nav-item:not(.hidden) {
     padding-bottom: 0;
     border-bottom: none;
     margin-bottom: 0;
+}
+
+.warning-link a:link {
+    text-decoration: none;
+    color: white;
+}
+
+.warning-link a:visited {
+    text-decoration: none;
+    color: white;
+}
+
+.warning-link a:hover{
+    text-decoration: none;
+    color: yellow;
 }
 
 .volume {
@@ -1671,8 +1687,8 @@ body .sm-clean a .sub-arrow {
         z-index: 1029;
         overflow-x: hidden;
         background-color: #ffffff;
-        animation: fadeIn ease 1s;
         -webkit-animation: fadeIn ease 1s;
+        animation: fadeIn ease 1s;
     }
 
 }
@@ -1797,14 +1813,12 @@ body .sm-clean a .sub-arrow {
     padding-right: 5px;
     vertical-align: top;
     white-space: nowrap;
-    width: 15%;
 }
 
 .psiDetailsData {
     flex: 1;
     padding: 0px;
     vertical-align: top;
-    width: 74%;
 }
 
 .psiDetailsLF {
@@ -3447,6 +3461,10 @@ a.api-anchor {
     justify-content: center;
 }
 
+.modal-dialog-scrollable .modal-dialog {
+    height:100%;
+}
+
 @media (min-width: 800px) {
     .modal-dialog {
         max-width: 700px;
@@ -3599,3 +3617,11 @@ a.api-anchor {
     display: block;
     text-align: left;
 }
+
+/* Compatibility / Accessibility fixes - last review Jan 2025  */
+/* JQuery UI Overrides */
+.ui-helper-zfix {
+    -ms-filter: "alpha(opacity=0)";
+    filter: "alpha(opacity=0)";
+}
+

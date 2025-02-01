@@ -2,8 +2,10 @@
 <html lang="en">
 
 <head>
-    <?php require_once 'common.php'; ?>
-    <?php include 'common/menuHead.inc'; ?>
+    <?php
+    include 'common/htmlMeta.inc';
+    require_once 'common.php';
+    include 'common/menuHead.inc'; ?>
 
     <title><? echo $pageTitle; ?></title>
 
@@ -89,7 +91,7 @@
             }
         }
 
-        function validateNetworkFields() {
+        function validateNetworkFields(callback) {
             var eth_ip = $('#eth_ip').val();
             $("#ipWarning").html('');
             if ($('#eth_static').is(':checked')) {
@@ -108,8 +110,68 @@
                     $.jGrowl("Invalid Gateway. Expect format like 192.168.0.1", { themeState: 'danger' });
                     return false;
                 }
+
+                // Check if another interface already has a gateway set
+                $.get("api/network/interface", function (interfaces) {
+                    var gatewayAlreadySet = false;
+                    var dhcpOperStateUp = false;
+
+                    interfaces.forEach(function (ifaceData) {
+                        // Ensure the config and INTERFACE properties are defined
+                        if (ifaceData.config && ifaceData.config.INTERFACE) {
+
+                            var iface = $('#selInterfaces').val();
+
+                            // Exclude the interface we are trying to save
+                            if (ifaceData.config.INTERFACE == iface) {
+                                return;
+                            }
+
+                            // Exclude WLAN interfaces without an SSID
+                            if (ifaceData.config.INTERFACE.startsWith('wl') && !ifaceData.config.SSID) {
+                                return;
+                            }
+
+                            if (ifaceData.config.INTERFACE !== $('#selInterfaces').val() &&
+                                ifaceData.config.PROTO === "static" &&
+                                ifaceData.config.GATEWAY) {
+                                gatewayAlreadySet = true;
+                            }
+
+                            // Check if there's a DHCP interface with operstate UP
+                            if (ifaceData.config.PROTO === "dhcp" && ifaceData.operstate === "UP") {
+                                dhcpOperStateUp = true;
+                            }
+                        }
+                    });
+
+                    <? if ($settings['uiLevel'] < 3) { ?>
+                        if ((gatewayAlreadySet || dhcpOperStateUp) && $('#eth_gateway').val()) {
+                            $.jGrowl("A gateway is already set on another interface, or another interface is configured as DHCP. You cannot set multiple gateways.", { themeState: 'danger' });
+                            return callback(false);
+                        }
+                    <? } ?>
+
+                    <? if ($settings['uiLevel'] < 1) { ?>
+                        // If no gateway is set anywhere and we're in static mode, ensure one is set
+                        if (!gatewayAlreadySet && !$('#eth_gateway').val() && !dhcpOperStateUp) {
+                            $.jGrowl("You must set a gateway when using static IPs.", { themeState: 'danger' });
+                            return callback(false);
+                        }
+                    <? } ?>
+
+                    // If all checks passed, validation succeeds
+                    return callback(true);
+
+                }).fail(function () {
+                    $.jGrowl("Failed to validate network interfaces.", { themeState: 'danger' });
+                    return callback(false);
+                });
+
+            } else {
+                // If not in static mode, validation passes
+                return callback(true);
             }
-            return true;
         }
 
         function validateDNSFields() {
@@ -148,7 +210,6 @@
             $.post("api/network/dns", postData
             ).done(function (data) {
                 LoadDNSConfig();
-                SetRebootFlag();
                 $.jGrowl(" DNS configuration saved", { themeState: 'success' });
             }).fail(function () {
                 DialogError("Save DNS Config", "Save Failed");
@@ -177,6 +238,15 @@
             return self.indexOf(value) === index;
         }
 
+        function escapeHtml(unsafe) {
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
         function LoadSIDS(interface) {
             $("#wifisearch").show();
             $.get("api/network/wifi/scan/" + interface,
@@ -194,9 +264,11 @@
                 ssids.sort();
                 html = [];
                 ssids.forEach(function (n) {
-                    html.push("<option value='");
-                    html.push(n);
-                    html.push("'>");
+                    if (typeof (n) != "undefined") {
+                        html.push("<option value='");
+                        html.push(escapeHtml(n));
+                        html.push("'>");
+                    }
                 });
                 $("#eth_ssids").html(html.join(''));
             }).fail(function () {
@@ -236,67 +308,74 @@
         }
 
         function SaveNetworkConfig() {
-            if (validateNetworkFields() == false) {
-                DialogError("Invalid Network Config", "Save Failed");
-                return;
-            }
-
-            var iface = $('#selInterfaces').val();
-            var url;
-            var data = {};
-            data.INTERFACE = iface;
-            if ($('#eth_static').is(':checked')) {
-                data.PROTO = 'static';
-                data.ADDRESS = $('#eth_ip').val();
-                data.NETMASK = $('#eth_netmask').val();
-                data.GATEWAY = $('#eth_gateway').val();
-            } else {
-                data.PROTO = 'dhcp';
-            }
-            <? if ($settings['uiLevel'] >= 1) { ?>
-                data.ROUTEMETRIC = $('#routeMetric').val();
-                data.DHCPSERVER = $('#dhcpServer').is(':checked');
-                data.DHCPOFFSET = $('#dhcpOffset').val();
-                data.DHCPPOOLSIZE = $('#dhcpPoolSize').val();
-                data.IPFORWARDING = $('#ipForwarding').val();
-            <? } ?>
-
-            if (iface.substr(0, 2) == "wl") {
-                data.SSID = $('#eth_ssid').val();
-                data.PSK = $('#eth_psk').val();
-                data.HIDDEN = $('#eth_hidden').is(':checked');
-                data.BACKUPSSID = $('#backupeth_ssid').val();
-                data.BACKUPPSK = $('#backupeth_psk').val();
-                data.BACKUPHIDDEN = $('#backupeth_hidden').is(':checked');
-            }
-
-            data.Leases = {};
-            $('#staticLeasesTable > tbody > tr').each(function () {
-                var checkBox = $(this).find('#static_enabled');
-                if (checkBox.is(":checked")) {
-                    var ip = $(this).find('#static_ip').val();
-                    var mac = $(this).find('#static_mac').val();
-                    data.Leases[ip] = mac;
+            validateNetworkFields(function (isValid) {
+                if (!isValid) {
+                    DialogError("Invalid Network Config", "Save Failed");
+                    return;
                 }
-            })
 
-            var postData = JSON.stringify(data);
-
-            $.post("api/network/interface/" + iface, postData
-            ).done(function (rc) {
-                if (rc.status == "OK") {
-                    LoadNetworkConfig();
-                    $.jGrowl(iface + " network interface configuration saved", { themeState: 'success' });
-                    $('#btnConfigNetwork').show();
-
-                    if (data.PROTO == 'static' && $('#dns1').val() == "" && $('#dns2').val() == "") {
-                        DialogOK("Check DNS", "Don't forget to set a DNS IP address. You may use 8.8.8.8 or 1.1.1.1 if you are not sure.")
-                    }
+                var iface = $('#selInterfaces').val();
+                var url;
+                var data = {};
+                data.INTERFACE = iface;
+                if ($('#eth_static').is(':checked')) {
+                    data.PROTO = 'static';
+                    data.ADDRESS = $('#eth_ip').val();
+                    data.NETMASK = $('#eth_netmask').val();
+                    data.GATEWAY = $('#eth_gateway').val();
                 } else {
-                    DialogError("Save Network Config", "Save Failed: " + rc.status);
+                    data.PROTO = 'dhcp';
                 }
-            }).fail(function () {
-                DialogError("Save Network Config", "Save Failed");
+                <? if ($settings['uiLevel'] >= 1) { ?>
+                    data.ROUTEMETRIC = $('#routeMetric').val();
+                    data.DHCPSERVER = $('#dhcpServer').is(':checked');
+                    data.DHCPOFFSET = $('#dhcpOffset').val();
+                    data.DHCPPOOLSIZE = $('#dhcpPoolSize').val();
+                    data.IPFORWARDING = $('#ipForwarding').val();
+                <? } ?>
+
+                if (iface.substr(0, 2) == "wl") {
+                    data.SSID = $('#eth_ssid').val();
+                    data.PSK = $('#eth_psk').val();
+                    data.HIDDEN = $('#eth_hidden').is(':checked');
+                    data.WPA3 = $('#eth_wpa3').is(':checked');
+                    data.BACKUPSSID = $('#backupeth_ssid').val();
+                    data.BACKUPPSK = $('#backupeth_psk').val();
+                    data.BACKUPHIDDEN = $('#backupeth_hidden').is(':checked');
+                    data.BACKUPWPA3 = $('#backupeth_wpa3').is(':checked');
+                }
+
+                data.Leases = {};
+                $('#staticLeasesTable > tbody > tr').each(function () {
+                    var checkBox = $(this).find('#static_enabled');
+                    if (checkBox.is(":checked")) {
+                        var ip = $(this).find('#static_ip').val();
+                        var mac = $(this).find('#static_mac').val();
+                        data.Leases[ip] = mac;
+                    }
+                })
+
+                var postData = JSON.stringify(data);
+
+                $.post("api/network/interface/" + iface, postData
+                ).done(function (rc) {
+                    if (rc.status == "OK") {
+                        LoadNetworkConfig();
+                        $.jGrowl(iface + " network interface configuration saved", { themeState: 'success' });
+                        $('#btnConfigNetwork').show();
+
+                        if (data.PROTO == 'static' && $('#dns1').val() == "" && $('#dns2').val() == "") {
+                            DialogError("Check DNS", "Don't forget to set a DNS IP address. You may use 8.8.8.8 or 1.1.1.1 if you are not sure.<br><br<span style='color: red;'>If you do not do this, your FPP will have no Internet Access</span>");
+                            return;
+                        }
+                    } else {
+                        DialogError("Save Network Config", "Save Failed: " + rc.status);
+                    }
+                }).fail(function () {
+                    DialogError("Save Network Config", "Save Failed");
+                });
+
+                SaveDNSConfig();
             });
         }
 
@@ -497,6 +576,23 @@
                 } else {
                     $('#eth_hidden').prop('checked', false);
                 }
+                if (data.WPA3 == "1") {
+                    $('#eth_wpa3').prop('checked', true);
+                } else {
+                    $('#eth_wpa3').prop('checked', false);
+                }
+                $('#backupeth_ssid').val(data.BACKUPSSID);
+                $('#backupeth_psk').val(data.BACKUPPSK);
+                if (data.BACKUPHIDDEN == "1") {
+                    $('#backupeth_hidden').prop('checked', true);
+                } else {
+                    $('#backupeth_hidden').prop('checked', false);
+                }
+                if (data.BACKUPWPA3 == "1") {
+                    $('#backupeth_wpa3').prop('checked', true);
+                } else {
+                    $('#backupeth_wpa3').prop('checked', false);
+                }
             }
             <? if ($settings['uiLevel'] >= 1) { ?>
                 if (data.ROUTEMETRIC) {
@@ -622,7 +718,7 @@
                     <li class="nav-item">
                         <a class="nav-link" id="tab-host-dns-tab" data-bs-toggle="tab" data-bs-target="#tab-host-dns"
                             href="#tab-host-dns" role="tab" aria-controls="tab-host-dns" aria-selected="false">
-                            Host & DNS Settings
+                            Host Settings
                         </a>
                     </li>
                     <li class="nav-item">
@@ -709,6 +805,38 @@
                                     </div>
                                 </div>
                             </div>
+                            <h2>DNS Settings</h2>
+                            <div class="warning-text" id="dns_warning"></div>
+
+                            <div class="container-fluid settingsTable settingsGroupTable">
+                                <div class="row" id="dnsServerRow">
+                                    <div class="printSettingLabelCol col-md-4 col-lg-3 col-xxxl-2">
+                                        <div class="description">DNS Server Mode</div>
+                                    </div>
+                                    <div class="printSettingFieldCol col-md"><label><input type="radio" id="dns_manual"
+                                                value="manual">
+                                            Manual</label>
+                                        <label><input type="radio" id="dns_dhcp" value="dhcp" checked>
+                                            DHCP</label>
+                                    </div>
+                                </div>
+                                <div class="row" id="dns1Row">
+                                    <div class="printSettingLabelCol col-md-4 col-lg-3 col-xxxl-2">
+                                        <div class="description">DNS Server 1</div>
+                                    </div>
+                                    <div class="printSettingFieldCol col-md"><input type="text" name="dns1"
+                                            id="dns1"><input type="button" class="buttons"
+                                            onClick='PingIP($("#dns1").val(), 3);' value='Ping'></div>
+                                </div>
+                                <div class="row" id="dns2Row">
+                                    <div class="printSettingLabelCol col-md-4 col-lg-3 col-xxxl-2">
+                                        <div class="description">DNS Server 2</div>
+                                    </div>
+                                    <div class="printSettingFieldCol col-md"><input type="text" name="dns2"
+                                            id="dns2"><input type="button" class="buttons"
+                                            onClick='PingIP($("#dns2").val(), 3);' value='Ping'></div>
+                                </div>
+                            </div>
                             <div id="WirelessSettings">
                                 <h2>Wireless Settings</h2>
                                 <div class="container-fluid settingsTable settingsGroupTable">
@@ -719,7 +847,8 @@
                                         <div class="printSettingFieldCol col-md"><input list="eth_ssids" name="eth_ssid"
                                                 id="eth_ssid" size="32" maxlength="32"><datalist
                                                 id='eth_ssids'></datalist><input type="checkbox" name="eth_hidden"
-                                                id="eth_hidden" value="Hidden">Hidden</div>
+                                                id="eth_hidden" value="Hidden">Hidden&nbsp;<input type="checkbox"
+                                                name="eth_wpa3" id="eth_wpa3" value="WPA3">WPA3</div>
                                     </div>
                                     <div class="row" id="pskRow">
                                         <div class="printSettingLabelCol col-md-4 col-lg-3 col-xxxl-2">
@@ -739,7 +868,8 @@
                                                     name="backupeth_ssid" id="backupeth_ssid" size="32"
                                                     maxlength="32"><datalist id='eth_ssids'></datalist><input
                                                     type="checkbox" name="backupeth_hidden" id="backupeth_hidden"
-                                                    value="Hidden">Hidden</div>
+                                                    value="Hidden">Hidden&nbsp;<input type="checkbox" name="backupeth_wpa3"
+                                                    id="backupeth_wpa3" value="BACKUPWPA3">WPA3</div>
                                         </div>
                                         <div class="row" id="backuppskRow">
                                             <div class="printSettingLabelCol col-md-4 col-lg-3 col-xxxl-2">
@@ -790,7 +920,7 @@
                             </div>
                             <br>
                             <input name="btnSetInterface" type="button" style="" class="buttons btn-success"
-                                value="Update Interface" onClick="SaveNetworkConfig();">
+                                value="Update" onClick="SaveNetworkConfig();">
                             <input id="btnConfigNetwork" type="button" style="display: none;" class="buttons"
                                 value="Restart Network" onClick="ApplyNetworkConfig();">
 
@@ -812,41 +942,6 @@
                         <?
                         PrintSettingGroup('host');
                         ?>
-                        <h2>DNS Settings</h2>
-                        <div class="warning-text" id="dns_warning"></div>
-
-                        <div class="container-fluid settingsTable settingsGroupTable">
-                            <div class="row" id="dnsServerRow">
-                                <div class="printSettingLabelCol col-md-4 col-lg-3 col-xxxl-2">
-                                    <div class="description">DNS Server Mode</div>
-                                </div>
-                                <div class="printSettingFieldCol col-md"><label><input type="radio" id="dns_manual"
-                                            value="manual">
-                                        Manual</label>
-                                    <label><input type="radio" id="dns_dhcp" value="dhcp" checked>
-                                        DHCP</label>
-                                </div>
-                            </div>
-                            <div class="row" id="dns1Row">
-                                <div class="printSettingLabelCol col-md-4 col-lg-3 col-xxxl-2">
-                                    <div class="description">DNS Server 1</div>
-                                </div>
-                                <div class="printSettingFieldCol col-md"><input type="text" name="dns1" id="dns1"><input
-                                        type="button" class="buttons" onClick='PingIP($("#dns1").val(), 3);'
-                                        value='Ping'></div>
-                            </div>
-                            <div class="row" id="dns2Row">
-                                <div class="printSettingLabelCol col-md-4 col-lg-3 col-xxxl-2">
-                                    <div class="description">DNS Server 2</div>
-                                </div>
-                                <div class="printSettingFieldCol col-md"><input type="text" name="dns2" id="dns2"><input
-                                        type="button" class="buttons" onClick='PingIP($("#dns2").val(), 3);'
-                                        value='Ping'></div>
-                            </div>
-                        </div>
-                        <br>
-                        <input name="btnSetDNS" type="" class="buttons btn-success" value="Update DNS"
-                            onClick="SaveDNSConfig();">
 
 
 
@@ -859,26 +954,21 @@
                         <br>
                         <div class="callout callout-warning">
                             <h4>Warning:</h4> Turning on tethering may make FPP unavailable. The WIFI adapter will be
-                            used for
-                            tethering and will thus not be usable for normal network operations. The WIFI tether IP
-                            address will be
-                            192.168.8.1 for Hostapd tethering, but unpredictable for ConnMan (although likely
-                            192.168.0.1).
+                            used for tethering and will thus not be usable for normal network operations. The WIFI
+                            tether IP
+                            address will be 192.168.8.1.
                             </p>
 
                             <p>
-                                <? if ($settings['Platform'] == "BeagleBone Black") { ?>
+                                <? if ($settings['Platform'] == "BeagleBone Black" || $settings['Platform'] == "BeagleBone 64") { ?>
                                     On BeagleBones, USB tethering is available. The IP address for USB tethering would be
-                                    192.168.6.2
-                                    (OSX/Linux) or 192.168.7.2 (Windows).
+                                    192.168.6.2 (OSX/Linux) or 192.168.7.2 (Windows).
                                 <? } ?>
                                 <? if ($settings['Platform'] == "Raspberry Pi") { ?>
                                     On the Pi Zero and Pi Zero W devices, USB tethering is available if using an appropriate
                                     USB cable plugged into the USB port, not the power-only port. Don't plug anything into
                                     the power port for this. The IP address for USB tethering would be 192.168.7.2.
                                 <? } ?>
-
-
 
                         </div>
                         <p>

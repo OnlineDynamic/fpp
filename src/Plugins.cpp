@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "Plugin.h"
+#include "Warnings.h"
 #include "common.h"
 #include "config.h"
 #include "log.h"
@@ -282,7 +283,7 @@ public:
             for (auto a : sargs) {
                 LogErr(VB_PLUGIN, "  %s\n", a);
             }
-            exit(EXIT_FAILURE);
+            _exit(EXIT_FAILURE);
         } else {
             LogExcess(VB_PLUGIN, "Command parent process, resuming work.\n");
             waitpid(pid, nullptr, 0);
@@ -435,7 +436,7 @@ FPPPlugins::Plugin* PluginManager::loadUserPlugin(const std::string& name) {
         execl(eventScript.c_str(), "eventScript", filename.c_str(), "--list", NULL);
 
         LogErr(VB_PLUGIN, "We failed to exec our callbacks query!  %s  %s %s --list\n", eventScript.c_str(), "eventScript", filename.c_str());
-        exit(EXIT_FAILURE);
+        _exit(EXIT_FAILURE);
     } else {
         close(output_pipe[1]);
 
@@ -469,7 +470,11 @@ FPPPlugins::Plugin* PluginManager::loadUserPlugin(const std::string& name) {
                 }
                 delete spl;
                 mLoadedUserPlugins.emplace(name);
-                return loadSHLIBPlugin(shlibName);
+                auto* p = loadSHLIBPlugin(shlibName);
+                if (p == nullptr) {
+                    WarningHolder::AddWarning(5, "Could not load plugin " + name);
+                }
+                return p;
             }
         }
         delete spl;
@@ -480,7 +485,11 @@ FPPPlugins::Plugin* PluginManager::loadUserPlugin(const std::string& name) {
 FPPPlugins::Plugin* PluginManager::loadSHLIBPlugin(const std::string& shlibName) {
     void* handle = dlopen(shlibName.c_str(), RTLD_NOW);
     if (handle == nullptr) {
-        LogErr(VB_PLUGIN, "Failed to find shlib %s\n", shlibName.c_str());
+        if (!FileExists(shlibName) && !FileExists(getFPPDDir("/" + shlibName))) {
+            LogErr(VB_PLUGIN, "Failed to find shlib %s\n", shlibName.c_str());
+        }
+        char* er = dlerror();
+        LogErr(VB_PLUGIN, "Failed to load shlib: %s\n", er);
         return nullptr;
     }
     FPPPlugin* (*fptr)();
@@ -565,6 +574,11 @@ void PluginManager::playlistCallback(const Json::Value& playlist, const std::str
         a->playlistCallback(playlist, action, section, item);
     }
 }
+void PluginManager::playlistInserted(const std::string& playlist, const int position, int endPosition, bool immediate) {
+    for (auto a : mPlaylistPlugins) {
+        a->playlistInserted(playlist, position, endPosition, immediate);
+    }
+}
 
 // blocking
 void MediaCallback::run(const Json::Value& playlist, const MediaDetails& mediaDetails) {
@@ -632,7 +646,7 @@ void MediaCallback::run(const Json::Value& playlist, const MediaDetails& mediaDe
         execl(eventScript.c_str(), "eventScript", mFilename.c_str(), "--type", "media", "--data", pluginData.c_str(), NULL);
 
         LogErr(VB_PLUGIN, "We failed to exec our media callback!\n");
-        exit(EXIT_FAILURE);
+        _exit(EXIT_FAILURE);
     } else {
         LogExcess(VB_PLUGIN, "Media parent process, resuming work.\n");
         wait(NULL);
@@ -662,7 +676,7 @@ void PlaylistCallback::run(const Json::Value& playlist, const std::string& actio
         execl(eventScript.c_str(), "eventScript", mFilename.c_str(), "--type", "playlist", "--data", pluginData.c_str(), NULL);
 
         LogErr(VB_PLUGIN, "We failed to exec our playlist callback!\n");
-        exit(EXIT_FAILURE);
+        _exit(EXIT_FAILURE);
     } else {
         LogExcess(VB_PLUGIN, "Playlist parent process, resuming work.\n");
         wait(NULL);
@@ -683,7 +697,7 @@ void LifecycleCallback::run(const std::string& lifecycle) {
         execl(eventScript.c_str(), "eventScript", mFilename.c_str(), "--type", "lifecycle", lifecycle.c_str(), NULL);
 
         LogErr(VB_PLUGIN, "We failed to exec our lifecycle callback!\n");
-        exit(EXIT_FAILURE);
+        _exit(EXIT_FAILURE);
     } else {
         LogExcess(VB_PLUGIN, "Lifecycle parent process, resuming work.\n");
         wait(NULL);

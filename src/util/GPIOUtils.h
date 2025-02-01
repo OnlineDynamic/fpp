@@ -79,6 +79,7 @@ public:
     // the gpio's are layed out memory.  Allow subclasses to remap
     // the indexes
     virtual int mappedGPIOIdx() const { return gpioIdx; }
+    virtual int mappedGPIO() const { return gpio; }
 
     static const PinCapabilities& getPinByName(const std::string& n);
     static const PinCapabilities& getPinByGPIO(int i);
@@ -119,8 +120,8 @@ public:
 
 class GPIODCapabilities : public PinCapabilitiesFluent<GPIODCapabilities> {
 public:
-    GPIODCapabilities(const std::string& n, uint32_t kg) :
-        PinCapabilitiesFluent(n, kg) {}
+    GPIODCapabilities(const std::string& n, uint32_t kg, const std::string& gn = "") :
+        PinCapabilitiesFluent(n, kg), gpioName(gn) {}
 
     virtual int configPin(const std::string& mode = "gpio",
                           bool directionOut = true) const override;
@@ -139,6 +140,7 @@ public:
     virtual bool isGPIOD() const override { return true; }
     virtual void releaseGPIOD() const override;
 
+    std::string gpioName;
 #ifdef HASGPIOD
     mutable gpiod::chip* chip = nullptr;
     mutable gpiod::line line;

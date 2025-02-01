@@ -299,8 +299,8 @@ int Player::WasScheduled() {
     return playlist->WasScheduled();
 }
 
-int Player::FindPosForMS(uint64_t& ms) {
-    return playlist->FindPosForMS(ms);
+int Player::FindPosForMS(uint64_t& ms, bool itemDefinedOnly) {
+    return playlist->FindPosForMS(ms, itemDefinedOnly);
 }
 
 void Player::GetFilenamesForPos(int pos, std::string& seq, std::string& med) {
@@ -379,6 +379,12 @@ HTTP_RESPONSE_CONST std::shared_ptr<httpserver::http_response> Player::render_GE
 
     if ((plen == 1) || ((plen == 2) && (req.get_path_pieces()[1] == "status"))) {
         result = GetStatusJSON();
+        return std::shared_ptr<httpserver::http_response>(new httpserver::string_response(SaveJsonToString(result, "  "), 200, "application/json"));
+    } else if ((plen == 2) && (req.get_path_pieces()[1] == "current")) {
+        Json::Value result;
+        Json::Value pl;
+        pl = playlist->GetInfo();
+        result["playlist"] = pl;
         return std::shared_ptr<httpserver::http_response>(new httpserver::string_response(SaveJsonToString(result, "  "), 200, "application/json"));
     }
 

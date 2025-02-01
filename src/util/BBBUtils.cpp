@@ -14,7 +14,9 @@
 
 #include "BBBUtils.h"
 #include <sys/mman.h>
+#include <dirent.h>
 #include <fcntl.h>
+#include <stdlib.h>
 #include <unistd.h>
 
 #include "../common.h"
@@ -31,6 +33,10 @@ BeagleBoneType getBeagleBoneType() {
                 BBB_TYPE = SanCloudEnhanced;
             } else if (strcmp(&buf[10], "PocketBeagle") == 0) {
                 BBB_TYPE = PocketBeagle;
+            } else if (strcmp(buf, "BeagleBoard.org PocketBeagle2") == 0) {
+                BBB_TYPE = PocketBeagle;
+            } else if (strcmp(buf, "BeagleBoard.org BeaglePlay") == 0) {
+                BBB_TYPE = BeaglePlay;
             } else if (strcmp(&buf[10], "BeagleBone Black Wireless") == 0) {
                 BBB_TYPE = BlackWireless;
             } else if (strcmp(&buf[10], "BeagleBone Green Wireless") == 0) {
@@ -53,7 +59,9 @@ static std::vector<BBBPinCapabilities> BBB_PINS;
 // #define HZ 1000000.0f
 #define HZ 10000.0f
 
-static uint32_t bbGPIOMap[] = { 0, 1, 2, 3 };
+// static uint32_t bbGPIOMap[] = { 3, 0, 1, 2 };
+static uint32_t bbGPIOMap[] = { 0, 0, 0, 0 };
+static uint32_t bbGPIOStart[] = { 0, 0, 0, 0 };
 static const char* bbbPWMDeviceName = "/sys/class/pwm/pwmchip";
 static FILE* bbbPWMDutyFiles[] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
 
@@ -76,45 +84,146 @@ static void setupBBBMemoryMap() {
         return;
     }
 
+    std::map<std::string, std::pair<int, int>> labelMapping;
     // newer kernels will number the chips differently so we'll use the
-    // labels to figure out the mapping to the gpio0-3 that we use
+    // memory locations to figure out the mapping to the gpio0-3 that we use
+    const std::string dirName("/sys/class/gpio");
+    DIR* dir = opendir(dirName.c_str());
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != NULL) {
+        std::string fn = entry->d_name;
+        if (fn.starts_with("gpiochip")) {
+            std::string fn2 = dirName + "/" + fn;
+            char buf[PATH_MAX + 1];
+            realpath(fn2.c_str(), buf);
+
+            std::string lab = GetFileContents(fn2 + "/label");
+            TrimWhiteSpace(lab);
+            std::string target = buf;
+            int start = std::atoi(fn.substr(8).c_str());
+#ifdef PLATFORM_BB64
+            if (lab.contains("tps65219-gpio")) {
+                labelMapping[lab] = { 0, start };
+            } else if (lab.contains("4201000.gpio")) {
+                labelMapping[lab] = { 1, start };
+            } else if (lab.contains("600000.gpio")) {
+                labelMapping[lab] = { 2, start };
+            } else if (lab.contains("601000.gpio")) {
+                labelMapping[lab] = { 3, start };
+            }
+#else
+            if (target.contains("44e07000.gpio")) {
+                labelMapping[lab] = { 0, start };
+            } else if (target.contains("4804c000.gpio")) {
+                labelMapping[lab] = { 1, start };
+            } else if (target.contains("481ac000.gpio")) {
+                labelMapping[lab] = { 2, start };
+            } else if (target.contains("481ae000.gpio")) {
+                labelMapping[lab] = { 3, start };
+            }
+#endif
+        }
+    }
+    closedir(dir);
+
     int curChip = 0;
     for (auto& a : gpiod::make_chip_iter()) {
         // std::string cname = a.name();
-        // std::string clabel = a.label();
-        auto line = a.get_line(0);
-        if (line.name() == "NC") {
+        std::string clabel = a.label();
+        TrimWhiteSpace(clabel);
+        if (labelMapping.contains(clabel)) {
+            bbGPIOMap[labelMapping[clabel].first] = curChip;
+            bbGPIOStart[labelMapping[clabel].first] = labelMapping[clabel].second;
+        } else {
+#ifdef PLATFORM_BBB
+            // if mapping by base fails, try using specific line labels
+            auto line = a.get_line(0);
+            if (line.name() == "NC") {
+                line.release();
+                line = a.get_line(13);
+            }
+            std::string name = line.name();
+            if (name == "[mdio_data]" || name == "P1.28 [I2C2_SCL]") {
+                bbGPIOMap[0] = curChip;
+            } else if (name == "P8_25 [mmc1_dat0]" || name == "P2.33") {
+                bbGPIOMap[1] = curChip;
+            } else if (name == "P9_15B" || name == "[SYSBOOT 7]" || name == "P2.20") {
+                bbGPIOMap[2] = curChip;
+            } else if (name == "[mii col]" || name == "P1.03 [USB1]") {
+                bbGPIOMap[3] = curChip;
+            }
             line.release();
-            line = a.get_line(13);
+#endif
         }
-        std::string name = line.name();
-        if (name == "[mdio_data]" || name == "P1.28 [I2C2_SCL]") {
-            bbGPIOMap[0] = curChip;
-        } else if (name == "P8_25 [mmc1_dat0]" || name == "P2.33") {
-            bbGPIOMap[1] = curChip;
-        } else if (name == "P9_15B" || name == "[SYSBOOT 7]" || name == "P2.20") {
-            bbGPIOMap[2] = curChip;
-        } else if (name == "[mii col]" || name == "P1.03 [USB1]") {
-            bbGPIOMap[3] = curChip;
-        }
-        line.release();
         ++curChip;
         if (curChip == 4) {
             break;
         }
     }
+    // printf("Mapping %d %d %d %d\n", bbGPIOMap[0], bbGPIOMap[1], bbGPIOMap[2], bbGPIOMap[3]);
     registersMemMapped = 1;
 }
 
 // ------------------------------------------------------------------------
 
-BBBPinCapabilities::BBBPinCapabilities(const std::string& n, uint32_t k, uint32_t o) :
+BBBPinCapabilities::BBBPinCapabilities(const std::string& n, uint32_t k) :
     GPIODCapabilities(n, k), pru(-1), pruPin(-1) {
     setupBBBMemoryMap();
     gpioIdx = bbGPIOMap[k / 32];
     gpio = k % 32;
 }
+BBBPinCapabilities::BBBPinCapabilities(const std::string& n, uint32_t g, uint32_t o) :
+    GPIODCapabilities(n, g), pru(-1), pruPin(-1) {
+    setupBBBMemoryMap();
+    gpioIdx = bbGPIOMap[g];
+    gpio = o;
+    kernelGpio = bbGPIOStart[g] + o;
+}
 
+#ifdef PLATFORM_BB64
+int BBBPinCapabilities::mappedGPIOIdx() const {
+    int mp = 0;
+    for (int x = 0; x < 4; x++) {
+        if (bbGPIOMap[x] == gpioIdx) {
+            mp = x;
+        }
+    }
+    if (mp == 1) {
+        // MCU Domain
+        return 0;
+    }
+    if (mp == 3) {
+        // gpio1, all pins are in the first 32
+        return 3;
+    }
+    // gpio0, map 32-63 to 1 and 64-95 to 2
+    if (gpio < 64) {
+        return 1;
+    }
+    return 2;
+}
+int BBBPinCapabilities::mappedGPIO() const {
+    int mp = 0;
+    for (int x = 0; x < 4; x++) {
+        if (bbGPIOMap[x] == gpioIdx) {
+            mp = x;
+        }
+    }
+    if (mp == 1) {
+        // MCU Domain
+        return gpio;
+    }
+    if (mp == 3) {
+        // gpio1, all pins are in the first 32
+        return gpio;
+    }
+    // gpio0, map 32-63 to 1 and 64-95 to 2
+    if (gpio < 64) {
+        return gpio - 32;
+    }
+    return gpio - 64;
+}
+#else
 int BBBPinCapabilities::mappedGPIOIdx() const {
     for (int x = 0; x < 4; x++) {
         if (bbGPIOMap[x] == gpioIdx) {
@@ -123,6 +232,10 @@ int BBBPinCapabilities::mappedGPIOIdx() const {
     }
     return gpioIdx;
 }
+int BBBPinCapabilities::mappedGPIO() const {
+    return gpio;
+}
+#endif
 
 Json::Value BBBPinCapabilities::toJSON() const {
     Json::Value ret = PinCapabilities::toJSON();
@@ -150,6 +263,17 @@ int BBBPinCapabilities::configPin(const std::string& m,
     strcpy(pinName, name.c_str());
     if (pinName[2] == '-') {
         pinName[2] = '_';
+    }
+
+    if (FileExists("/usr/bin/pinctrl")) {
+        char buf[256];
+        std::string pm = m;
+        if (m == "gpio" && directionOut) {
+            pm = "gpio_out";
+        }
+        snprintf(buf, 256, "/usr/bin/pinctrl -s %s %s", pinName, m.c_str());
+        // printf("%s\n", buf);
+        system(buf);
     }
 
     snprintf(dir_name, sizeof(dir_name),
@@ -269,122 +393,186 @@ const PinCapabilities& BBBPinProvider::getPinByGPIO(int i) {
 
 void BBBPinProvider::Init() {
     if (BBB_PINS.empty()) {
+#ifdef PLATFORM_BBB
         if (getBeagleBoneType() == PocketBeagle) {
-            BBB_PINS.emplace_back("P1-02", 87, 0x8E4).setPRU(1, 9, 6, 5);
-            BBB_PINS.emplace_back("P1-04", 89, 0x8EC).setPRU(1, 11, 6, 5);
-            BBB_PINS.emplace_back("P1-06", 5, 0x95C).setI2C(1, 2);
-            BBB_PINS.emplace_back("P1-08", 2, 0x950).setPwm(0, 0, 3).setUART("ttyS2-rx", 1);
-            BBB_PINS.emplace_back("P1-10", 3, 0x954).setPwm(0, 1, 3).setUART("ttyS2-tx", 1);
-            BBB_PINS.emplace_back("P1-12", 4, 0x958).setI2C(1, 2);
-            BBB_PINS.emplace_back("P1-20", 20, 0x9B4);
-            BBB_PINS.emplace_back("P1-26", 12, 0x978).setI2C(2, 3);
-            BBB_PINS.emplace_back("P1-28", 13, 0x97C).setI2C(2, 3);
-            BBB_PINS.emplace_back("P1-29", 117, 0x9AC).setPRU(0, 7, 6, 5);
-            BBB_PINS.emplace_back("P1-30", 43, 0x974).setPRU(1, 15, 6, 5).setUART("ttyS0-tx", 0);
-            BBB_PINS.emplace_back("P1-31", 114, 0x9A0).setPRU(0, 4, 6, 5);
-            BBB_PINS.emplace_back("P1-32", 42, 0x970).setPRU(1, 14, 6, 5).setUART("ttyS0-rx", 0);
-            BBB_PINS.emplace_back("P1-33", 111, 0x994).setPRU(0, 1, 6, 5).setPwm(0, 1, 1);
-            BBB_PINS.emplace_back("P1-34", 26, 0x828);
-            BBB_PINS.emplace_back("P1-35", 88, 0x8E8).setPRU(1, 10, 6, 5);
-            BBB_PINS.emplace_back("P1-36", 110, 0x990).setPRU(0, 0, 6, 5).setPwm(0, 0, 1);
-            BBB_PINS.emplace_back("P2-01", 50, 0x848).setPwm(1, 0, 6);
-            BBB_PINS.emplace_back("P2-02", 59, 0x86C);
-            BBB_PINS.emplace_back("P2-03", 23, 0x824).setPwm(2, 1, 4);
-            BBB_PINS.emplace_back("P2-04", 58, 0x868);
-            BBB_PINS.emplace_back("P2-05", 30, 0x870).setUART("ttyS4-rx", 6);
-            BBB_PINS.emplace_back("P2-06", 57, 0x864);
-            BBB_PINS.emplace_back("P2-07", 31, 0x874).setUART("ttyS4-tx", 6);
-            BBB_PINS.emplace_back("P2-08", 60, 0x878);
-            BBB_PINS.emplace_back("P2-09", 15, 0x984).setUART("ttyS1-tx", 0);
-            BBB_PINS.emplace_back("P2-10", 52, 0x850);
-            BBB_PINS.emplace_back("P2-11", 14, 0x980).setUART("ttyS1-rx", 0);
-            BBB_PINS.emplace_back("P2-17", 65, 0x88C);
-            BBB_PINS.emplace_back("P2-18", 47, 0x83C);
-            BBB_PINS.emplace_back("P2-19", 27, 0x82C);
-            BBB_PINS.emplace_back("P2-20", 64, 0x888);
-            BBB_PINS.emplace_back("P2-22", 46, 0x838);
-            BBB_PINS.emplace_back("P2-24", 44, 0x830).setPRU(0, 14, -1, 6);
-            BBB_PINS.emplace_back("P2-25", 41, 0x96C).setUART("ttyS4-tx", 1);
-            BBB_PINS.emplace_back("P2-27", 40, 0x968).setUART("ttyS4-rx", 1);
-            BBB_PINS.emplace_back("P2-28", 116, 0x9A8).setPRU(0, 6, 6, 5);
-            BBB_PINS.emplace_back("P2-29", 7, 0x964).setUART("ttyS3-tx", 1);
-            BBB_PINS.emplace_back("P2-30", 113, 0x99C).setPRU(0, 3, 6, 5);
-            BBB_PINS.emplace_back("P2-31", 19, 0x9B0);
-            BBB_PINS.emplace_back("P2-32", 112, 0x998).setPRU(0, 2, 6, 5);
-            BBB_PINS.emplace_back("P2-33", 45, 0x834).setPRU(0, 15, -1, 6);
-            BBB_PINS.emplace_back("P2-34", 115, 0x9A4).setPRU(0, 5, 6, 5);
-            BBB_PINS.emplace_back("P2-35", 86, 0x8E0).setPRU(1, 8, 6, 5);
+            BBB_PINS.emplace_back("P1-02", 87).setPRU(1, 9);
+            BBB_PINS.emplace_back("P1-04", 89).setPRU(1, 11);
+            BBB_PINS.emplace_back("P1-06", 5).setI2C(1);
+            BBB_PINS.emplace_back("P1-08", 2).setPwm(0, 0).setUART("ttyS2-rx");
+            BBB_PINS.emplace_back("P1-10", 3).setPwm(0, 1).setUART("ttyS2-tx");
+            BBB_PINS.emplace_back("P1-12", 4).setI2C(1);
+            BBB_PINS.emplace_back("P1-20", 20);
+            BBB_PINS.emplace_back("P1-26", 12).setI2C(2);
+            BBB_PINS.emplace_back("P1-28", 13).setI2C(2);
+            BBB_PINS.emplace_back("P1-29", 117).setPRU(0, 7);
+            BBB_PINS.emplace_back("P1-30", 43).setPRU(1, 15).setUART("ttyS0-tx");
+            BBB_PINS.emplace_back("P1-31", 114).setPRU(0, 4);
+            BBB_PINS.emplace_back("P1-32", 42).setPRU(1, 14).setUART("ttyS0-rx");
+            BBB_PINS.emplace_back("P1-33", 111).setPRU(0, 1).setPwm(0, 1);
+            BBB_PINS.emplace_back("P1-34", 26);
+            BBB_PINS.emplace_back("P1-35", 88).setPRU(1, 10);
+            BBB_PINS.emplace_back("P1-36", 110).setPRU(0, 0).setPwm(0, 0);
+            BBB_PINS.emplace_back("P2-01", 50).setPwm(1, 0);
+            BBB_PINS.emplace_back("P2-02", 59);
+            BBB_PINS.emplace_back("P2-03", 23).setPwm(2, 1);
+            BBB_PINS.emplace_back("P2-04", 58);
+            BBB_PINS.emplace_back("P2-05", 30).setUART("ttyS4-rx");
+            BBB_PINS.emplace_back("P2-06", 57);
+            BBB_PINS.emplace_back("P2-07", 31).setUART("ttyS4-tx");
+            BBB_PINS.emplace_back("P2-08", 60);
+            BBB_PINS.emplace_back("P2-09", 15).setUART("ttyS1-tx");
+            BBB_PINS.emplace_back("P2-10", 52);
+            BBB_PINS.emplace_back("P2-11", 14).setUART("ttyS1-rx");
+            BBB_PINS.emplace_back("P2-17", 65);
+            BBB_PINS.emplace_back("P2-18", 47);
+            BBB_PINS.emplace_back("P2-19", 27);
+            BBB_PINS.emplace_back("P2-20", 64);
+            BBB_PINS.emplace_back("P2-22", 46);
+            BBB_PINS.emplace_back("P2-24", 44).setPRU(0, 14);
+            BBB_PINS.emplace_back("P2-25", 41).setUART("ttyS4-tx");
+            BBB_PINS.emplace_back("P2-27", 40).setUART("ttyS4-rx");
+            BBB_PINS.emplace_back("P2-28", 116).setPRU(0, 6);
+            BBB_PINS.emplace_back("P2-29", 7).setUART("ttyS3-tx");
+            BBB_PINS.emplace_back("P2-30", 113).setPRU(0, 3);
+            BBB_PINS.emplace_back("P2-31", 19);
+            BBB_PINS.emplace_back("P2-32", 112).setPRU(0, 2);
+            BBB_PINS.emplace_back("P2-33", 45).setPRU(0, 15);
+            BBB_PINS.emplace_back("P2-34", 115).setPRU(0, 5);
+            BBB_PINS.emplace_back("P2-35", 86).setPRU(1, 8);
         } else {
-            BBB_PINS.emplace_back("P8-03", 38, 0x818);
-            BBB_PINS.emplace_back("P8-04", 39, 0x81C);
-            BBB_PINS.emplace_back("P8-05", 34, 0x808);
-            BBB_PINS.emplace_back("P8-06", 35, 0x80C);
-            BBB_PINS.emplace_back("P8-07", 66, 0x890);
-            BBB_PINS.emplace_back("P8-08", 67, 0x894);
-            BBB_PINS.emplace_back("P8-09", 69, 0x89C);
-            BBB_PINS.emplace_back("P8-10", 68, 0x898);
-            BBB_PINS.emplace_back("P8-11", 45, 0x834).setPRU(0, 15, -1, 6);
-            BBB_PINS.emplace_back("P8-12", 44, 0x830).setPRU(0, 14, -1, 6);
-            BBB_PINS.emplace_back("P8-13", 23, 0x824).setPwm(2, 1, 4);
-            BBB_PINS.emplace_back("P8-14", 26, 0x828);
-            BBB_PINS.emplace_back("P8-15", 47, 0x83C);
-            BBB_PINS.emplace_back("P8-16", 46, 0x838);
-            BBB_PINS.emplace_back("P8-17", 27, 0x82C);
-            BBB_PINS.emplace_back("P8-18", 65, 0x88C);
-            BBB_PINS.emplace_back("P8-19", 22, 0x820).setPwm(2, 0, 4);
-            BBB_PINS.emplace_back("P8-20", 63, 0x884).setPRU(1, 13, 6, 5);
-            BBB_PINS.emplace_back("P8-21", 62, 0x880).setPRU(1, 12, 6, 5);
-            BBB_PINS.emplace_back("P8-22", 37, 0x814);
-            BBB_PINS.emplace_back("P8-23", 36, 0x810);
-            BBB_PINS.emplace_back("P8-24", 33, 0x804);
-            BBB_PINS.emplace_back("P8-25", 32, 0x800);
-            BBB_PINS.emplace_back("P8-26", 61, 0x87C);
-            BBB_PINS.emplace_back("P8-27", 86, 0x8E0).setPRU(1, 8, 6, 5);
-            BBB_PINS.emplace_back("P8-28", 88, 0x8E8).setPRU(1, 10, 6, 5);
-            BBB_PINS.emplace_back("P8-29", 87, 0x8E4).setPRU(1, 9, 6, 5);
-            BBB_PINS.emplace_back("P8-30", 89, 0x8EC).setPRU(1, 11, 6, 5);
-            BBB_PINS.emplace_back("P8-31", 10, 0x8D8);
-            BBB_PINS.emplace_back("P8-32", 11, 0x8DC);
-            BBB_PINS.emplace_back("P8-33", 9, 0x8D4);
-            BBB_PINS.emplace_back("P8-34", 81, 0x8CC).setPwm(1, 1, 2);
-            BBB_PINS.emplace_back("P8-35", 8, 0x8D0);
-            BBB_PINS.emplace_back("P8-36", 80, 0x8C8).setPwm(1, 0, 2);
-            BBB_PINS.emplace_back("P8-37", 78, 0x8C0).setUART("ttyS5-tx", 4);
-            BBB_PINS.emplace_back("P8-38", 79, 0x8C4).setUART("ttyS5-rx", 4);
-            BBB_PINS.emplace_back("P8-39", 76, 0x8B8).setPRU(1, 6, 6, 5);
-            BBB_PINS.emplace_back("P8-40", 77, 0x8BC).setPRU(1, 7, 6, 5);
-            BBB_PINS.emplace_back("P8-41", 74, 0x8B0).setPRU(1, 4, 6, 5);
-            BBB_PINS.emplace_back("P8-42", 75, 0x8B4).setPRU(1, 5, 6, 5);
-            BBB_PINS.emplace_back("P8-43", 72, 0x8A8).setPRU(1, 2, 6, 5);
-            BBB_PINS.emplace_back("P8-44", 73, 0x8AC).setPRU(1, 3, 6, 5);
-            BBB_PINS.emplace_back("P8-45", 70, 0x8A0).setPRU(1, 0, 6, 5).setPwm(2, 0, 3);
-            BBB_PINS.emplace_back("P8-46", 71, 0x8A4).setPRU(1, 1, 6, 5).setPwm(2, 1, 3);
-            BBB_PINS.emplace_back("P9-11", 30, 0x870).setUART("ttyS4-rx", 6);
-            BBB_PINS.emplace_back("P9-12", 60, 0x878);
-            BBB_PINS.emplace_back("P9-13", 31, 0x874).setUART("ttyS4-tx", 6);
-            BBB_PINS.emplace_back("P9-14", 50, 0x848).setPwm(1, 0, 6);
-            BBB_PINS.emplace_back("P9-15", 48, 0x840);
-            BBB_PINS.emplace_back("P9-16", 51, 0x84C).setPwm(1, 1, 6);
-            BBB_PINS.emplace_back("P9-17", 5, 0x95C).setI2C(1, 2);
-            BBB_PINS.emplace_back("P9-18", 4, 0x958).setI2C(1, 2);
-            BBB_PINS.emplace_back("P9-19", 13, 0x97C).setI2C(2, 3);
-            BBB_PINS.emplace_back("P9-20", 12, 0x978).setI2C(2, 3);
-            BBB_PINS.emplace_back("P9-21", 3, 0x954).setPwm(0, 1, 3).setUART("ttyS2-tx", 1);
-            BBB_PINS.emplace_back("P9-22", 2, 0x950).setPwm(0, 0, 3).setUART("ttyS2-rx", 1);
-            BBB_PINS.emplace_back("P9-23", 49, 0x844);
-            BBB_PINS.emplace_back("P9-24", 15, 0x984).setUART("ttyS1-tx", 0);
-            BBB_PINS.emplace_back("P9-25", 117, 0x9AC).setPRU(0, 7, 6, 5);
-            BBB_PINS.emplace_back("P9-26", 14, 0x980).setUART("ttyS1-rx", 0);
-            BBB_PINS.emplace_back("P9-27", 115, 0x9A4).setPRU(0, 5, 6, 5);
-            BBB_PINS.emplace_back("P9-28", 113, 0x99C).setPRU(0, 3, 6, 5);
-            BBB_PINS.emplace_back("P9-29", 111, 0x994).setPRU(0, 1, 6, 5).setPwm(0, 1, 1);
-            BBB_PINS.emplace_back("P9-30", 112, 0x998).setPRU(0, 2, 6, 5);
-            BBB_PINS.emplace_back("P9-31", 110, 0x990).setPRU(0, 0, 6, 5).setPwm(0, 0, 1);
-            BBB_PINS.emplace_back("P9-41", 20, 0x9B4);
-            BBB_PINS.emplace_back("P9-91", 116, 0x9A8).setPRU(0, 6, 6, 5);
-            BBB_PINS.emplace_back("P9-42", 7, 0x964).setUART("ttyS3-tx", 1);
-            BBB_PINS.emplace_back("P9-92", 114, 0x9A0).setPRU(0, 4, 6, 5);
+            BBB_PINS.emplace_back("P8-03", 38);
+            BBB_PINS.emplace_back("P8-04", 39);
+            BBB_PINS.emplace_back("P8-05", 34);
+            BBB_PINS.emplace_back("P8-06", 35);
+            BBB_PINS.emplace_back("P8-07", 66);
+            BBB_PINS.emplace_back("P8-08", 67);
+            BBB_PINS.emplace_back("P8-09", 69);
+            BBB_PINS.emplace_back("P8-10", 68);
+            BBB_PINS.emplace_back("P8-11", 45).setPRU(0, 15);
+            BBB_PINS.emplace_back("P8-12", 44).setPRU(0, 14);
+            BBB_PINS.emplace_back("P8-13", 23).setPwm(2, 1);
+            BBB_PINS.emplace_back("P8-14", 26);
+            BBB_PINS.emplace_back("P8-15", 47);
+            BBB_PINS.emplace_back("P8-16", 46);
+            BBB_PINS.emplace_back("P8-17", 27);
+            BBB_PINS.emplace_back("P8-18", 65);
+            BBB_PINS.emplace_back("P8-19", 22).setPwm(2, 0);
+            BBB_PINS.emplace_back("P8-20", 63).setPRU(1, 13);
+            BBB_PINS.emplace_back("P8-21", 62).setPRU(1, 12);
+            BBB_PINS.emplace_back("P8-22", 37);
+            BBB_PINS.emplace_back("P8-23", 36);
+            BBB_PINS.emplace_back("P8-24", 33);
+            BBB_PINS.emplace_back("P8-25", 32);
+            BBB_PINS.emplace_back("P8-26", 61);
+            BBB_PINS.emplace_back("P8-27", 86).setPRU(1, 8);
+            BBB_PINS.emplace_back("P8-28", 88).setPRU(1, 10);
+            BBB_PINS.emplace_back("P8-29", 87).setPRU(1, 9);
+            BBB_PINS.emplace_back("P8-30", 89).setPRU(1, 11);
+            BBB_PINS.emplace_back("P8-31", 10);
+            BBB_PINS.emplace_back("P8-32", 11);
+            BBB_PINS.emplace_back("P8-33", 9);
+            BBB_PINS.emplace_back("P8-34", 81).setPwm(1, 1);
+            BBB_PINS.emplace_back("P8-35", 8);
+            BBB_PINS.emplace_back("P8-36", 80).setPwm(1, 0);
+            BBB_PINS.emplace_back("P8-37", 78).setUART("ttyS5-tx");
+            BBB_PINS.emplace_back("P8-38", 79).setUART("ttyS5-rx");
+            BBB_PINS.emplace_back("P8-39", 76).setPRU(1, 6);
+            BBB_PINS.emplace_back("P8-40", 77).setPRU(1, 7);
+            BBB_PINS.emplace_back("P8-41", 74).setPRU(1, 4);
+            BBB_PINS.emplace_back("P8-42", 75).setPRU(1, 5);
+            BBB_PINS.emplace_back("P8-43", 72).setPRU(1, 2);
+            BBB_PINS.emplace_back("P8-44", 73).setPRU(1, 3);
+            BBB_PINS.emplace_back("P8-45", 70).setPRU(1, 0).setPwm(2, 0);
+            BBB_PINS.emplace_back("P8-46", 71).setPRU(1, 1).setPwm(2, 1);
+            BBB_PINS.emplace_back("P9-11", 30).setUART("ttyS4-rx");
+            BBB_PINS.emplace_back("P9-12", 60);
+            BBB_PINS.emplace_back("P9-13", 31).setUART("ttyS4-tx");
+            BBB_PINS.emplace_back("P9-14", 50).setPwm(1, 0);
+            BBB_PINS.emplace_back("P9-15", 48);
+            BBB_PINS.emplace_back("P9-16", 51).setPwm(1, 1);
+            BBB_PINS.emplace_back("P9-17", 5).setI2C(1);
+            BBB_PINS.emplace_back("P9-18", 4).setI2C(1);
+            BBB_PINS.emplace_back("P9-19", 13).setI2C(2);
+            BBB_PINS.emplace_back("P9-20", 12).setI2C(2);
+            BBB_PINS.emplace_back("P9-21", 3).setPwm(0, 1).setUART("ttyS2-tx");
+            BBB_PINS.emplace_back("P9-22", 2).setPwm(0, 0).setUART("ttyS2-rx");
+            BBB_PINS.emplace_back("P9-23", 49);
+            BBB_PINS.emplace_back("P9-24", 15).setUART("ttyS1-tx");
+            BBB_PINS.emplace_back("P9-25", 117).setPRU(0, 7);
+            BBB_PINS.emplace_back("P9-26", 14).setUART("ttyS1-rx");
+            BBB_PINS.emplace_back("P9-27", 115).setPRU(0, 5);
+            BBB_PINS.emplace_back("P9-28", 113).setPRU(0, 3);
+            BBB_PINS.emplace_back("P9-29", 111).setPRU(0, 1).setPwm(0, 1);
+            BBB_PINS.emplace_back("P9-30", 112).setPRU(0, 2);
+            BBB_PINS.emplace_back("P9-31", 110).setPRU(0, 0).setPwm(0, 0);
+            BBB_PINS.emplace_back("P9-41", 20);
+            BBB_PINS.emplace_back("P9-91", 116).setPRU(0, 6);
+            BBB_PINS.emplace_back("P9-42", 7).setUART("ttyS3-tx");
+            BBB_PINS.emplace_back("P9-92", 114).setPRU(0, 4);
         }
+#endif
+#ifdef PLATFORM_BB64
+        BeagleBoneType tp = getBeagleBoneType();
+        if (tp == PocketBeagle || tp == BeaglePlay) {
+            BBB_PINS.emplace_back("P1-02", 3, 10);
+            BBB_PINS.emplace_back("P1-04", 3, 12);
+            BBB_PINS.emplace_back("P1-06", 3, 13).setUART("ttyS1-rx");
+            BBB_PINS.emplace_back("P1-08", 3, 14).setUART("ttyS1-tx");
+            BBB_PINS.emplace_back("P1-10", 3, 7).setUART("ttyS6-rx");
+            BBB_PINS.emplace_back("P1-12", 3, 8).setUART("ttyS6-tx");
+            BBB_PINS.emplace_back("P1-13", 2, 36);
+            BBB_PINS.emplace_back("P1-19", 3, 1);
+            BBB_PINS.emplace_back("P1-20", 2, 50).setUART("ttyS4-tx");
+            BBB_PINS.emplace_back("P1-21", 3, 6);
+            BBB_PINS.emplace_back("P1-23", 3, 5);
+            BBB_PINS.emplace_back("P1-25", 3, 4);
+            BBB_PINS.emplace_back("P1-26", 2, 44).setUART("ttyS4-tx").setI2C(2);
+            BBB_PINS.emplace_back("P1-27", 3, 3);
+            BBB_PINS.emplace_back("P1-28", 2, 43).setUART("ttyS4-rx").setI2C(2);
+            BBB_PINS.emplace_back("P1-29", 2, 62);
+            BBB_PINS.emplace_back("P1-30", 3, 21).setUART("ttyS0-tx");
+            BBB_PINS.emplace_back("P1-31", 2, 59);
+            BBB_PINS.emplace_back("P1-32", 3, 20).setUART("ttyS4-rx");
+            BBB_PINS.emplace_back("P1-33", 2, 56);
+            BBB_PINS.emplace_back("P1-33b", 3, 29);
+            BBB_PINS.emplace_back("P1-34", 3, 2);
+            BBB_PINS.emplace_back("P1-35", 2, 88); ///?
+            BBB_PINS.emplace_back("P1-36", 2, 55);
+            BBB_PINS.emplace_back("P1-36b", 3, 28);
+
+            BBB_PINS.emplace_back("P2-01", 3, 11);
+            BBB_PINS.emplace_back("P2-02", 2, 45).setUART("ttyS2-rx");
+            BBB_PINS.emplace_back("P2-03", 3, 9);
+            BBB_PINS.emplace_back("P2-04", 2, 46).setUART("ttyS2-tx");
+            BBB_PINS.emplace_back("P2-05", 3, 24).setUART("ttyS5-rx");
+            BBB_PINS.emplace_back("P2-06", 2, 47).setUART("ttyS3-rx");
+            BBB_PINS.emplace_back("P2-07", 3, 25).setUART("ttyS5-tx");
+            BBB_PINS.emplace_back("P2-08", 2, 48);
+            BBB_PINS.emplace_back("P2-09", 3, 22).setUART("ttyS2-rx");
+            BBB_PINS.emplace_back("P2-10", 2, 91); ///?
+            BBB_PINS.emplace_back("P2-11", 3, 23).setUART("ttyS3-tx");
+            BBB_PINS.emplace_back("P2-17", 2, 64); ///?
+            BBB_PINS.emplace_back("P2-18", 2, 53).setUART("ttyS6-rx");
+            BBB_PINS.emplace_back("P2-19", 3, 0);
+            BBB_PINS.emplace_back("P2-20", 2, 49).setUART("ttyS4-rx");
+            BBB_PINS.emplace_back("P2-22", 2, 63);
+            BBB_PINS.emplace_back("P2-24", 2, 51).setUART("ttyS5-rx");
+            BBB_PINS.emplace_back("P2-25", 3, 19);
+            BBB_PINS.emplace_back("P2-27", 3, 18);
+            BBB_PINS.emplace_back("P2-28", 2, 61);
+            BBB_PINS.emplace_back("P2-29", 2, 40);
+            BBB_PINS.emplace_back("P2-29b", 3, 17);
+            BBB_PINS.emplace_back("P2-30", 2, 58);
+            BBB_PINS.emplace_back("P2-31", 3, 15);
+            BBB_PINS.emplace_back("P2-32", 2, 57);
+            BBB_PINS.emplace_back("P2-33", 2, 52).setUART("ttyS5-tx");
+            BBB_PINS.emplace_back("P2-34", 2, 60);
+            BBB_PINS.emplace_back("P2-35", 2, 54);
+            BBB_PINS.emplace_back("P2-36", 3, 16);
+        } else {
+            printf("Unknown type: %d\n", getBeagleBoneType());
+        }
+#endif
     }
 }
 

@@ -109,7 +109,15 @@ void PixelOverlayManager::addModel(Json::Value config) {
     std::string type = config["Type"].asString();
 
     if (type == "Channel") {
-        pmodel = new PixelOverlayModel(config);
+        if (config.isMember("StartChannel") && config.isMember("ChannelCount") && config.isMember("StringCount")) {
+            pmodel = new PixelOverlayModel(config);
+        } else {
+            std::string name;
+            if (config.isMember("Name")) {
+                name = config["Name"].asString();
+            }
+            LogWarn(VB_CHANNELOUT, "PixelOverlayManager::loadModelMap() - invalid configuration for model %s\n", name.c_str());
+        }
     } else if (type == "FB") {
         pmodel = new PixelOverlayModelFB(config);
     } else if (type == "Sub") {
@@ -257,12 +265,12 @@ bool PixelOverlayManager::hasActiveOverlays() {
 
 void PixelOverlayManager::modelStateChanged(PixelOverlayModel* m, const PixelOverlayState& old, const PixelOverlayState& state) {
     if (old.getState() == 0) {
-        //enabling, add
+        // enabling, add
         std::unique_lock<std::mutex> lock(activeModelsLock);
         activeModels.push_back(m);
         numActive++;
     } else if (state.getState() == 0) {
-        //disabling, remove
+        // disabling, remove
         std::unique_lock<std::mutex> lock(activeModelsLock);
         activeModels.remove(m);
         numActive--;
@@ -323,6 +331,9 @@ PixelOverlayModel* PixelOverlayManager::getModel(const std::string& name) {
 static bool isTTF(const std::string& mainStr) {
     return (mainStr.size() >= 4) && (mainStr.compare(mainStr.size() - 4, 4, ".ttf") == 0);
 }
+static bool isPFB(const std::string& mainStr) {
+    return (mainStr.size() >= 4) && (mainStr.compare(mainStr.size() - 4, 4, ".pfb") == 0);
+}
 static void findFonts(const std::string& dir, std::map<std::string, std::string>& fonts) {
     DIR* dp;
     struct dirent* ep;
@@ -342,11 +353,11 @@ static void findFonts(const std::string& dir, std::map<std::string, std::string>
             dname += ep->d_name;
             lstat(dname.c_str(), &statbuf);
             if (S_ISLNK(statbuf.st_mode)) {
-                //symlink, skip
+                // symlink, skip
                 continue;
             } else if (S_ISDIR(statbuf.st_mode)) {
                 findFonts(dname + "/", fonts);
-            } else if (isTTF(ep->d_name)) {
+            } else if (isTTF(ep->d_name) || isPFB(ep->d_name)) {
                 std::string fname = ep->d_name;
                 fname.resize(fname.size() - 4);
                 fonts[fname] = dname;
@@ -359,14 +370,8 @@ static void findFonts(const std::string& dir, std::map<std::string, std::string>
 void PixelOverlayManager::loadFonts() {
     if (!fontsLoaded) {
 #ifndef PLATFORM_OSX
-        long unsigned int i = 0;
-        char** mlfonts = MagickLib::GetTypeList("*", &i);
-        for (int x = 0; x < i; x++) {
-            fonts[mlfonts[x]] = "";
-            free(mlfonts[x]);
-        }
-        free(mlfonts);
         findFonts("/usr/share/fonts/truetype/", fonts);
+        findFonts("/usr/share/fonts/X11/Type1/", fonts);
         findFonts("/usr/local/share/fonts/", fonts);
 #else
         findFonts("/System/Library/fonts/", fonts);
@@ -376,10 +381,11 @@ void PixelOverlayManager::loadFonts() {
 }
 
 const std::string& PixelOverlayManager::mapFont(const std::string& f) {
+    static std::string EMPTY_STR;
     if (fonts[f] != "") {
         return fonts[f];
     }
-    return f;
+    return EMPTY_STR;
 }
 
 Json::Value PixelOverlayManager::getModelsAsJson() {
@@ -480,7 +486,7 @@ HTTP_RESPONSE_CONST std::shared_ptr<httpserver::http_response> PixelOverlayManag
                     m->getDataJson(data, p5 == "rle");
                     result["data"] = data;
                     result["rle"] = p5 == "rle";
-                    result["isLocked"] = m->getRunningEffect() != nullptr; //compatibility
+                    result["isLocked"] = m->getRunningEffect() != nullptr; // compatibility
                     result["effectRunning"] = m->getRunningEffect() != nullptr;
                 } else if (p4 == "clear") {
                     m->clear();
@@ -493,7 +499,7 @@ HTTP_RESPONSE_CONST std::shared_ptr<httpserver::http_response> PixelOverlayManag
                         result["isLocked"] = true;
                         result["effectRunning"] = true;
                     } else {
-                        result["isLocked"] = false; //compatibility
+                        result["isLocked"] = false; // compatibility
                         result["effectRunning"] = false;
                     }
                     result["width"] = m->getWidth();
@@ -522,7 +528,7 @@ HTTP_RESPONSE_CONST std::shared_ptr<httpserver::http_response> PixelOverlayManag
     if (p1 == "models") {
         std::string p2 = req.get_path_pieces().size() > 1 ? req.get_path_pieces()[1] : "";
         if (p2 == "raw") {
-            //upload of raw file
+            // upload of raw file
             char filename[2048];
             strcpy(filename, FPP_DIR_MEDIA("/channelmemorymaps").c_str());
 
@@ -654,7 +660,7 @@ HTTP_RESPONSE_CONST std::shared_ptr<httpserver::http_response> PixelOverlayManag
                         }
                     }
                 } else if (p4 == "mmap") {
-                    //Force mmap the overlay buffer so external programs can have access to it
+                    // Force mmap the overlay buffer so external programs can have access to it
                     m->getOverlayBuffer();
                     return std::shared_ptr<httpserver::http_response>(new httpserver::string_response("{ \"Status\": \"OK\", \"Message\": \"\"}", 200));
                 } else {
@@ -728,12 +734,12 @@ HTTP_RESPONSE_CONST std::shared_ptr<httpserver::http_response> PixelOverlayManag
                         numActive++;
                     }
                 }
-                //skip the ','
+                // skip the ','
                 if (p3.size()) {
                     p3 = p3.substr(1);
                 }
                 if (numActive == 0 && startActive) {
-                    //removed some, may need to wait to make sure the new values are output
+                    // removed some, may need to wait to make sure the new values are output
                     numActive++;
                     std::this_thread::sleep_for(std::chrono::milliseconds(125));
                     numActive--;
@@ -880,7 +886,7 @@ public:
             return std::make_unique<Command::ErrorResult>("Command needs 9 arguments, found " + std::to_string(args.size()));
         }
         std::vector<std::string> newArgs;
-        newArgs.push_back(args[0]); //model
+        newArgs.push_back(args[0]); // model
         if (args.size() == 9) {
             newArgs.push_back(args[7]);
         } else {
@@ -890,7 +896,7 @@ public:
         for (int x = 1; x < 7; x++) {
             newArgs.push_back(args[x]);
         }
-        newArgs.push_back("0"); //duration
+        newArgs.push_back("0"); // duration
         if (args.size() == 9) {
             newArgs.push_back(args[8]);
         } else {

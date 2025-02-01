@@ -27,6 +27,9 @@ var lastStatusJSON = null;
 var statusChangeFuncs = [];
 var zebraPinSubContentTop = 0;
 var VolumeChangeInProgress = false;
+var VolumeChangeAPIInProgress = false;
+var currentWarnings = [];
+var warningDefinitions = [];
 
 /* jQuery Colpick activation */
 var fppCommandColorPicker_fppDialogIntervalTimer = null;
@@ -42,6 +45,12 @@ if (
 ) {
 	hasTouch = true;
 }
+
+/* Load warnings definitions */
+$.getJSON('warnings-definitions.json', function (json) {
+	//console.log(json); // this will show the info it in firebug console
+	warningDefinitions = json;
+});
 
 /* On Page Ready Function Handler
 There is a common set of content loading, action setting and viewport change functions in this file.
@@ -142,13 +151,15 @@ function common_PageLoad_PostDOMLoad_ActionsSetup () {
 			}, 50);
 		}
 	}
+	var listOfTabs = [];
+	$('[role="tab"]').each(function () {
+		listOfTabs.push($(this).attr('data-bs-target'));
+	});
 
 	// showing tab directly if referenced in url
-	if (location.hash) {
+	if (location.hash && listOfTabs.includes(location.hash)) {
 		bootstrap.Tab.getOrCreateInstance(
-			document.querySelector(
-				'[role="tablist"] a[data-bs-target="' + location.hash + '"]'
-			)
+			document.querySelector('[data-bs-target="' + location.hash + '"]')
 		).show();
 		setTimeout(function () {
 			SetTablePageHeader_ZebraPin();
@@ -157,9 +168,25 @@ function common_PageLoad_PostDOMLoad_ActionsSetup () {
 		}, 50);
 	}
 
-	//Setup Tab actions
-	const triggerTabList = document.querySelectorAll('[role="tablist"] a');
-	triggerTabList.forEach(triggerEl => {
+	//Setup Tab actions for <a> based tabs
+	const triggerTabList_a = document.querySelectorAll('[role="tablist"] a');
+	triggerTabList_a.forEach(triggerEl => {
+		const tabTrigger = new bootstrap.Tab(triggerEl);
+
+		triggerEl.addEventListener('shown.bs.tab', event => {
+			// when the tab is selected update the url with the hash
+			window.location.hash = event.target.dataset.bsTarget;
+			SetTablePageHeader_ZebraPin();
+			float_fppStickyThead();
+			scrollToTop();
+		});
+	});
+
+	//Setup Tab actions for button based tabs
+	const triggerTabList_btn = document.querySelectorAll(
+		'[role="tablist"] li button'
+	);
+	triggerTabList_btn.forEach(triggerEl => {
 		const tabTrigger = new bootstrap.Tab(triggerEl);
 
 		triggerEl.addEventListener('shown.bs.tab', event => {
@@ -363,6 +390,40 @@ function findPrefixedVariable (prefix, context, enumerableOnly) {
 		});
 }
 
+function sortHTMLSelectByText (selector, skip_first, sortAscending) {
+	var options = skip_first
+		? $(selector + ' option:not(:first)')
+		: $(selector + ' option');
+	var arr = options
+		.map(function (_, o) {
+			return { t: $(o).text(), v: o.value, s: $(o).prop('selected') };
+		})
+		.get();
+	if (sortAscending) {
+		arr.sort(function (o1, o2) {
+			var t1 = o1.t.toLowerCase(),
+				t2 = o2.t.toLowerCase();
+			return t1 > t2 ? 1 : t1 < t2 ? -1 : 0;
+		});
+	} else {
+		arr.sort(function (o1, o2) {
+			var t1 = o1.t.toLowerCase(),
+				t2 = o2.t.toLowerCase();
+			return t2 > t1 ? 1 : t2 < t1 ? -1 : 0;
+		});
+	}
+	options.each(function (i, o) {
+		o.value = arr[i].v;
+		$(o).text(arr[i].t);
+		if (arr[i].s) {
+			$(o).attr('selected', 'selected').prop('selected', true);
+		} else {
+			$(o).removeAttr('selected');
+			$(o).prop('selected', false);
+		}
+	});
+}
+
 function getManualLink () {
 	return 'https://falconchristmas.github.io/FPP_Manual.pdf';
 }
@@ -477,7 +538,7 @@ function DisplayProgressDialog (id, title) {
 		backdrop: 'static',
 		keyboard: false,
 		body:
-			" <textarea style='width: 100%;' rows='25'  disabled id='" +
+			" <textarea style='max-width:100%; max-height:100%; width: 100%; height:100%;' disabled id='" +
 			id +
 			"Text'></textarea>",
 		class: 'modal-dialog-scrollable',
@@ -1153,7 +1214,10 @@ function Convert24HFromUIFormat (tm) {
 }
 
 function InitializeTimeInputs (format = 'H:i:s') {
-	$('.time').timepicker({ timeFormat: format, typeaheadHighlight: false });
+	$('.time').timepicker({
+		timeFormat: format,
+		typeaheadHighlight: false
+	});
 }
 
 function InitializeDateInputs (format = 'yy-mm-dd') {
@@ -1373,6 +1437,10 @@ function Post (url, async, data, silent = false) {
 
 function Put (url, async, data, silent = false) {
 	return PostPutHelper(url, async, data, silent, 'PUT');
+}
+
+function Delete (url, async, data, silent = false) {
+	return PostPutHelper(url, async, data, silent, 'DELETE');
 }
 
 function Get (url, async, silent = false) {
@@ -3386,7 +3454,7 @@ function populateUniverseData (data, reload, input) {
 			$('#selE131interfaces').val(channelData.interface).prop('selected', true);
 		}
 		if (channelData.hasOwnProperty('threaded')) {
-			$('#E131ThreadedOutput').prop('checked', channelData.threaded);
+			$('#E131ThreadedOutput').val(channelData.threaded).prop('selected', true);
 		}
 	}
 	UniverseCount = channelData.universes.length;
@@ -3904,9 +3972,9 @@ function postUniverseJSON (input) {
 	if (!input) {
 		// output only properties
 		output.interface = document.getElementById('selE131interfaces').value;
-		output.threaded = document.getElementById('E131ThreadedOutput').checked
-			? 1
-			: 0;
+		output.threaded = parseInt(
+			document.getElementById('E131ThreadedOutput').value
+		);
 	} else {
 		// input only properties
 		output.timeout = parseInt(document.getElementById('bridgeTimeoutMS').value);
@@ -4050,7 +4118,7 @@ function validateIPaddress (id, allowHostnames = false) {
 	var ip = ipb.value;
 
 	var isIpRegex =
-		/^(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+		/^(?:(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$/;
 	// hostnames must begin with a letter, contain only letters/numbers/hyphens, and end with a letter
 	// or number
 	var isHostnameRegex =
@@ -4420,7 +4488,14 @@ function GetFPPStatus () {
 			if (!('warnings' in response)) {
 				response.warnings = [];
 			}
+			if (!('warningInfo' in response)) {
+				response.warningInfo = [];
+			}
 			response.warnings.push('FPPD Daemon is not running');
+			response.warningInfo.push({
+				message: 'FPPD Daemon is not running',
+				id: 1
+			});
 
 			$.get('api/system/volume')
 				.done(function (data) {
@@ -4486,16 +4561,173 @@ function GetFPPStatus () {
 function updateWarnings (jsonStatus) {
 	if (jsonStatus.hasOwnProperty('warnings')) {
 		var txt =
-			'<b>Abnormal Conditions - May cause poor performance or other issues</b>';
-		for (var i = 0; i < jsonStatus.warnings.length; i++) {
-			// txt += "<font color='red'><center>" + jsonStatus.warnings[i] + "</center></font>";
-			txt += '<br/>' + jsonStatus.warnings[i];
+			'<b>Abnormal Conditions - May cause poor performance or other issues (Click link icon for help)</b><br/><ul style="list-style-type: none;">';
+
+		if (jsonStatus.hasOwnProperty('warningInfo')) {
+			currentWarnings = jsonStatus['warningInfo'];
+		} else {
+			$.ajax({
+				url: 'warnings_full.json',
+				async: false,
+				dataType: 'json',
+				cache: false,
+				success: function (response) {
+					currentWarnings = response;
+				}
+			});
 		}
+		var txt =
+			'<b>Abnormal Conditions - May cause poor performance or other issues';
+		var hasID = false;
+		for (var i = 0; i < currentWarnings.length; i++) {
+			var warningID = currentWarnings[i]['id'];
+			if (warningID != 0) {
+				hasID = true;
+			}
+		}
+		if (hasID) {
+			txt += ' (Click link icon for help)';
+		}
+		txt += '</b><br/><ul style="list-style-type: none;">';
+
+		for (var i = 0; i < currentWarnings.length; i++) {
+			var warningID = currentWarnings[i]['id'];
+			var warningMessage = currentWarnings[i]['message'];
+			if (warningID == 0) {
+				//handle old style warnings with no id with legacy behavior
+				txt +=
+					'<li><i class="fas fa-solid fa-circle fa-2xs"></i>  ' +
+					currentWarnings[i]['message'] +
+					'</li>';
+			} else {
+				//find extra warning info from definitions
+				for (var z = 0; z < warningDefinitions['Warnings'].length; z++) {
+					if (warningDefinitions['Warnings'][z]['id'] == warningID) {
+						currentWarnings[i]['HelpPageType'] =
+							warningDefinitions['Warnings'][z]['HelpPageType'];
+						currentWarnings[i]['Title'] =
+							warningDefinitions['Warnings'][z]['Title'];
+						currentWarnings[i]['HelpTxt'] =
+							warningDefinitions['Warnings'][z]['HelpTxt'];
+						var warningGrp = warningDefinitions['Warnings'][z]['WarningGroup'];
+						currentWarnings[i]['icon'] =
+							warningDefinitions['WarningGroups'][warningGrp]['fa-icon'];
+					}
+				}
+
+				//determine click through behavior
+				var clickFunction = null;
+				if (currentWarnings[i]['HelpPage'] !== (null || '')) {
+					switch (currentWarnings[i]['HelpPageType']) {
+						case 'php':
+							clickFunction =
+								'doWarningPHPModal(' + warningID + ",'" + warningMessage + "')";
+							break;
+						case 'md':
+							clickFunction =
+								'doWarningMDModal(' + warningID + ",'" + warningMessage + "')";
+							break;
+						default:
+							clickFunction =
+								'doWarningBasicModal(' +
+								warningID +
+								",'" +
+								warningMessage +
+								"','" +
+								currentWarnings[i]['HelpTxt'] +
+								"')";
+					}
+				}
+
+				//create output link string for each warning with a valid definition
+				if (
+					currentWarnings[i]['HelpPageType'] !== (null || '') ||
+					currentWarnings[i]['HelpTxt'] !== (null || '')
+				) {
+					txt +=
+						'<li><span class="warning-link"><a href="javascript:void(0)" onclick="' +
+						clickFunction +
+						';"><i class="fas fa-' +
+						currentWarnings[i]['icon'] +
+						'"></i> ' +
+						currentWarnings[i]['message'] +
+						' (<i class="fas fa-link"></i> Warning ID: ' +
+						warningID +
+						')</a></span></li>';
+				} else {
+					txt +=
+						'<li><i class="fas fa-' +
+						currentWarnings[i]['icon'] +
+						'"></i> ' +
+						currentWarnings[i]['message'] +
+						'</li>';
+				}
+			}
+		}
+
+		txt += '</ul>';
+
 		document.getElementById('warningsDiv').innerHTML = txt;
 		$('#warningsRow').show();
 	} else {
 		$('#warningsRow').hide();
 	}
+}
+
+function doWarningPHPModal (id, message) {
+	var options = {
+		id: 'warningHelpDialog',
+		title: 'Warning ID: ' + id + ' - ' + message,
+		class: 'modal-dialog-scrollable',
+		keyboard: true,
+		backdrop: true
+	};
+	$.ajax({
+		url: 'warningHelper.php?id=' + id,
+		type: 'GET',
+		error: function () {
+			//file not exists
+		},
+		success: function (response) {
+			options.body = response;
+			DoModalDialog(options);
+		}
+	});
+}
+
+function doWarningMDModal (id, message) {
+	var mdFile = 'help/warning-helpers/warning-' + id + '.md';
+	var options = {
+		id: 'warningHelpDialog',
+		title: 'Warning ID: ' + id + ' - ' + message,
+		body: '<zero-md src="' + mdFile + '"></zero-md>',
+		class: 'modal-dialog-scrollable',
+		keyboard: true,
+		backdrop: true
+	};
+	$.ajax({
+		url: mdFile,
+		type: 'HEAD',
+		error: function () {
+			//file not exists
+		},
+		success: function () {
+			DoModalDialog(options);
+		}
+	});
+}
+
+function doWarningBasicModal (id, message, helptxt) {
+	var options = {
+		id: 'warningHelpDialog',
+		title: 'Warning ID: ' + id + ' - ' + message,
+		body: helptxt,
+		class: 'modal-dialog-scrollable',
+		keyboard: true,
+		backdrop: true
+	};
+
+	DoModalDialog(options);
 }
 
 function modeToString (mode) {
@@ -4859,6 +5091,12 @@ function parseStatus (jsonStatus) {
 			);
 		else $('#nextPlaylist').html('No playlist scheduled.');
 	}
+	const pph = document.querySelector('#powerPlaceHolder');
+	if (jsonStatus['powerBad']) {
+		pph.innerHTML = "<i class='fas fa-2xl fa-bolt' style='color:yellow;''></i>";
+	} else {
+		pph.textContent = '';
+	}
 
 	updateSensorStatus(jsonStatus);
 	firstStatusLoad = 0;
@@ -5140,17 +5378,6 @@ function SingleStepSequence () {
 		});
 }
 
-function SingleStepSequenceBack () {
-	var url = 'api/sequence/current/stepBack';
-	$.get(url)
-		.done(function () {
-			$.jGrowl('Sequence StepBack', { themeState: 'success' });
-		})
-		.fail(function () {
-			DialogError('Failed Step Current Sequence Back', 'Step failed');
-		});
-}
-
 function SetSettingReboot (key, value) {
 	SetSetting(key, value, 0, 1);
 }
@@ -5343,22 +5570,53 @@ function SetRebootFlag () {
 	}
 }
 
+function showRestartAlert () {
+	if ($('#restartFlag').is(':hidden')) {
+		$('#restartFlag').show();
+		common_ViewPortChange();
+	}
+}
+
+function hideRestartAlert () {
+	if ($('#restartFlag').is(':visible')) {
+		$('#restartFlag').hide();
+		common_ViewPortChange();
+	}
+}
+
+function showRebootAlert () {
+	if ($('#rebootFlag').is(':hidden')) {
+		$('#rebootFlag').show();
+		common_ViewPortChange();
+	}
+}
+
+function hideRebootAlert () {
+	if ($('#rebootFlag').is(':visible')) {
+		$('#rebootFlag').hide();
+		common_ViewPortChange();
+	}
+}
+
 function CheckRestartRebootFlags () {
 	if (settings['disableUIWarnings'] == 1) {
 		setTopScrollText('Top');
-		$('#restartFlag').hide();
-		$('#rebootFlag').hide();
+		hideRestartAlert();
+		hideRebootAlert();
 		return;
 	}
 
-	if (settings['restartFlag'] >= 1) $('#restartFlag').show();
-	else $('#restartFlag').hide();
+	if (settings['restartFlag'] >= 1) {
+		showRestartAlert();
+	} else {
+		hideRestartAlert();
+	}
 
 	if (settings['rebootFlag'] == 1) {
-		$('#restartFlag').hide();
-		$('#rebootFlag').show();
+		hideRestartAlert();
+		showRebootAlert();
 	} else {
-		$('#rebootFlag').hide();
+		hideRebootAlert();
 	}
 
 	// Adjust the scroll up text to match state.
@@ -5612,56 +5870,118 @@ function GetRunningEffects () {
 }
 
 function Reboot () {
-	if (confirm('REBOOT the Falcon Player?')) {
-		ClearRestartFlag();
-		ClearRebootFlag();
-
-		// Delay reboot for 1 second to allow flags to be cleared
-		setTimeout(function () {
-			$.get({
-				url: 'api/system/reboot',
-				data: '',
-				success: function (data) {
-					// Show FPP is rebooting notification for 60 seconds then reload the page
-					$.jGrowl('FPP is rebooting..', {
-						life: 60000,
-						themeState: 'detract'
-					});
-					setTimeout(function () {
-						location.href = 'index.php';
-					}, 60000);
-				},
-				error: function (...args) {
-					DialogError(
-						'Command failed',
-						'Reboot Command failed' + show_details(args)
-					);
+	DoModalDialog({
+		id: 'RebootModal',
+		title: 'Reboot FPP Device?',
+		noClose: false,
+		backdrop: 'static',
+		keyboard: false,
+		body: 'Are you sure you wish to reboot the device?',
+		class: 'modal-sm',
+		buttons: {
+			Reboot: {
+				disabled: false,
+				id: 'RebootButton',
+				class: 'btn-danger',
+				click: function () {
+					//CloseModalDialog('RebootModal');
+					//location.reload();
+					RebootFPP();
+					CloseModalDialog('RebootModal');
 				}
-			});
-		}, 1000);
-	}
+			},
+			Abort: {
+				disabled: false,
+				id: 'AbortButton',
+				click: function () {
+					CloseModalDialog('RebootModal');
+					location.reload();
+				}
+			}
+		}
+	});
 }
 
-function Shutdown () {
-	if (confirm('SHUTDOWN the Falcon Player?')) {
+function RebootFPP () {
+	ClearRestartFlag();
+	ClearRebootFlag();
+
+	// Delay reboot for 1 second to allow flags to be cleared
+	setTimeout(function () {
 		$.get({
-			url: 'api/system/shutdown',
+			url: 'api/system/reboot',
 			data: '',
 			success: function (data) {
 				// Show FPP is rebooting notification for 60 seconds then reload the page
-				$.jGrowl('FPP is shutting down..', {
+				$.jGrowl('FPP is rebooting..', {
 					life: 60000,
 					themeState: 'detract'
 				});
+				setTimeout(function () {
+					location.href = 'index.php';
+				}, 60000);
 			},
 			error: function (...args) {
 				DialogError(
 					'Command failed',
-					'Shutdown Command failed' + show_details(args)
+					'Reboot Command failed' + show_details(args)
 				);
 			}
 		});
-	}
+	}, 1000);
+}
+
+function Shutdown () {
+	DoModalDialog({
+		id: 'ShutdownModal',
+		title: 'Shutdown FPP Device?',
+		noClose: false,
+		backdrop: 'static',
+		keyboard: false,
+		body: 'Are you sure you wish to shutdown the device?',
+		class: 'modal-sm',
+		buttons: {
+			Shutdown: {
+				disabled: false,
+				id: 'ShutdownButton',
+				class: 'btn-danger',
+				click: function () {
+					//CloseModalDialog('RebootModal');
+					//location.reload();
+					ShutdownFPP();
+					CloseModalDialog('ShutdownModal');
+				}
+			},
+			Abort: {
+				disabled: false,
+				id: 'AbortButton',
+				click: function () {
+					CloseModalDialog('ShutdownModal');
+					location.reload();
+				}
+			}
+		}
+	});
+}
+
+function ShutdownFPP () {
+	$.get({
+		url: 'api/system/shutdown',
+		data: '',
+		success: function (data) {
+			// Show FPP is rebooting notification for 60 seconds then reload the page
+			$.jGrowl('FPP is shutting down..', {
+				life: 60000,
+				themeState: 'detract'
+			});
+		},
+		error: function (...args) {
+			DialogError(
+				'Command failed',
+				'Shutdown Command failed' + show_details(args)
+			);
+		}
+	});
 }
 
 function UpgradePlaylist (data, editMode) {
@@ -5935,16 +6255,21 @@ function PopulatePlaylistDetailsEntries (playselected, playList) {
 
 function SetVolume (value) {
 	var obj = { volume: value };
-	$.post({ url: 'api/system/volume', data: JSON.stringify(obj) })
-		.done(function (data) {
-			// Unblock volume UI updates
-			VolumeChangeInProgress = false;
-			//console.log('api volume update completed');
-		})
-		.fail(function () {
-			DialogError('ERROR', 'Failed to set volume to ' + value);
-			VolumeChangeInProgress = false;
-		});
+	if (VolumeChangeAPIInProgress == false) {
+		VolumeChangeAPIInProgress = true;
+		$.post({ url: 'api/system/volume', data: JSON.stringify(obj) })
+			.done(function (data) {
+				// Unblock volume UI updates
+				settings['volume'] = String(value);
+				VolumeChangeInProgress = false;
+				VolumeChangeAPIInProgress = false;
+			})
+			.fail(function () {
+				DialogError('ERROR', 'Failed to set volume to ' + value);
+				VolumeChangeInProgress = false;
+				VolumeChangeAPIInProgress = false;
+			});
+	}
 }
 
 respondToVisibility = function (element, callback) {
@@ -6261,6 +6586,7 @@ function DeleteFile (dir, row, file, silent = false) {
 		.done(function (data) {
 			if (data.status == 'OK') {
 				$(row).remove();
+				UpdateFileCount(dir);
 			} else {
 				if (!silent)
 					DialogError(
@@ -6620,9 +6946,10 @@ function CommandSelectChanged (
 ) {
 	for (var x = 1; x < 25; x++) {
 		$('#' + tblCommand + '_arg_' + x + '_row').remove();
-		$('#' + tblCommand + '_multisync_row').remove();
-		$('#' + tblCommand + '_multisyncHosts_row').remove();
 	}
+	$('#' + tblCommand + '_multisync_row').remove();
+	$('#' + tblCommand + '_multisyncHosts_row').remove();
+	$('#' + tblCommand + '_description_row').remove();
 	var command = $('#' + commandSelect).val();
 	if (typeof command == 'undefined' || command == null) {
 		return;
@@ -6640,6 +6967,16 @@ function CommandSelectChanged (
 			}
 		});
 	}
+	if (co.hasOwnProperty('description')) {
+		var line =
+			"<tr id='" +
+			tblCommand +
+			"_description_row' ><td></td><td>" +
+			co['description'] +
+			'</td></tr>';
+		$('#' + tblCommand).append(line);
+	}
+
 	var line = "<tr id='" + tblCommand + "_multisync_row' ";
 	if (!allowMultisyncCommands || command == '') {
 		line += "style='display:none'";
@@ -6878,6 +7215,7 @@ function PrintArgInputs (tblCommand, configAdjustable, args, startCount = 1) {
 	var haveTime = 0;
 	var haveDate = 0;
 	var children = [];
+	var timeOptions = new Map();
 
 	$.each(args, function (key, val) {
 		if (val['type'] == 'args') return;
@@ -6889,9 +7227,24 @@ function PrintArgInputs (tblCommand, configAdjustable, args, startCount = 1) {
 			return;
 		}
 
+		var rowStyle = '';
+		if (
+			val.hasOwnProperty('advanced') &&
+			val.advanced == true &&
+			settings['uiLevel'] < 1
+		) {
+			rowStyle = " style='display:hidden; visibility:collapse'";
+		}
+
 		var ID = tblCommand + '_arg_' + count;
 		var line =
-			"<tr id='" + ID + "_row' class='arg_row_" + val['name'] + "'><td>";
+			"<tr id='" +
+			ID +
+			"_row' class='arg_row_" +
+			val['name'] +
+			"'" +
+			rowStyle +
+			'><td>';
 		var subCommandInitFunc = null;
 
 		if (children.includes(val['name']))
@@ -7098,7 +7451,16 @@ function PrintArgInputs (tblCommand, configAdjustable, args, startCount = 1) {
 				val['name'] +
 				"' id='" +
 				ID +
-				"' type='text' size='8' value='00:00:00'/>";
+				"' type='text' size='8' value='";
+			if (val.hasOwnProperty('default')) {
+				line += val['default'];
+			} else {
+				line += '00:00:00';
+			}
+			line += "'/>";
+			if (val.hasOwnProperty('extraOptions')) {
+				timeOptions.set(ID, val['extraOptions']);
+			}
 		} else if (val['type'] == 'date') {
 			haveDate = 1;
 			line +=
@@ -7243,6 +7605,9 @@ function PrintArgInputs (tblCommand, configAdjustable, args, startCount = 1) {
 
 	if (haveTime) {
 		InitializeTimeInputs();
+		for (const [key, value] of timeOptions) {
+			$('#' + key).timepicker(value);
+		}
 	}
 
 	if (haveDate) {

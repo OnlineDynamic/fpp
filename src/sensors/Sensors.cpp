@@ -29,7 +29,7 @@
 
 #include "Sensors.h"
 
-#ifdef PLATFORM_BBB
+#if defined(PLATFORM_BBB) || defined(PLATFORM_BB64)
 #define I2C_DEV 2
 #else
 #define I2C_DEV 1
@@ -118,11 +118,11 @@ public:
             multiplier = s["multiplier"].asDouble();
         }
         int bus = I2C_DEV;
-        if (!FileExists(path)) {
-            //path doesn't exist, need to enable
+        if (!CheckForFile(path)) {
+            // path doesn't exist, need to enable
             if (bus == 2 && !HasI2CDevice(bus)) {
-                //wasn't found on the default bus of the BBB, we can
-                //try the other i2c bus
+                // wasn't found on the default bus of the BBB, we can
+                // try the other i2c bus
                 bus = 1;
                 size_t start_pos = path.find("/i2c-2");
                 if (start_pos != std::string::npos) {
@@ -140,12 +140,12 @@ public:
             std::this_thread::sleep_for(std::chrono::milliseconds(100));
             count++;
         }
-        //after 0.5 seconds, still doesn't exist
+        // after 0.5 seconds, still doesn't exist
         if (CheckForFile(path)) {
             file = open(path.c_str(), O_RDONLY);
         } else if (HasI2CDevice(bus) && driver == "lm75") {
-            //Kernel 4.19 on Pi seems to not like the lm75 chips, we'll need to read the values directly
-            //switch to rawIO
+            // Kernel 4.19 on Pi seems to not like the lm75 chips, we'll need to read the values directly
+            // switch to rawIO
             int add = strtol(address.c_str(), nullptr, 16);
             i2cUtils = new I2CUtils(bus, add);
         }
@@ -193,7 +193,7 @@ public:
                 int t = (ret >> 8) & 0xFF;
                 t |= (ret << 8) & 0xFF00;
                 if (t & 0x8000) {
-                    //negative temperature
+                    // negative temperature
                     t |= 0xFFFF0000;
                 }
                 t = t >> 5;
@@ -286,6 +286,20 @@ public:
         if (s.isMember("min")) {
             min = s["min"].asDouble();
         }
+        if (s.isMember("vScale")) {
+            vScale = s["vScale"].asFloat();
+        } else {
+#ifdef PLATFORM_BB64
+            std::string vs = GetFileContents("/sys/bus/iio/devices/iio:device0/in_voltage_scale");
+            vScale = std::atof(vs.c_str());
+            // original reference is 1.8V which for 12bit would be 0.439453125.
+            // If the cape doesn't specify a reference scale, we'll adjust and assume
+            // the params are based on 1.8 ref, but we're reading to 3.3V
+            vScale = vScale / 0.439453125;
+#else
+            vScale = 1.0f;
+#endif
+        }
     }
     virtual ~AINSensor() {
         close(file);
@@ -295,8 +309,8 @@ public:
         if (file == -1 && errcount < 10) {
             char path[256];
             snprintf(path, sizeof(path), "/sys/bus/iio/devices/iio:device0/in_voltage%s_raw", address.c_str());
-            //need to use low level calls for reading from sysfs
-            //to avoid any buffering that ifstream does
+            // need to use low level calls for reading from sysfs
+            // to avoid any buffering that ifstream does
             if (FileExists(path)) {
                 file = open(path, O_RDONLY);
                 errcount = errcount + 1;
@@ -309,8 +323,9 @@ public:
             int i = read(file, buffer, 20);
             buffer[i] = 0;
             double d = atof(buffer);
+            d *= vScale;
 
-            d /= 4096; //12 bit a2d
+            d /= 4096; // 12 bit a2d
             d *= (max - min + 1);
             d += min;
             return d;
@@ -324,6 +339,7 @@ public:
     std::string driver;
     double min = 0.0;
     double max = 100.0;
+    double vScale = 1.0;
 
     volatile int file;
     volatile int errcount;
@@ -349,7 +365,7 @@ public:
             if (i > 0) {
                 buffer[i] = 0;
                 d = std::atof(buffer);
-                d /= 1000; //12 bit a2d
+                d /= 1000; // 12 bit a2d
             }
             return d;
         }
@@ -381,12 +397,19 @@ void Sensors::addSensorSources(Json::Value& config) {
     for (int x = 0; x < config.size(); x++) {
         Json::Value v = config[x];
         std::string type = v["type"].asString();
+        SensorSource* ss = nullptr;
         if (type == "ads7828" || type == "ads7830") {
-            sensorSources.push_back(new ADS7828Sensor(v));
+            ss = new ADS7828Sensor(v);
         } else if (type == "iio") {
-            sensorSources.push_back(new IIOSensorSource(v));
+            ss = new IIOSensorSource(v);
         } else if (type == "mux") {
-            sensorSources.push_back(new MuxSensorSource(v));
+            ss = new MuxSensorSource(v);
+        }
+        if (ss && ss->isOK()) {
+            sensorSources.push_back(ss);
+        } else if (ss) {
+            WarningHolder::AddWarning("Could not create SensorSource: " + ss->getID());
+            delete ss;
         }
     }
 }
@@ -402,12 +425,18 @@ SensorSource* Sensors::getSensorSource(const std::string& name) {
         }
     }
     if (name == "iio") {
-        //default the iio name if requested
+        // default the iio name if requested
         Json::Value v;
         v["type"] = "iio";
         v["id"] = "iio";
         SensorSource* ss = new IIOSensorSource(v);
-        sensorSources.push_back(ss);
+        if (ss->isOK()) {
+            sensorSources.push_back(ss);
+        } else {
+            WarningHolder::AddWarning("Could not create SensorSource: " + ss->getID());
+            delete ss;
+            ss = nullptr;
+        }
         return ss;
     }
     return nullptr;

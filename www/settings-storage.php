@@ -1,6 +1,6 @@
 <?
 $skipJSsettings = 1;
-require_once ('common.php');
+require_once('common.php');
 ?>
 
 <script type="text/javascript" src="jquery/jQuery.msgBox/scripts/jquery.msgBox.js"></script>
@@ -156,7 +156,7 @@ function PrintStorageDeviceSelect($platform)
     }
 
     $storageDevice = "";
-    exec('df -P ' . GetSettingValue('mediaDirectory') . '  | awk \'END{print $1}\' | sed -e "s/\/dev\///"', $output, $return_val);
+    exec('findmnt -no source -T ' . GetSettingValue('mediaDirectory') . '  | sed -e "s/\/dev\///"', $output, $return_val);
     if (isset($output[0]))
         $storageDevice = $output[0];
     unset($output);
@@ -219,7 +219,7 @@ function PrintStorageDeviceSelect($platform)
 
     if (!$found) {
         $arr = array_reverse($values, true);
-        $values = array_reverse($arr);
+        $values = $arr;
     }
     if ($storageDevice == "") {
         $storageDevice = $rootDevice;
@@ -233,7 +233,7 @@ $addnewfsbutton = false;
 $addflashbutton = false;
 exec('findmnt -n -o SOURCE / | colrm 1 5', $output, $return_val);
 $rootDevice = $output[0];
-if ($rootDevice == 'mmcblk0p1' || $rootDevice == 'mmcblk0p2') {
+if ($rootDevice == 'mmcblk0p1' || $rootDevice == 'mmcblk0p2' || $rootDevice == 'nvme0n1p2' || $rootDevice == 'sda2') {
     if (isset($settings["UnpartitionedSpace"]) && $settings['UnpartitionedSpace'] > 0) {
         $addnewfsbutton = true;
     }
@@ -283,7 +283,7 @@ if ($addflashbutton) {
         </div>
         <? if ($uiLevel >= 1) { ?>
             <div class="row mt-2">
-                <div class="col-auto"><input style='width:13em;' type='button' class='buttons' value='Flash to eMMC'
+                <div class="col-auto"><input style='width:13em;' type='button' class='buttons' value='Flash to eMMC (BTRFS)'
                         onClick='flashEMMCBtrfs();'></div>
                 <div class="col-auto"><i class='fas fa-fw fa-graduation-cap ui-level-1'></i>&nbsp;This will copy FPP to the internal
                     eMMC, but use BTRFS for the root filesystem.<br>BTRFS uses compression to save a lot of space on the eMMC, but
@@ -298,7 +298,7 @@ if ($addflashbutton) {
                 <div class="row">
                     <div class="col-auto"><input style='width:13em;' type='button' class='buttons' value='Flash to USB'
                             onClick='flashUSB("sda");'></div>
-                    <div class="col-auto">&nbsp;This will flash FPP to the USB device. See note below for more information.</div>
+                    <div class="col-auto">&nbsp;This will clone FPP to the USB device. See note below for more information.</div>
                 </div>
                 <div class="row">
                     <div class="col-auto"><input style='width:13em;' type='button' class='buttons' value='Clone to USB'
@@ -311,13 +311,12 @@ if ($addflashbutton) {
                     <div class="row">
                         <div class="col-auto"><input style='width:13em;' type='button' class='buttons' value='Flash to NVMe'
                                 onClick='flashUSB("nvme0n1");'></div>
-                        <div class="col-auto">&nbsp;This will flash FPP to the NVMe device. See note below for more information.</div>
+                        <div class="col-auto">&nbsp;This will clone FPP to the NVMe device.</div>
                     </div>
                     <div class="row">
                         <div class="col-auto"><input style='width:13em;' type='button' class='buttons' value='Clone to NVMe'
                                 onClick='cloneUSB("nvme0n1");'></div>
-                        <div class="col-auto">&nbsp;This will copy FPP, media, sequences, settings, etc... to the NVMe device. See note
-                            below for more information.</div>
+                        <div class="col-auto">&nbsp;This will copy FPP, media, sequences, settings, etc... to the NVMe device.</div>
                     </div>
         <? } else { ?>
                     <h3>SD Card Actions:</h3>
@@ -344,13 +343,15 @@ if ($settings['Platform'] != "Docker") { ?>
 
 
         <div class="callout callout-warning">
-            Changing the storage device to anything other than the SD card is strongly discouraged. There are all kinds of
+            Changing the storage device to USB devices is strongly discouraged. There are all kinds of
             problems that using USB storage introduce into the system which can easily result in various problems include
             network lag, packet drops, audio clicks/pops, high CPU usage, etc... Using USB storage also results in longer bootup
             time. In addition, many advanced features and various capes/hats are known to NOT work when using USB storage.
             <br><br>
-            In addition to the above, since it is not recommended, using USB storage is not tested nearly as extensively by the
-            FPP developers. Thus, upgrades (even "patch" upgrades) have a higher risk of unexpected problems. By selecting a USB
+            In addition to the above, since it is not recommended, using NVMe/USB storage is not tested nearly as extensively by
+            the
+            FPP developers. Thus, upgrades (even "patch" upgrades) have a higher risk of unexpected problems. By selecting a
+            NVMe/USB
             storage device, you assume much higher risk of problems and issues than when selecting an SD partition.
         </div>
     <? } else { ?>

@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include "../Warnings.h"
 #include "../common.h"
 
 #include "IIOSensorSource.h"
@@ -30,7 +31,23 @@ IIOSensorSource::IIOSensorSource(Json::Value& config) :
     } else {
         usingBuffers = FileExists("/sys/bus/iio/devices/iio:device" + std::to_string(iioDevNumber) + "/buffer/enable") && FileExists("/dev/iio:device" + std::to_string(iioDevNumber));
     }
-    //usingBuffers = false;
+
+    if (config.isMember("vScale")) {
+        vScale = config["vScale"].asFloat();
+    } else {
+#ifdef PLATFORM_BB64
+        std::string vs = GetFileContents("/sys/bus/iio/devices/iio:device" + std::to_string(iioDevNumber) + "/in_voltage_scale");
+        vScale = std::atof(vs.c_str());
+        // original reference is 1.8V which for 12bit would be 0.439453125.
+        // If the cape doesn't specify a reference scale, we'll adjust and assume
+        // the params are based on 1.8 ref, but we're reading to 3.3V
+        vScale = vScale / 0.439453125;
+#else
+        vScale = 1.0f;
+#endif
+    }
+
+    // usingBuffers = false;
     std::string base = "/sys/bus/iio/devices/iio:device" + std::to_string(iioDevNumber) + "/in_voltage";
     int max = -1;
     for (int x = 0; x < 16; x++) {
@@ -46,6 +63,8 @@ IIOSensorSource::IIOSensorSource(Json::Value& config) :
             channelMapping[x] = -1;
             values[x] = 0;
         }
+    } else {
+        WarningHolder::AddWarning("Could not enable IIOSensorSource");
     }
 }
 IIOSensorSource::~IIOSensorSource() {
@@ -68,6 +87,10 @@ IIOSensorSource::~IIOSensorSource() {
         delete[] readBuffer;
     }
 }
+bool IIOSensorSource::isOK() const {
+    return FileExists("/dev/iio:device0");
+}
+
 void IIOSensorSource::Init(std::map<int, std::function<bool(int)>>& callbacks) {
     if (usingBuffers) {
         if (iioDevFile >= 0) {
@@ -140,13 +163,20 @@ void IIOSensorSource::update(bool forceInstant, bool fromSelect) {
                 for (int x = 0; x < channelMapping.size(); x++) {
                     sums[x] -= mins[x];
                     sums[x] -= maxes[x];
+                    float f = sums[x];
+                    f /= (float)(samples - 2);
+                    f *= vScale;
+
                     int idx = channelMapping[x];
-                    values[idx] = (sums[x] / (samples - 2));
+                    values[idx] = f;
                 }
             } else {
                 for (int x = 0; x < channelMapping.size(); x++) {
+                    float f = sums[x];
+                    f /= (float)(samples);
+                    f *= vScale;
                     int idx = channelMapping[x];
-                    values[idx] = sums[x] / samples;
+                    values[idx] = f;
                 }
             }
         }
@@ -162,6 +192,7 @@ void IIOSensorSource::update(bool forceInstant, bool fromSelect) {
                     s += std::atoi(buf);
                 }
                 s /= 3.0;
+                s *= vScale;
                 values[x] = std::round(s);
             }
         }
@@ -184,5 +215,8 @@ void IIOSensorSource::enable(int id) {
 }
 
 int32_t IIOSensorSource::getValue(int id) {
+    if (id >= values.size()) {
+        return 0;
+    }
     return values[id];
 };

@@ -9,9 +9,6 @@ else
     BREWLOC="/usr/local"
 fi
 
-export PHP_VERSION=8.2
-
-
 echo "FPP macOS Installation"
 echo ""
 echo "Welcome to the FPP install script for macOS.   Installing FPP on a Mac is"
@@ -84,7 +81,7 @@ ccache -M 350M
 ccache --set-config=temporary_dir=/tmp
 ccache --set-config=sloppiness=pch_defines,time_macros
 echo ""
-echo "The dependencies are now installed.   We will not proceed to setup FPP."
+echo "The dependencies are now installed.   We will now proceed to setup FPP."
 echo "We will now clone FPP into the current directory and create a bunch of "
 echo "subdirectories to store configuration, plugins, etc...   We will also"
 echo "build FPPD and configure the HTTP server."
@@ -132,6 +129,7 @@ sed -i -e "s+#LoadModule proxy+LoadModule proxy+g" $HTTPCONF
 sed -i -e "s+LoadModule proxy_balanc+#LoadModule proxy_balanc+g" $HTTPCONF
 sed -i -e "s+LoadModule proxy_http2_+#LoadModule proxy_http2_+g" $HTTPCONF
 sed -i -e "s+#LoadModule rewrite+LoadModule rewrite+g" $HTTPCONF
+sed -i -e "s+#LoadModule expires+LoadModule expires+g" $HTTPCONF
 sed -i -e "s+#LoadModule watchdog+LoadModule watchdog+g" $HTTPCONF
 sed -i -e "s+#LoadModule mpm_event+LoadModule mpm_event+g" $HTTPCONF
 sed -i -e "s+LoadModule mpm_prefork+#LoadModule mpm_prefork+g" $HTTPCONF
@@ -163,6 +161,14 @@ SetEnvIfNoCase ^Authorization$ "(.+)" HTTP_AUTHORIZATION=\$1
     Require all denied
 </FilesMatch>
 EOF
+
+if [ -d ${BREWLOC}/etc/php/8.3 ]; then
+    PHP_VERSION="8.3"
+elif [ -d ${BREWLOC}/etc/php/8.2 ]; then
+    PHP_VERSION="8.2"
+elif [ -d ${BREWLOC}/etc/php/8.1 ]; then
+    PHP_VERSION="8.1"
+fi
 
 
 echo "Configuring PHP"

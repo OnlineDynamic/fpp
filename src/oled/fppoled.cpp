@@ -16,7 +16,7 @@
 #include "common.h"
 #include "settings.h"
 
-#if defined(PLATFORM_BBB)
+#if defined(PLATFORM_BBB) || defined(PLATFORM_BB64)
 #include "util/BBBUtils.h"
 #define PLAT_GPIO_CLASS BBBPinProvider
 #elif defined(PLATFORM_PI)
@@ -27,6 +27,14 @@
 #define PLAT_GPIO_CLASS TmpFilePinProvider
 #endif
 #include <thread>
+
+class WarningHolder {
+    static void AddWarning(const std::string& w);
+};
+
+void WarningHolder::AddWarning(const std::string& w) {
+    printf("Warning: %s\n", w.c_str());
+}
 
 static FPPOLEDUtils* oled = nullptr;
 void sigInteruptHandler(int sig) {
@@ -51,7 +59,7 @@ int main(int argc, char* argv[]) {
     }
     bool capeDetectionDone = FileExists("/home/fpp/media/tmp/cape_detect_done");
     int count = 0;
-    while (!capeDetectionDone && count < 100) {
+    while (!capeDetectionDone && count < 200) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         ++count;
         capeDetectionDone = FileExists("/home/fpp/media/tmp/cape_detect_done");

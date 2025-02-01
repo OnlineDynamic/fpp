@@ -347,8 +347,10 @@ function finalizeStatusJson($obj)
 {
     global $settings;
 
-    $obj['wifi'] = network_wifi_strength_obj();
-    $obj['interfaces'] = network_list_interfaces_obj();
+    if (!isset($_GET['nonetwork'])) { 
+        $obj['wifi'] = network_wifi_strength_obj();
+        $obj['interfaces'] = network_list_interfaces_obj();
+    }
 
     if (isset($settings['rebootFlag'])) {
         $obj['rebootFlag'] = intval($settings['rebootFlag']);
@@ -363,7 +365,7 @@ function finalizeStatusJson($obj)
     }
 
     //Get the advanced info directly as an array
-    $request_expert_content = GetSystemInfoJsonInternal(false);
+    $request_expert_content = GetSystemInfoJsonInternal(isset($_GET['simple']), !isset($_GET['nonetwork']));
     //check we have valid data
     if ($request_expert_content === false) {
         $request_expert_content = array();
@@ -383,13 +385,94 @@ function finalizeStatusJson($obj)
             }
 
             if ($settings['ShareCrashData'] == '0') {
-                $obj["warnings"][] = "There $verb $num <a href='filemanager.php#tab-crashes'>crash report$plural</a> available, please submit to FPP developers or delete.";
+                $crWarning = "There $verb $num <a href='filemanager.php#tab-crashes'>crash report$plural</a> available, please submit to FPP developers or delete.";
             } else {
-                $obj["warnings"][] = "There $verb $num <a href='filemanager.php#tab-crashes'>crash report$plural</a> available. " .
+                $crWarning = "There $verb $num <a href='filemanager.php#tab-crashes'>crash report$plural</a> available. " .
                     "This system is configured to automatically upload these to the FPP developers, you may delete the old reports at any time.";
             }
+            $obj["warnings"][] = $crWarning;
+            $wi["message"] = $crWarning;
+            $wi["id"] = 0;
+            $obj["warningInfo"][] = $wi;
         }
     }
 
     return $obj;
 }
+
+// GET /api/system/GetOSPackages
+/**
+ * Get a list of all available packages on the system.
+ *
+ * @return array List of package names.
+ */
+function GetOSPackages() {
+    $packages = [];
+    $cmd = 'apt list --all-versions 2>&1'; // Fetch all package names and versions
+    $handle = popen($cmd, 'r'); // Open a process for reading the output
+
+    if ($handle) {
+        while (($line = fgets($handle)) !== false) {
+            // Extract the package name before the slash
+            if (preg_match('/^([^\s\/]+)\//', $line, $matches)) {
+                $packages[] = $matches[1];
+            }
+        }
+        pclose($handle); // Close the process
+    } else {
+        error_log("Error: Unable to fetch package list.");
+    }
+
+    return json_encode($packages);
+}
+/**
+ * Get information about a specific package.
+ *
+ * This function retrieves the description, dependencies, and installation status for a given package.
+ *
+ * @param string $packageName The name of the package.
+ * @return array An associative array containing 'Description', 'Depends', and 'Installed'.
+ */
+function GetOSPackageInfo() {
+    $packageName = params('packageName');
+
+    // Fetch package information using apt-cache show
+    $output = shell_exec("apt-cache show " . escapeshellarg($packageName) . " 2>&1");
+    if (!$output || strpos($output, 'E:') === 0) {
+        // Return error if apt-cache output is empty or contains an error
+        error_log("Package '$packageName' not found or invalid: $output");
+        return json_encode(['error' => "Package '$packageName' not found or no information available."]);
+    }
+
+    // Check installation status using dpkg-query
+    $installStatus = shell_exec("/usr/bin/dpkg-query -W -f='\${Status}\n' " . escapeshellarg($packageName) . " 2>&1");
+    error_log("Raw dpkg-query output for $packageName: |" . $installStatus . "|");
+
+    // Trim and validate output
+    $trimmedStatus = trim($installStatus);
+    error_log("Trimmed dpkg-query output for $packageName: |" . $trimmedStatus . "|");
+
+    $isInstalled = ($trimmedStatus === 'install ok installed') ? 'Yes' : 'No';
+
+    // Parse apt-cache output
+    $lines = explode("\n", $output);
+    $description = '';
+    $depends = '';
+
+    foreach ($lines as $line) {
+        if (strpos($line, 'Description:') === 0) {
+            $description = trim(substr($line, strlen('Description:')));
+        } elseif (strpos($line, 'Depends:') === 0) {
+            $depends = trim(substr($line, strlen('Depends:')));
+        }
+    }
+
+    return json_encode([
+        'Description' => $description,
+        'Depends' => $depends,
+        'Installed' => $isInstalled
+    ]);
+}
+
+
+

@@ -1,4 +1,4 @@
-<script type="text/javascript" src="jquery/jcanvas.js"></script>
+
 <script>
 var cellColors = [];
 var scaleMap = [];
@@ -89,42 +89,35 @@ var ctx;
 var buffer;
 var bctx;
 
-$.jCanvas.defaults.fromCenter = false;
-
 function initCanvas()
 {
-	$('#vCanvas').removeLayers();
-	$('#vCanvas').clearCanvas();
+    const canvas = document.getElementById('vCanvas');
+    ctx = canvas.getContext("2d");
+    ctx.fillStyle = "black";
+    ctx.fillRect(0, 0, canvasWidth * window.devicePixelRatio, canvasHeight * window.devicePixelRatio);
 
-	$('#vCanvas').drawRect({
-		layer: true,
-		fillStyle: '#000',
-		x: 0,
-		y: 0,
-		width: canvasWidth,
-		height: canvasHeight
-	});
-
-	$('#vCanvas').drawImage({
-		layer: true,
-		opacity: 0.2,
-		source: 'api/file/Images/virtualdisplaybackground.jpg',
-		width: canvasWidth,
-		height: canvasHeight
-	});
-
-	var c = document.getElementById('vCanvas');
-	ctx = c.getContext('2d');
-
+    const img = new Image();
+    img.addEventListener("load", () => {
+         const cratio = canvas.width / canvas.height;
+         const iratio = img.width / img.height;
+         if (cratio > iratio) {
+            var neww = canvasHeight * iratio;
+            ctx.drawImage(img, 0, 0, neww, canvasHeight);
+         } else {
+            var newh = canvasWidth / iratio;
+            ctx.drawImage(img, 0, 0, canvasWidth, newh);
+         }
+    });
+    img.src = 'api/file/Images/virtualdisplaybackground.jpg';
+    
 	buffer = document.createElement('canvas');
-	buffer.width = c.width;
-	buffer.height = c.height;
+	buffer.width = canvas.width * window.devicePixelRatio;
+	buffer.height = canvas.height * window.devicePixelRatio;
 	bctx = buffer.getContext('2d');
 
 	// Draw the black pixels
 	bctx.fillStyle = '#000000';
-	for (var key in cellColors)
-	{
+	for (var key in cellColors) {
 		bctx.fillRect(cellColors[key].x, cellColors[key].y, 1, 1);
 	}
 }
@@ -192,6 +185,5 @@ $(document).ready(function() {
 <input type='button' id='stopButton' onClick='stopSSE();' value='Stop Virtual Display'><br>
 <table border=0>
 <tr><td valign='top'>
-<canvas id='vCanvas' width='<? echo $canvasWidth; ?>' height='<? echo $canvasHeight; ?>'></canvas></td>
+<canvas id='vCanvas' width='<?= $canvasWidth ?>px' height='<?= $canvasHeight ?>px'></canvas></td>
 <td id='data'></td></tr></table>
-

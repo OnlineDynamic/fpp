@@ -18,6 +18,7 @@
 #include <thread>
 
 #include "GPIOUtils.h"
+#include "../Warnings.h"
 #include "commands/Commands.h"
 
 // No platform information on how to control pins
@@ -58,7 +59,6 @@ void PinCapabilities::enableOledScreen(int i2cBus, bool enable) {
     ftruncate(smfd, 1024);
     unsigned int* status = (unsigned int*)mmap(0, 1024, PROT_WRITE | PROT_READ, MAP_SHARED, smfd, 0);
     if (i2cBus == status[0]) {
-        printf("Signal to fppoled to enable/disable I2C:   Bus: %d   Enable: %d\n", i2cBus, enable);
         if (!enable) {
             // force the display off
             status[2] = 1;
@@ -91,7 +91,11 @@ static const std::set<std::string> PLATFORM_IGNORES{
     "gpio-brcmstb@107d508520",
     "gpio-brcmstb@107d517c00",
     "gpio-brcmstb@107d517c20",
-    "pinctrl-rp1" // Pi5's external GPIO chip
+    "pinctrl-rp1",   // Pi5's external GPIO chip
+    "tps65219-gpio", // AM62x
+    "4201000.gpio",
+    "600000.gpio",
+    "601000.gpio"
 };
 // No platform information on how to control pins
 static std::string PROCESS_NAME = "FPPD";
@@ -104,7 +108,7 @@ bool GPIODCapabilities::supportsPullDown() const {
 }
 
 #ifdef HASGPIOD
-constexpr int MAX_GPIOD_CHIPS = 15;
+constexpr int MAX_GPIOD_CHIPS = 32;
 class GPIOChipHolder {
 public:
     static GPIOChipHolder INSTANCE;
@@ -118,8 +122,12 @@ int GPIODCapabilities::configPin(const std::string& mode,
 #ifdef HASGPIOD
     if (chip == nullptr) {
         if (!GPIOChipHolder::INSTANCE.chips[gpioIdx]) {
-            std::string n = std::to_string(gpioIdx);
-            GPIOChipHolder::INSTANCE.chips[gpioIdx].open(n, gpiod::chip::OPEN_BY_NUMBER);
+            if (gpioName.empty()) {
+                std::string n = std::to_string(gpioIdx);
+                GPIOChipHolder::INSTANCE.chips[gpioIdx].open(n, gpiod::chip::OPEN_BY_NUMBER);
+            } else {
+                GPIOChipHolder::INSTANCE.chips[gpioIdx].open(gpioName, gpiod::chip::OPEN_BY_NAME);
+            }
         }
         chip = &GPIOChipHolder::INSTANCE.chips[gpioIdx];
         line = chip->get_line(gpio);
@@ -142,7 +150,11 @@ int GPIODCapabilities::configPin(const std::string& mode,
         if (line.is_requested()) {
             line.release();
         }
-        line.request(req, 1);
+        try {
+            line.request(req, 1);
+        } catch (const std::exception& ex) {
+            WarningHolder::AddWarning("Could not configure pin " + name + " as " + mode + " (" + ex.what() + ")");
+        }
         lastRequestType = req.request_type;
     }
 #endif
@@ -200,9 +212,7 @@ void PinCapabilities::InitGPIO(const std::string& process, PinCapabilitiesProvid
                     found.insert(label);
                     for (int x = 0; x < a.num_lines(); x++) {
                         std::string n = label + "-" + std::to_string(x);
-                        GPIODCapabilities caps(n, pinCount + x);
-                        caps.setGPIO(chipCount, x);
-                        GPIOD_PINS.push_back(GPIODCapabilities(n, pinCount + x).setGPIO(chipCount, x));
+                        GPIOD_PINS.push_back(GPIODCapabilities(n, pinCount + x, name).setGPIO(chipCount, x));
                     }
                 }
                 pinCount += a.num_lines();

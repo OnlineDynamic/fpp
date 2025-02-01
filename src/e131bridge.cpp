@@ -48,6 +48,7 @@
 #include "commands/Commands.h"
 
 #include "channeloutput/serialutil.h"
+#include "util/GPIOUtils.h"
 
 #include "e131bridge.h"
 
@@ -125,6 +126,8 @@ int CreateArtNetSocket() {
 #endif
         int bufSize = 512 * 1024;
         setsockopt(artnetSock, SOL_SOCKET, SO_RCVBUF, &bufSize, sizeof(bufSize));
+        bufSize = 512 * 1024;
+        setsockopt(artnetSock, SOL_SOCKET, SO_SNDBUF, &bufSize, sizeof(bufSize));
 
         memset((char*)&addr, 0, sizeof(addr));
         addr.sin_family = AF_INET;
@@ -942,6 +945,7 @@ void Bridge_Initialize(std::map<int, std::function<bool(int)>>& callbacks) {
                     std::string device = outputs[c]["device"].asString();
                     if (denabled) {
                         std::string devPath = "/dev/" + device;
+                        PinCapabilities::getPinByUART(device + "-rx").configPin("uart");
                         int dmxIn = SerialOpen(devPath.c_str(), 250000, "N82", false);
                         if (dmxIn > 0) {
                             InputUniverses.resize(InputUniverseCount + 1);

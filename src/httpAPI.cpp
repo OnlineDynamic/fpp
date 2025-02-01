@@ -15,6 +15,7 @@
 #ifdef PLATFORM_OSX
 #include <sys/sysctl.h>
 #else
+#include <sys/ioctl.h>
 #include <sys/sysinfo.h>
 #endif
 
@@ -24,6 +25,7 @@
 #include <fstream>
 #include <httpserver.hpp>
 #include <iomanip>
+#include <iostream>
 #include <list>
 #include <stdint.h>
 #include <string>
@@ -57,6 +59,7 @@
 #include "httpAPI.h"
 
 static std::time_t startupTime = std::time(nullptr);
+static bool piPowerBad = false;
 
 /*
  Build a Status JSON String
@@ -82,6 +85,7 @@ void GetCurrentFPPDStatus(Json::Value& result) {
     result["status"] = Player::INSTANCE.GetStatus();
     result["bridging"] = HasBridgeData();
     result["multisync"] = multiSync->isMultiSyncEnabled();
+    result["powerBad"] = piPowerBad;
 
     if (ChannelTester::INSTANCE.Testing()) {
         result["status_name"] = "testing";
@@ -167,9 +171,9 @@ void GetCurrentFPPDStatus(Json::Value& result) {
     result["uptimeStr"] = totalTime.str();
 
     Sensors::INSTANCE.reportSensors(result);
-    std::list<std::string> warnings = WarningHolder::GetWarnings();
-    for (auto& warn : warnings) {
-        result["warnings"].append(warn);
+    for (auto& warn : WarningHolder::GetWarnings()) {
+        result["warnings"].append(warn.message());
+        result["warningInfo"].append(warn);
     }
     if (mode == 1) {
         // bridge mode only returns the base information
@@ -207,9 +211,9 @@ void GetCurrentFPPDStatus(Json::Value& result) {
 
         result["playlist"] = seqFilename;
         result["sequence_filename"] = seqFilename;
-        result["media_filename"] = mediaFilename;
+        result["media_filename"] = mediaFilename.substr(mediaFilename.find_last_of("/\\") + 1);
         result["current_sequence"] = seqFilename;
-        result["current_song"] = mediaFilename;
+        result["current_song"] = result["media_filename"];
         result["seconds_played"] = std::to_string(secsElapsed);
         result["seconds_elapsed"] = std::to_string(secsElapsed);
         result["seconds_remaining"] = std::to_string(secsRemaining);
@@ -304,6 +308,21 @@ void LogResponse(const http_request& req, int responseCode, const std::string& c
 }
 
 PlayerResource::PlayerResource() {
+#ifdef PLATFORM_PI
+#define DEVICE_FILE_NAME "/dev/vcio"
+#define MAJOR_NUM 100
+#define IOCTL_MBOX_PROPERTY _IOWR(MAJOR_NUM, 0, char*)
+#define MAX_STRING 1024
+#define GET_GENCMD_RESULT 0x00030080
+    piPowerFile = open(DEVICE_FILE_NAME, 0);
+#else
+    piPowerFile = -1;
+#endif
+}
+PlayerResource::~PlayerResource() {
+    if (piPowerFile > 0) {
+        close(piPowerFile);
+    }
 }
 
 /*
@@ -328,9 +347,13 @@ HTTP_RESPONSE_CONST std::shared_ptr<httpserver::http_response> PlayerResource::r
     } else if (url == "status") {
         GetCurrentStatus(result);
     } else if (url == "warnings") {
-        std::list<std::string> warnings = WarningHolder::GetWarnings();
         result = Json::Value(Json::ValueType::arrayValue);
-        for (auto& warn : warnings) {
+        for (auto& warn : WarningHolder::GetWarnings()) {
+            result.append(warn.message());
+        }
+    } else if (url == "warnings_full") {
+        result = Json::Value(Json::ValueType::arrayValue);
+        for (auto& warn : WarningHolder::GetWarnings()) {
             result.append(warn);
         }
     } else if (url == "e131stats") {
@@ -379,6 +402,15 @@ HTTP_RESPONSE_CONST std::shared_ptr<httpserver::http_response> PlayerResource::r
         SetOKResult(result, "");
     } else if (url == "sequence") {
         LogDebug(VB_HTTP, "API - Getting list of running sequences\n");
+    } else if (url == "mqtt/cache") {
+        LogDebug(VB_HTTP, "API - Getting MQTT Cached data\n");
+        if (mqtt) {
+            mqtt->dumpMessageCache(result);
+        } else {
+            result["Status"] = "ERROR";
+            result["respCode"] = 400;
+            result["Message"] = "Mqtt not Initialized";
+        }
     } else {
         LogErr(VB_HTTP, "API - Error unknown GET request: %s\n", url.c_str());
 
@@ -829,5 +861,49 @@ void PlayerResource::PostSchedule(const Json::Value data, Json::Value& result) {
         scheduler->ReloadScheduleFile();
 
         SetOKResult(result, "Schedule reload triggered");
+    }
+}
+
+void PlayerResource::periodicWork() {
+    if (piPowerFile > 0) {
+#ifdef PLATFORM_PI
+        int i = 0;
+        int32_t p[(MAX_STRING >> 2) + 7];
+        p[i++] = 0;          // size
+        p[i++] = 0x00000000; // process request
+
+        p[i++] = GET_GENCMD_RESULT; // (the tag id)
+        p[i++] = MAX_STRING;        // buffer_len
+        p[i++] = 0;                 // request_len (set to response length)
+        p[i++] = 0;                 // error repsonse
+
+        memcpy(p + i, "get_throttled", strlen("get_throttled") + 1);
+        i += MAX_STRING >> 2;
+        p[i++] = 0x00000000;  // end tag
+        p[0] = i * sizeof *p; // actual size
+
+        int ret_val = ioctl(piPowerFile, IOCTL_MBOX_PROPERTY, p);
+        std::string s = (char*)&p[6];
+        if (s.starts_with("throttled=0x")) {
+            s = s.substr(12);
+            uint32_t res = std::stol(s, nullptr, 16);
+            piPowerBad = res & 0x1;
+            if (piPowerBad) {
+                piPowerWarningCount++;
+                if (piPowerWarningCount > 5 && !piPowerWarningAdded) {
+                    WarningHolder::AddWarning("Raspberry Pi Voltage Too Low");
+                    piPowerWarningAdded = true;
+                }
+            } else {
+                piPowerWarningCount = 0;
+            }
+        }
+#endif
+    }
+}
+
+void APIServer::periodicWork() {
+    if (m_pr) {
+        m_pr->periodicWork();
     }
 }

@@ -4,6 +4,7 @@
 .buildpath
 *.gch
 *.gch.sum
+*.dtb
 build/
 SD/*.xz
 lib/librgbmatrix.so
@@ -42,6 +43,7 @@ www/fppversion.php
 www/fppdefines.php
 www/media_root.txt
 www/warnings.json
+www/warnings_full.json
 external/rasclock/modules.order
 external/rasclock/Module.symvers
 external/rasclock/rtc-pcf2127a.*
@@ -58,3 +60,5 @@ xcuserdata
 src/fppd.xcodeproj/project.xcworkspace/xcshareddata
 *-workspace
 .DS_Store
+capes/drivers/bb64/pinctrl
+

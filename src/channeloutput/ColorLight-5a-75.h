@@ -49,8 +49,9 @@ public:
 
     virtual void GetRequiredChannelRanges(const std::function<void(int, int)>& addRange) override;
 
-    virtual void OverlayTestData(unsigned char* channelData, int cycleNum, float percentOfCycle, int testType) override;
-    virtual bool SupportsTesting() const override { return  true; }
+    virtual void OverlayTestData(unsigned char* channelData, int cycleNum, float percentOfCycle, int testType, const Json::Value& config) override;
+    virtual bool SupportsTesting() const override { return true; }
+
 private:
     void SetHostMACs(void* data);
     int sendMessages(struct mmsghdr* msgs, int cnt);
@@ -59,6 +60,8 @@ private:
     int m_height;
     std::string m_layout;
     std::string m_ifName;
+    std::string ifspeed_src;
+    int ifspeed;
 
     FPPColorOrder m_colorOrder;
 
@@ -79,6 +82,7 @@ private:
     PanelMatrix* m_panelMatrix;
     uint8_t m_gammaCurve[256];
     int m_flippedLayout;
+    bool m_colorlightDisable;
 
     std::vector<struct mmsghdr> m_msgs;
     std::vector<struct iovec> m_iovecs;

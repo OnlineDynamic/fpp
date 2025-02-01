@@ -5,13 +5,12 @@ function SetTimeZone($timezone)
     if (file_exists("/.dockerenv")) {
         exec("sudo ln -s -f /usr/share/zoneinfo/$timezone /etc/localtime");
         exec("sudo bash -c \"echo $timezone > /etc/timezone\"");
-        exec("sudo dpkg-reconfigure -f noninteractive tzdata");
     } else if (file_exists('/usr/bin/timedatectl')) {
         exec("sudo timedatectl set-timezone $timezone");
     } else {
         exec("sudo bash -c \"echo $timezone > /etc/timezone\"");
-        exec("sudo dpkg-reconfigure -f noninteractive tzdata");
     }
+    exec("sudo dpkg-reconfigure -f noninteractive tzdata");
 }
 
 function SetHWClock()
@@ -45,11 +44,15 @@ function RestartNTPD()
 
 function SetNTPServer($value)
 {
+    $ntpConfigFile = '/etc/ntpsec/ntp.conf';
     if ($value != '') {
-        exec("sudo sed -i '/^server.*/d' /etc/ntp.conf ; sudo sed -i '/^pool.*/d' /etc/ntp.conf ; sudo sed -i '\$s/\$/\\nserver $value iburst/' /etc/ntp.conf");
+        // Remove existing server and pool lines, then add the new server line
+        exec("sudo sed -i '/^server.*/d' $ntpConfigFile ; sudo sed -i '/^pool.*/d' $ntpConfigFile ; sudo sed -i '\$a\\server $value iburst' $ntpConfigFile");
+        exec("sudo sed -i -e 's/minsane 3/minsane 1/' $ntpConfigFile");
     } else {
-        // Updated as we should be using our own zone falconplayer.pool.ntp.org
-        exec("sudo sed -i '/^server.*/d' /etc/ntp.conf ; sudo sed -i '/^pool.*/d' /etc/ntp.conf ; sudo sed -i '\$s/\$/\\npool falconplayer.pool.ntp.org iburst minpoll 8 maxpoll 12 prefer/' /etc/ntp.conf");
+        // Remove existing server and pool lines, then add the custom pool line
+        exec("sudo sed -i '/^server.*/d' $ntpConfigFile ; sudo sed -i '/^pool.*/d' $ntpConfigFile ; sudo sed -i '\$a\\pool falconplayer.pool.ntp.org iburst minpoll 8 maxpoll 12 prefer' $ntpConfigFile");
+        exec("sudo sed -i -e 's/minsane 1/minsane 3/' $ntpConfigFile");
     }
 
     // Note: Assume NTP is always enabled now.

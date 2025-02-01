@@ -1404,7 +1404,7 @@ function get_sequence_file_info($mediaName)
  * If the the media duration exists in the cache then it's returned, else the returned value is null
  *
  * @param $media
- * @param null $duration_seconds
+ * @param $duration_seconds
  * @return null
  */
 function media_duration_cache($media, $duration_seconds = null, $filesize = null)
@@ -1487,6 +1487,21 @@ function human_playtime($total_duration)
 }
 
 /**
+ * Returns the supplied size in bytes ina human readable form
+ * @param $bytes
+ * @return string
+ */
+function humanFileSize($bytes)
+{
+    if ($bytes > 0) {
+        $base = floor(log($bytes) / log(1024));
+        $units = array("B", "kB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB"); //units of measurement
+        return number_format(($bytes / pow(1024, floor($base))), 2) . "$units[$base]";
+    } else
+        return "0B";
+}
+
+/**
  * Returns current memory usage
  * @return float|int
  */
@@ -1534,7 +1549,7 @@ function get_server_memory_usage()
  * @param int $cache_age
  * @return mixed|string
  */
-function file_cache($cache_name, $data_to_cache, $cache_age = 90)
+function file_cache_internal($cache_name, $data_to_cache, $cache_age = 90)
 {
     $file_path = "/tmp/cache_" . $cache_name . ".cache";
     $cache_time = $cache_age; //seconds
@@ -1578,6 +1593,51 @@ function file_cache($cache_name, $data_to_cache, $cache_age = 90)
     }
     return $cache_data_return;
 }
+function file_cache($cache_name, $data_function, $cache_time = 90, $grace_time = 10)
+{
+    $file_path = "/tmp/cache_" . $cache_name . ".cache";
+    $file_path_lock = "/tmp/cache_" . $cache_name . ".cache_recalc";
+    $exists = file_exists($file_path);
+    $recache = true;
+    $inGrace = false;
+    if ($exists) {
+        $mtime = filemtime($file_path);
+        $inGrace = (time() - $mtime > $cache_time);
+        $recache = (time() - $mtime > ($cache_time + $grace_time));
+    }
+    if ($recache) {
+        $fdLock = @fopen($file_path_lock, "c");
+        $flags = LOCK_EX;
+        if ($inGrace) {
+            // if we are in the grace time, we'll ATTEMPT to recreate by
+            // grabbing the lock, but if it fails, we'll use the existing
+            // data.   Thus, if it takes a while to recreate, other requests
+            // will get the older data during the re-create process
+            $flags = LOCK_EX | LOCK_NB;
+        }
+        if (flock($fdLock, $flags)) {
+            $data = $data_function();
+            $fd = @fopen($file_path, "c+");
+            flock($fd, LOCK_EX);
+            ftruncate($fd, 0);
+            fputs($fd, $data);
+            flock($fd, LOCK_UN);
+            fclose($fd);
+            flock($fdLock, LOCK_UN);
+            fclose($fdLock);
+            unlink($file_path_lock);
+            return $data;
+        }
+        fclose($fdLock);
+    }
+    $fd = @fopen($file_path, "r");
+    flock($fd, LOCK_SH);
+    $data = trim(fgets($fd));
+    flock($fd, LOCK_UN);
+    fclose($fd);
+    return $data;
+}
+
 
 function get_kernel_version()
 {
@@ -1585,15 +1645,9 @@ function get_kernel_version()
     $cachefile_name = "kernel_version";
     $cache_age = 86400;
 
-    $cached_data = file_cache($cachefile_name, null, $cache_age);
-    if ($cached_data == null) {
-        $kernel_version = exec("uname -r");
-        //cache result
-        file_cache($cachefile_name, $kernel_version, $cache_age);
-    } else {
-        $kernel_version = $cached_data;
-    }
-
+    $kernel_version = file_cache($cachefile_name, function () {
+        return trim(exec("uname -r"));
+    }, $cache_age);
     return $kernel_version;
 }
 
@@ -1678,18 +1732,37 @@ function get_server_cpu_usage()
  */
 function get_server_uptime($uptime_value_only = false)
 {
-    $uptime = exec("uptime", $output, $return_val);
-    if ($return_val != 0) {
-        $uptime = "";
-    }
+    global $settings;
 
-    unset($output);
-    $uptime = preg_replace('/[0-9]+ users?, /', '', $uptime);
-    if ($uptime_value_only) {
-        $uptime_portion = explode(",", $uptime, 2)[0];
-        if (!empty($uptime_portion) && stripos($uptime_portion, "up") !== false) {
-            $uptime = trim(explode("up", $uptime_portion, 2)[1]);
+    if (!$uptime_value_only || $settings["Platform"] == "MacOS") {
+        $uptime = exec("uptime", $output, $return_val);
+        if ($return_val != 0) {
+            $uptime = "";
         }
+
+        unset($output);
+        $uptime = preg_replace('/[0-9]+ users?, /', '', $uptime);
+        if ($uptime_value_only) {
+            $uptime_portion = explode(",", $uptime, 2)[0];
+            if (!empty($uptime_portion) && stripos($uptime_portion, "up") !== false) {
+                $uptime = trim(explode("up", $uptime_portion, 2)[1]);
+            }
+        }
+    } else {
+        $str = @file_get_contents('/proc/uptime');
+        $num = floatval($str);
+        $secs = $num % 60;
+        $num = (int) ($num / 60);
+        $mins = $num % 60;
+        $num = (int) ($num / 60);
+        $hours = $num % 24;
+        $num = (int) ($num / 24);
+        $days = $num;
+        $uptime = "";
+        if ($days) {
+            $uptime = "" . $days . " days ";
+        }
+        $uptime .= $hours . ":" . $mins;
     }
     return $uptime;
 }
@@ -1701,23 +1774,17 @@ function get_server_uptime($uptime_value_only = false)
  */
 function get_fpp_head_version()
 {
-    $fpp_head_version = "Unknown";
     $cachefile_name = "git_fpp_head_version";
     $cache_age = 90;
 
-    $cached_data = file_cache($cachefile_name, null, $cache_age);
-    if ($cached_data == null) {
+    $fpp_head_version = file_cache($cachefile_name, function () {
         $fpp_head_version = exec("git --git-dir=" . dirname(dirname(__FILE__)) . "/.git/ describe", $output, $return_val);
         if ($return_val != 0) {
             $fpp_head_version = "Unknown";
         }
-
         unset($output);
-        //cache result
-        file_cache($cachefile_name, $fpp_head_version, $cache_age);
-    } else {
-        $fpp_head_version = $cached_data;
-    }
+        return trim($fpp_head_version);
+    }, $cache_age);
 
     return $fpp_head_version;
 }
@@ -1732,8 +1799,7 @@ function get_git_branch()
     $cachefile_name = "git_branch";
     $cache_age = 90;
 
-    $cached_data = file_cache($cachefile_name, null, $cache_age);
-    if ($cached_data == null) {
+    $git_branch = file_cache($cachefile_name, function () {
         $git_branch = exec("git --git-dir=" . dirname(dirname(__FILE__)) . "/.git/ branch --list | grep '\\*' | awk '{print \$2}'", $output, $return_val);
         if ($return_val != 0) {
             $git_branch = "Unknown";
@@ -1741,10 +1807,8 @@ function get_git_branch()
 
         unset($output);
         //cache result
-        file_cache($cachefile_name, $git_branch, $cache_age);
-    } else {
-        $git_branch = $cached_data;
-    }
+        return trim($git_branch);
+    }, $cache_age);
 
     return $git_branch;
 }
@@ -1759,33 +1823,28 @@ function get_local_git_version()
     $cachefile_name = "local_git_version";
     $cache_age = 20;
 
-    $cached_data = file_cache($cachefile_name, null, $cache_age);
-    if ($cached_data == null) {
+    $git_version = file_cache($cachefile_name, function () {
         $git_version = exec("git --git-dir=" . dirname(dirname(__FILE__)) . "/.git/ rev-parse --short=7 HEAD", $output, $return_val);
         if ($return_val != 0) {
             $git_version = "Unknown";
         }
-
         unset($output);
-        //cache result
-        file_cache($cachefile_name, $git_version, $cache_age);
-    } else {
-        $git_version = $cached_data;
-    }
+        return trim($git_version);
+    }, $cache_age);
 
     return $git_version;
 }
 
 /**
- * Returns version of the remote Git branch for the supplied branch
+ * Returns version of the remote Git branch for the current branch
  * @return string
  */
-function get_remote_git_version($git_branch)
+function get_remote_git_version()
 {
     global $settings;
 
     $git_remote_version = "Unknown";
-
+    $git_branch = getFPPBranch();
     $origin = "github.com";
     if (isset($settings['UpgradeSource'])) {
         $origin = $settings['UpgradeSource'];
@@ -1797,8 +1856,11 @@ function get_remote_git_version($git_branch)
         $git_remote_version = "Unknown";
 
         //Check the cache for git_<branch>, if null is returned no cache file exists or it's expired, so then off to github
-        $cached_data = file_cache($cachefile_name, null, $cache_age);
-        if ($cached_data == null) {
+        $git_remote_version = file_cache($cachefile_name, function () {
+            global $settings;
+
+            $git_branch = getFPPBranch();
+
             //if for some reason name resolution fails ping will take roughly 10 seconds to return (Default DNS Timeout 5 seconds x 2 retries)
             //to try work around this ping the google public DNS @ 8.8.8.8 (to skip DNS) waiting for a reply for max 1 second, if that's ok we have a route to the internet, then it's highly likely DNS will also work
             $return_val = 0;
@@ -1831,15 +1893,9 @@ function get_remote_git_version($git_branch)
                 //Google DNS Ping fail - return unknown
                 $git_remote_version = "Unknown";
             }
-
-            //cache result
-            file_cache($cachefile_name, $git_remote_version, $cache_age);
-        } else {
-            //return the cached version
-            $git_remote_version = $cached_data;
-        }
+            return $git_remote_version;
+        }, $cache_age, 30);
     }
-
     return $git_remote_version;
 }
 
@@ -2115,9 +2171,9 @@ function PrintToolTip($setting)
         (isset($settingInfos[$setting])) &&
         (isset($settingInfos[$setting]['tip']))
     ) {
-        $tip = $settingInfos[$setting]['tip'];
+        $tip = htmlentities($settingInfos[$setting]['tip']);
         echo "<span id='" . $setting . "_tip' data-bs-toggle='tooltip' data-bs-html='true' data-bs-placement='auto' data-bs-title='" . $tip . "'>";
-        echo "<img id='$setting" . "_img' src='images/redesign/help-icon.svg' class='icon-help'>";
+        echo "<img id='$setting" . "_img' src='images/redesign/help-icon.svg' class='icon-help' alt='$setting" . "help icon'>";
         echo "</span>";
     }
 }
@@ -2406,7 +2462,18 @@ function gitBaseDirectory()
     return dirname(dirname(__FILE__));
 }
 
-function GetSystemInfoJsonInternal($simple = false)
+function getSystemUUID()
+{
+    global $fppDir;
+    if (!file_exists("/tmp/fpp_uuid")) {
+        $output = array();
+        exec($fppDir . "/scripts/get_uuid", $output);
+        file_put_contents("/tmp/fpp_uuid", trim($output[0]));
+    }
+    return file_get_contents("/tmp/fpp_uuid");
+}
+
+function GetSystemInfoJsonInternal($simple = false, $network = true)
 {
     global $settings;
 
@@ -2459,9 +2526,7 @@ function GetSystemInfoJsonInternal($simple = false)
         $result['minorVersion'] = $json['minorVersion'];
         $result['typeId'] = $json['typeId'];
     }
-    $output = array();
-    exec($settings['fppDir'] . "/scripts/get_uuid", $output);
-    $result['uuid'] = $output[0];
+    $result['uuid'] = getSystemUUID();
     if (isset($settings['cape-info'])) {
         $capeInfo = $settings['cape-info'];
         $result['capeInfo']['name'] = $capeInfo['name'];
@@ -2476,7 +2541,7 @@ function GetSystemInfoJsonInternal($simple = false)
 
         $result['Kernel'] = get_kernel_version();
         $result['LocalGitVersion'] = get_local_git_version();
-        $result['RemoteGitVersion'] = get_remote_git_version(getFPPBranch());
+        $result['RemoteGitVersion'] = get_remote_git_version();
 
         $uploadDir = GetDirSetting("uploads"); // directory under media
         $result['Utilization']['Disk']["Media"]['Free'] = disk_free_space($uploadDir);
@@ -2490,49 +2555,49 @@ function GetSystemInfoJsonInternal($simple = false)
             $result['UpgradeSource'] = 'github.com';
         }
 
-        if ($settings["Platform"] != "MacOS") {
-            $output = array();
-            $IPs = array();
-            exec("ip --json -4 address show", $output);
-            //print(join("", $output));
-            $ipAddresses = json_decode(join("", $output), true);
-            foreach ($ipAddresses as $key => $value) {
-                if ($value["ifname"] != "lo" && strpos($value["ifname"], 'usb') === false) {
-                    foreach ($value["addr_info"] as $key2 => $value2) {
-                        $IPs[] = $value2["local"];
+        if ($network) {
+            if ($settings["Platform"] != "MacOS") {
+                $output = array();
+                $IPs = array();
+                exec("/usr/sbin/ip --json -4 address show", $output);
+                $ipAddresses = json_decode(join("", $output), true);
+                foreach ($ipAddresses as $key => $value) {
+                    if ($value["ifname"] != "lo" && strpos($value["ifname"], 'usb') === false) {
+                        foreach ($value["addr_info"] as $key2 => $value2) {
+                            $IPs[] = $value2["local"];
+                        }
                     }
                 }
-            }
 
-            $result['IPs'] = $IPs;
-        } else {
-            $IPs = array();
-            $output = exec("ipconfig getiflist");
-            $parts = preg_split("/\s+/", trim($output));
-            foreach ($parts as $cnt => $int) {
-                exec("ipconfig getsummary " . $int, $config);
-                $lastKey = "";
-                foreach ($config as $line) {
-                    // do stuff with $line
-                    $line = trim($line);
-                    $array = explode(':', $line);
-                    $key = trim($array[0]);
-                    if (count($array) > 1) {
-                        $value = trim($array[1]);
-                    } else {
-                        $value = "";
+                $result['IPs'] = $IPs;
+            } else {
+                $IPs = array();
+                $output = exec("ipconfig getiflist");
+                $parts = preg_split("/\s+/", trim($output));
+                foreach ($parts as $cnt => $int) {
+                    exec("ipconfig getsummary " . $int, $config);
+                    $lastKey = "";
+                    foreach ($config as $line) {
+                        // do stuff with $line
+                        $line = trim($line);
+                        $array = explode(':', $line);
+                        $key = trim($array[0]);
+                        if (count($array) > 1) {
+                            $value = trim($array[1]);
+                        } else {
+                            $value = "";
+                        }
+                        if ($key == "0" && $lastKey == "Addresses") {
+                            $IPs[] = $value;
+                        } else {
+                            $lastKey = $key;
+                        }
                     }
-                    if ($key == "0" && $lastKey == "Addresses") {
-                        $IPs[] = $value;
-                    } else {
-                        $lastKey = $key;
-                    }
+                    unset($config);
                 }
-                unset($config);
+                $result['IPs'] = $IPs;
             }
-            $result['IPs'] = $IPs;
         }
-
     }
     return $result;
 }

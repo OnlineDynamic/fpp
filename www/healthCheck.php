@@ -3,8 +3,9 @@
 
 <head>
     <?php
-    require_once ('config.php');
-    require_once ('common.php');
+    include 'common/htmlMeta.inc';
+    require_once('config.php');
+    require_once('common.php');
     include 'common/menuHead.inc';
     ?>
     <script>
@@ -49,7 +50,7 @@
                         ?>
                         <div id='upgradeFlag' class="alert alert-danger" role="alert">
                             SD card has unused space. Go to
-                            <a href="settings.php?tab=Storage">Storage Settings</a> to expand the
+                            <a href="settings.php#settings-storage">Storage Settings</a> to expand the
                             file system or create a new storage partition.
                         </div>
 

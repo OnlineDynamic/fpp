@@ -255,7 +255,7 @@ int BBShiftStringOutput::Init(Json::Value config) {
                 int pixels = 50;
                 int chanCount = 0;
                 for (auto& a : m_strings[x]->m_virtualStrings) {
-                    if (pixels <= a.pixelCount) {
+                    if (pixels < a.pixelCount) {
                         a.pixelCount = pixels;
                     }
                     pixels -= a.pixelCount;
@@ -467,7 +467,7 @@ void BBShiftStringOutput::GetRequiredChannelRanges(const std::function<void(int,
         }
     }
 }
-void BBShiftStringOutput::OverlayTestData(unsigned char* channelData, int cycleNum, float percentOfCycle, int testType) {
+void BBShiftStringOutput::OverlayTestData(unsigned char* channelData, int cycleNum, float percentOfCycle, int testType, const Json::Value& config) {
     m_testCycle = cycleNum;
     m_testType = testType;
     m_testPercent = percentOfCycle;

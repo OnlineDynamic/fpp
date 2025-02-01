@@ -136,8 +136,10 @@ uint64_t PlaylistEntrySequence::GetLengthInMS() {
         std::string n = FPP_DIR_SEQUENCE("/" + m_sequenceName);
         if (FileExists(n)) {
             FSEQFile* fs = FSEQFile::openFSEQFile(n);
-            m_duration = fs->getTotalTimeMS();
-            delete fs;
+            if (fs) {
+                m_duration = fs->getTotalTimeMS();
+                delete fs;
+            }
         }
     }
     return m_duration;
@@ -168,9 +170,11 @@ Json::Value PlaylistEntrySequence::GetConfig(void) {
     if (sequence->m_seqFilename == m_sequenceName) {
         if (IsPaused()) {
             int pos = m_pausedFrame * m_sequenceFrameTime;
+            result["millisecondsElapsed"] = pos;
             result["secondsElapsed"] = pos / 1000;
             result["secondsRemaining"] = (m_duration - pos) / 1000;
         } else {
+            result["millisecondsElapsed"] = sequence->m_seqMSElapsed;
             result["secondsElapsed"] = sequence->m_seqMSElapsed / 1000;
             result["secondsRemaining"] = sequence->m_seqMSRemaining / 1000;
         }
@@ -182,6 +186,7 @@ Json::Value PlaylistEntrySequence::GetMqttStatus(void) {
     result["sequenceName"] = m_sequenceName;
     if (IsPaused()) {
         int pos = m_pausedFrame * m_sequenceFrameTime;
+        result["millisecondsElapsed"] = pos;
         result["secondsElapsed"] = pos / 1000;
         result["secondsRemaining"] = (m_duration - pos) / 1000;
         result["secondsTotal"] = m_duration / 1000;
@@ -189,12 +194,17 @@ Json::Value PlaylistEntrySequence::GetMqttStatus(void) {
         result["secondsElapsed"] = sequence->m_seqMSElapsed / 1000;
         result["secondsRemaining"] = sequence->m_seqMSRemaining / 1000;
         result["secondsTotal"] = sequence->m_seqMSDuration / 1000;
+        result["millisecondsElapsed"] = sequence->m_seqMSElapsed;
     }
     return result;
 }
 
 void PlaylistEntrySequence::Pause() {
-    m_pausedFrame = sequence->m_seqMSElapsed / sequence->GetSeqStepTime();
+    if (sequence->GetSeqStepTime() == 0) {
+        m_pausedFrame = 0;
+    } else {
+        m_pausedFrame = sequence->m_seqMSElapsed / sequence->GetSeqStepTime();
+    }
     sequence->CloseSequenceFile();
     sequence->SendBlankingData();
     m_prepared = false;

@@ -276,7 +276,7 @@ function LEDPanelsLayoutChanged() {
             settings['LEDPanelsLayout'] = value;
             LEDPanelLayoutChanged();
             SetRestartFlag(2);
-
+            common_ViewPortChange();
         }).fail(function() {
             DialogError('Panel Layout', 'Failed to save Panel Layout');
         });
@@ -613,6 +613,7 @@ if ($settings['Platform'] == "Raspberry Pi") {
 <?
 function PopulateEthernetInterfaces()
 {
+    global $SUDO;
     $interfaces = network_list_interfaces_array();
     foreach ($interfaces as $iface) {
         $iface = preg_replace("/:$/", "", $iface);
@@ -621,14 +622,17 @@ function PopulateEthernetInterfaces()
         if ($iface === "eth0") {
             echo " selected";
         }
-
-        echo ">" . $iface . "</option>";
+        
+        $ifaceSpeed = (int)exec("$SUDO ethtool $iface | grep -i 'baset' | grep -Eo '[0-9]{1,4}' | sort | tail -1");
+        echo ">" . $iface . " (" . $ifaceSpeed ."Mbps)</option>";
     }
 }
 ?>
 
 function LEDPanelsConnectionChanged()
 {
+    WarnIfSlowNIC();
+
 	if (($('#LEDPanelsConnection').val() === "ColorLight5a75") || ($('#LEDPanelsConnection').val() === "X11PanelMatrix")) {
 		$('#LEDPanelsGPIOSlowdownLabel').hide();
 		$('#LEDPanelsGPIOSlowdown').hide();
@@ -1245,8 +1249,16 @@ function AutoLayoutPanels() {
 function TogglePanelTestPattern() {
     var val = $("#PanelTestPatternButton").val();
     if (val == "Test Pattern") {
+        var outputType = $('#LEDPanelsConnection').val();
+        if (outputType == "ColorLight5a75") {
+            outputType = "ColorLight Panels";
+        } else if (outputType == "RGBMatrix") {
+            outputType = "Pi Panels";
+        } else if (outputType == "BBBMatrix" || outputType == "LEDscapeMatrix") {
+            outputType = "BBB Panels";
+        }
         $("#PanelTestPatternButton").val("Stop Pattern");
-        var data = '{"command":"Test Start","multisyncCommand":false,"multisyncHosts":"","args":["1000","Output Specific","--ALL--","1"]}';
+        var data = '{"command":"Test Start","multisyncCommand":false,"multisyncHosts":"","args":["1000","Output Specific","' + outputType + '","1"]}';
         $.post("api/command", data
 	    ).done(function(data) {
 	    }).fail(function() {
@@ -1258,6 +1270,16 @@ function TogglePanelTestPattern() {
 	    ).done(function(data) {
 	    }).fail(function() {
 	    });
+    }
+}
+
+function WarnIfSlowNIC() {
+    var NicSpeed = parseInt($('#LEDPanelsInterface').find(":selected").text().split('(')[1].split('M')[0]);
+    if (NicSpeed < 1000 && $('#LEDPanelsConnection').find(":selected").text()=="ColorLight" && $('#LEDPanelsEnabled').is(":checked")==true) {
+        $('#divLEDPanelWarnings').html('<div class="alert alert-danger">Selected interface does not support 1000+ Mbps, which is the Colorlight minimum</div>');
+    } else
+    {
+        $('#divLEDPanelWarnings').html("");
     }
 }
 
@@ -1277,18 +1299,15 @@ $(document).ready(function(){
 
 <?
 if ((isset($settings['cape-info'])) &&
-    ((in_array('all', $settings['cape-info']["provides"])) ||
-        (in_array('panels', $settings['cape-info']["provides"])))) {
+    ((in_array('panels', $currentCapeInfo["provides"])))) {
     ?>
     if (currentCapeName != "" && currentCapeName != "Unknown") {
         $('.capeNamePanels').html(currentCapeName);
-        $('.capeTypeLabel').html("Cape Config");
     }
-
 <?
 }
 ?>
-
+WarnIfSlowNIC();
 });
 
 </script>
@@ -1303,12 +1322,15 @@ if ((isset($settings['cape-info'])) &&
                 </div>
             </div>
         </div>
+        <div id="divLEDPanelWarnings">
+
+        </div>
         <div class="backdrop tableOptionsForm">
             <div class="row">
                 <div class="col-md-auto">
                     <div class="backdrop-dark form-inline enableCheckboxWrapper">
                         <div><b>Enable <span class='capeNamePanels'>Led Panels</span>:&nbsp;</b></div>
-                        <div><input id='LEDPanelsEnabled' type='checkbox'></div>
+                        <div><input id='LEDPanelsEnabled' type='checkbox' onChange="WarnIfSlowNIC();"></div>
                     </div>
                 </div>
                 <div class="col-md-auto form-inline">
@@ -1338,7 +1360,7 @@ if ((file_exists('/usr/include/X11/Xlib.h')) && ($settings['Platform'] == "Linux
                 </div>
                 <div class="col-md-auto form-inline" id="LEDPanelsConnectionInterface">
                     <b>Interface:</b>
-                    <select id='LEDPanelsInterface' type='hidden'>
+                    <select id='LEDPanelsInterface' type='hidden' onChange='WarnIfSlowNIC();'>
                         <?PopulateEthernetInterfaces();?>
                     </select>
                 </div>

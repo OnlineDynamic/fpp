@@ -14,11 +14,10 @@
 
 #include <fcntl.h>
 
-#include "common_mini.h"
 #include "PiFaceUtils.h"
 #include "PiGPIOUtils.h"
 #include "bcm2835.h"
-
+#include "common_mini.h"
 
 static bool isPi5() {
     static bool pi5 = startsWith(GetFileContents("/proc/device-tree/model"), "Raspberry Pi 5");
@@ -82,10 +81,14 @@ void PiGPIOPinCapabilities::setPWMValue(int valueNS) const {
     }
 }
 
-
-class Pi5GPIODCapabilities : public GPIODCapabilities   {
+class Pi5GPIODCapabilities : public GPIODCapabilities {
 public:
-    Pi5GPIODCapabilities(const std::string& n, uint32_t kg) : GPIODCapabilities(n, kg) { gpioIdx = 4; gpio = kg; }
+    Pi5GPIODCapabilities(const std::string& n, uint32_t kg) :
+        GPIODCapabilities(n, kg) {
+        gpioIdx = getPinctrlRpiChip();
+        gpioName = pinctrlRpiChipName;
+        gpio = kg;
+    }
 
     virtual ~Pi5GPIODCapabilities() {
         if (dutyFile != nullptr) {
@@ -102,7 +105,7 @@ public:
                           bool directionOut = true) const override {
         // see https://datasheets.raspberrypi.com/rp1/rp1-peripherals.pdf
         if (mode == "pwm" && pwm != -1) {
-            //alt3 is pwm
+            // alt3 is pwm
             char buf[256];
             snprintf(buf, 256, "/usr/bin/pinctrl set %d a3", gpio);
             system(buf);
@@ -110,7 +113,7 @@ public:
         }
 
         if (mode == "dpi") {
-            //alt1 is dpi
+            // alt1 is dpi
             char buf[256];
             snprintf(buf, 256, "/usr/bin/pinctrl set %d a1", gpio);
             system(buf);
@@ -122,7 +125,7 @@ public:
         }
         return GPIODCapabilities::configPin(mode, directionOut);
     }
-    
+
     virtual bool supportPWM() const override { return pwm != -1; }
     virtual bool setupPWM(int maxValue = 25500) const override {
         if (pwm != -1) {
@@ -156,9 +159,35 @@ public:
         }
     }
 
-    mutable FILE *dutyFile = nullptr;
+    static int getPinctrlRpiChip() {
+        if (pinctrlRpiChip == -1) {
+            pinctrlRpiChip = 0;
+            for (auto& a : gpiod::make_chip_iter()) {
+                std::string label = a.label();
+                if (label == "pinctrl-rp1") {
+                    pinctrlRpiChipName = a.name();
+                    return pinctrlRpiChip;
+                }
+                pinctrlRpiChip++;
+            }
+            // didn't find it by name, try finding the chip with 54 lines
+            pinctrlRpiChip = 0;
+            for (auto& a : gpiod::make_chip_iter()) {
+                if (a.num_lines() == 54) {
+                    pinctrlRpiChipName = a.name();
+                    return pinctrlRpiChip;
+                }
+                pinctrlRpiChip++;
+            }
+        }
+        return pinctrlRpiChip;
+    }
+    mutable FILE* dutyFile = nullptr;
+    static int pinctrlRpiChip;
+    static std::string pinctrlRpiChipName;
 };
-
+int Pi5GPIODCapabilities::pinctrlRpiChip = -1;
+std::string Pi5GPIODCapabilities::pinctrlRpiChipName;
 static std::vector<PiGPIOPinCapabilities> PI_PINS;
 static std::vector<Pi5GPIODCapabilities> PI5_PINS;
 
@@ -200,7 +229,7 @@ void PiGPIOPinProvider::Init() {
         PI_PINS.push_back(PiGPIOPinCapabilities("P1-10", 15));
         PI_PINS.push_back(PiGPIOPinCapabilities("P1-11", 17));
         PI_PINS.push_back(PiGPIOPinCapabilities("P1-12", 18).setPwm(0, 0));
-        PI_PINS.push_back(PiGPIOPinCapabilities("P1-13", 27).setPwm(1, 0));
+        PI_PINS.push_back(PiGPIOPinCapabilities("P1-13", 27));
         PI_PINS.push_back(PiGPIOPinCapabilities("P1-15", 22));
         PI_PINS.push_back(PiGPIOPinCapabilities("P1-16", 23));
         PI_PINS.push_back(PiGPIOPinCapabilities("P1-18", 24));
@@ -215,7 +244,7 @@ void PiGPIOPinProvider::Init() {
         PI_PINS.push_back(PiGPIOPinCapabilities("P1-29", 5));
         PI_PINS.push_back(PiGPIOPinCapabilities("P1-31", 6));
         PI_PINS.push_back(PiGPIOPinCapabilities("P1-32", 12).setPwm(0, 0));
-        PI_PINS.push_back(PiGPIOPinCapabilities("P1-33", 13));
+        PI_PINS.push_back(PiGPIOPinCapabilities("P1-33", 13).setPwm(1, 0));
         PI_PINS.push_back(PiGPIOPinCapabilities("P1-35", 19).setPwm(1, 0));
         PI_PINS.push_back(PiGPIOPinCapabilities("P1-36", 16));
         PI_PINS.push_back(PiGPIOPinCapabilities("P1-37", 26));

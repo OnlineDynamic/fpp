@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <?php
+include 'common/htmlMeta.inc';
 require_once 'common.php';
 require_once 'config.php';
 
@@ -69,7 +70,7 @@ $git_version = get_local_git_version();
 $git_branch = get_git_branch();
 
 //Remote Git branch version
-$git_remote_version = get_remote_git_version($git_branch);
+$git_remote_version = get_remote_git_version();
 
 //System uptime
 $uptime = get_server_uptime();
@@ -107,20 +108,18 @@ $freeSpace = disk_free_space($uploadDirectory);
     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
     <script language="Javascript">
         var osAssetMap = {};
-        var originalFPPOS;
 
-//Page Load Logic
-    function pageSpecific_PageLoad_DOM_Setup() {
-        UpdateVersionInfo();
-        originalFPPOS = $('#OSSelect').html();
-        AppendGithubOS();
-        GetItemCount('api/configfile/commandPresets.json', 'commandPresetCount', 'commands');
-        GetItemCount('api/configfile/schedule.json', 'scheduleCount');
-	}
+        //Page Load Logic
+        function pageSpecific_PageLoad_DOM_Setup() {
+            UpdateVersionInfo();
+            PopulateOSSelect();
+            GetItemCount('api/configfile/commandPresets.json', 'commandPresetCount', 'commands');
+            GetItemCount('api/configfile/schedule.json', 'scheduleCount');
+        }
 
-	function pageSpecific_PageLoad_PostDOMLoad_ActionsSetup() {
-        OnSystemStatusChange(updateSensorStatus);
-        $('.default-value').each(function () {
+        function pageSpecific_PageLoad_PostDOMLoad_ActionsSetup() {
+            OnSystemStatusChange(updateSensorStatus);
+            $('.default-value').each(function () {
                 var default_value = this.value;
                 $(this).on("focus", function () {
                     if (this.value == default_value) {
@@ -135,7 +134,7 @@ $freeSpace = disk_free_space($uploadDirectory);
                     }
                 });
             });
-	}
+        }
 
         function showHideOsSelect() {
             if ($('#OSSelect option').length > 1) {
@@ -146,41 +145,81 @@ $freeSpace = disk_free_space($uploadDirectory);
         }
 
 
-        function AppendGithubOS() {
-            showHideOsSelect(); 
+        function PopulateOSSelect() {
+            showHideOsSelect();
             <?
-        // we want at least a GB in order to be able to download the fppos and have space to then apply it
-        if ($freeSpace > 1000000000) {
-            ?>
-            
-            var allPlatforms = '';
+            //get listing of files already downloaded in case no git connection available
+            $osUpdateFiles = getFileList($uploadDirectory, "fppos");
+
+            // we want at least a GB in order to be able to download the fppos and have space to then apply it
+            if ($freeSpace > 1000000000) {
+                ?>
+
+                var allPlatforms = '';
                 if ($('#allPlatforms').is(':checked')) {
                     allPlatforms = 'api/git/releases/os/all';
                 } else {
                     allPlatforms = 'api/git/releases/os';
                 }
 
+                //cleanup previous load values
+                $('#OSSelect option').filter(function () { return parseInt(this.value) > 0; }).remove();
+
                 $.get(allPlatforms, function (data) {
                     var devMode = (settings['uiLevel'] && (parseInt(settings['uiLevel']) == 3));
                     if ("files" in data) {
                         for (const file of data["files"]) {
-                            if (!file["downloaded"] && (devMode || !file['filename'].match(/-v?(4\.|5\.[0-4])/))) {
-                                osAssetMap[file["asset_id"]] = {
-                                    name: file["filename"],
-                                    url: file["url"]
-                                };
+                            osAssetMap[file["asset_id"]] = {
+                                name: file["filename"],
+                                url: file["url"]
+                            };
 
+                            if (!file["downloaded"] && (devMode || !file['filename'].match(/-v?(4\.|5\.[0-4])/))) {
                                 $('#OSSelect').append($('<option>', {
                                     value: file["asset_id"],
                                     text: file["filename"] + " (download)"
                                 }));
                             }
+                            if (file["downloaded"]) {
+                                $('#OSSelect').append($('<option>', {
+                                    value: file["asset_id"],
+                                    text: file["filename"]
+                                }));
+                            }
                         }
                     }
+
+                    //handle what age OS to display
+                    if ($('#LegacyOS').is(':checked')) {
+                        //leave all avail options in place
+                    } else {
+                        //remove legacy files (n-1) - git assetid needs manually updating over time
+                        $('#OSSelect option').filter(function () { return parseInt(this.value) < 103024154; }).remove();
+                    }
+
+                    //only show alpha and beta images in Advanced ui
+                    if (settings['uiLevel'] && (parseInt(settings['uiLevel']) >= 1)) {
+                        //leave all avail options in place
+                    } else {
+                        $('#OSSelect option').filter(function () { return (/beta/i.test(this.text)); }).remove(); //remove beta'sbin
+                        $('#OSSelect option').filter(function () { return (/alpha/i.test(this.text)); }).remove(); //remove beta'sbin
+                    }
+
+                    //insert files already downloaded if we haven't got them from the git api call
+                    var osUpdateFiles = <?php echo json_encode($osUpdateFiles); ?>;
+                    var select = $('#OSSelect');
+                    osUpdateFiles.forEach(element => {
+                        if (select.has('option:contains("' + element + '")').length == 0) {
+                            $('#OSSelect').append($('<option>', {
+                                value: element,
+                                text: element
+                            }));
+                        }
+                    });
                     showHideOsSelect();
                 }); <?
-        } ?>
-    }
+            } ?>
+        }
 
         function CloseFPPUpgradeDialog() {
             CloseModalDialog("upgradePopupStatus");
@@ -245,17 +284,25 @@ $freeSpace = disk_free_space($uploadDirectory);
                 keepOptFPP = '&keepOptFPP=1';
             }
 
+            //set os name (url for download)
             if (os in osAssetMap) {
                 osName = osAssetMap[os].name;
                 os = osAssetMap[os].url;
             }
+
+            //override file location from git to local if already downloaded
+            if ($('#OSSelect option:selected').text().toLowerCase().indexOf('(download)') === -1) {
+                os = $('#OSSelect option:selected').text();
+                osName = $('#OSSelect option:selected').text();
+            }
+
             if (confirm('Upgrade the OS using ' + osName +
                 '?\nThis can take a long time. It is also strongly recommended to run FPP backup first.')) {
 
                 var options = {
                     id: "upgradeOSPopupStatus",
                     title: "FPP OS Upgrade",
-                    body: "<textarea style='width: 99%; height: 500px;' disabled id='streamedUpgradeOSText'></textarea>",
+                    body: "<textarea style='max-width:100%; max-height:100%; width: 100%; height:100%;' disabled id='streamedUpgradeOSText'></textarea>",
                     class: "modal-dialog-scrollable",
                     noClose: true,
                     keyboard: false,
@@ -298,7 +345,7 @@ $freeSpace = disk_free_space($uploadDirectory);
                 var options = {
                     id: "downloadPopupStatus",
                     title: "FPP Download OS Image",
-                    body: "<textarea style='width: 99%; height: 500px;' disabled id='streamedUDownloadText'></textarea>",
+                    body: "<textarea style='max-width:100%; max-height:100%; width: 100%; height:100%;' disabled id='streamedUDownloadText'></textarea>",
                     class: "modal-dialog-scrollable",
                     noClose: true,
                     keyboard: false,
@@ -326,13 +373,13 @@ $freeSpace = disk_free_space($uploadDirectory);
         }
 
         function OSSelectChanged() {
-            var os = $('#OSSelect').val(); 
+            var os = $('#OSSelect').val();
             <?
-        // we want at least a 200MB in order to be able to apply the fppos
-        if ($freeSpace < 200000000) {
-            echo "os = '';\n";
+            // we want at least a 200MB in order to be able to apply the fppos
+            if ($freeSpace < 200000000) {
+                echo "os = '';\n";
             } ?>
-        if (os == '') {
+            if (os == '') {
                 $('#OSUpgrade').attr('disabled', 'disabled');
                 $('#OSDownload').attr('disabled', 'disabled');
             } else {
@@ -352,7 +399,7 @@ $freeSpace = disk_free_space($uploadDirectory);
             var options = {
                 id: "upgradePopupStatus",
                 title: "FPP Upgrade",
-                body: "<textarea style='width: 99%; height: 500px;' disabled id='streamedUpgradeText'></textarea>",
+                body: "<textarea style='max-width:100%; max-height:100%; width: 100%; height:100%;' disabled id='streamedUpgradeText'></textarea>",
                 class: "modal-dialog-scrollable",
                 noClose: true,
                 keyboard: false,
@@ -374,11 +421,7 @@ $freeSpace = disk_free_space($uploadDirectory);
             StreamURL('manualUpdate.php?wrapped=1', 'streamedUpgradeText', 'FPPUpgradeDone');
         }
 
-        function UpdatePlatforms() {
-            var allPlatforms = '';
-            $('#OSSelect').html(originalFPPOS);
-            AppendGithubOS();
-        }
+
     </script>
     <title>
         <? echo $pageTitle; ?>
@@ -591,25 +634,29 @@ $freeSpace = disk_free_space($uploadDirectory);
                                         </tr>
                                         <?
                                     }
-
-                                    $osUpdateFiles = getFileList($uploadDirectory, "fppos");
-                                    echo "<tr id='osSelectRow'><td style='vertical-align: top;'>Upgrade OS:</td><td><select class='OSSelect' id='OSSelect' onChange='OSSelectChanged();'>\n";
-                                    echo "<option value=''>-- Choose an OS Version --</option>\n";
-                                    foreach ($osUpdateFiles as $key => $value) {
-                                        echo "<option value='" . $value . "'>" . $value . "</option>\n";
-                                    }
-                                    echo "</select>";
-
-                                    if ($settings['uiLevel'] > 0) {
-                                        echo "<br><span><i class='fas fa-fw fa-graduation-cap ui-level-1'></i> Show All Platforms <input type='checkbox' id='allPlatforms' onClick='UpdatePlatforms();'><img id='allPlatforms_img' title='Show both BBB & Pi downloads' src='images/redesign/help-icon.svg' class='icon-help'></span>";
-                                    }
-
-                                    if ($settings['uiLevel'] == 3) {
-                                        echo "<br><span><i class='fas fa-fw fa-code ui-level-3'></i> Preserve /opt/fpp <input type='checkbox' id='keepOptFPP'><img id='keepOptFPP_img' title='WARNING: This will upgrade the OS but will not upgrade the FPP version.  This may cause issues if the versions are not compatible.' src='images/redesign/help-icon.svg' class='icon-help'></span>";
-                                    }
-
-                                    echo "<br><input type='button' disabled value='Upgrade OS' onClick='UpgradeOS();' class='buttons' id='OSUpgrade'>&nbsp;<input type='button' disabled value='Download Only' onClick='DownloadOS();' class='buttons' id='OSDownload'></td></tr>";
                                     ?>
+
+                                    <tr id='osSelectRow'>
+                                        <td style='vertical-align: top;'>Upgrade OS:</td>
+                                        <td><select class='OSSelect' id='OSSelect' onChange='OSSelectChanged();'>
+                                                <option value=''>-- Choose an OS Version --</option>
+                                            </select>
+
+                                            <?
+                                            if ($settings['uiLevel'] > 0) {
+                                                echo "<br><span><i class='fas fa-fw fa-graduation-cap ui-level-1'></i> Show All Platforms <input type='checkbox' id='allPlatforms' onClick='PopulateOSSelect();'><img id='allPlatforms_img' title='Show both BBB & Pi downloads' src='images/redesign/help-icon.svg' class='icon-help'></span>";
+                                            }
+
+                                            if ($settings['uiLevel'] > 0) {
+                                                echo "<br><span><i class='fas fa-fw fa-timeline ui-level-1'></i> Show Legacy OS's <input type='checkbox' id='LegacyOS' onClick='PopulateOSSelect();'><img id='allOSs_img' title='Included Historic OS releases in listing' src='images/redesign/help-icon.svg' class='icon-help'></span>";
+                                            }
+
+                                            if ($settings['uiLevel'] == 3) {
+                                                echo "<br><span><i class='fas fa-fw fa-code ui-level-3'></i> Preserve /opt/fpp <input type='checkbox' id='keepOptFPP'><img id='keepOptFPP_img' title='WARNING: This will upgrade the OS but will not upgrade the FPP version.  This may cause issues if the versions are not compatible.' src='images/redesign/help-icon.svg' class='icon-help'></span>";
+                                            }
+
+                                            echo "<br><input type='button' disabled value='Upgrade OS' onClick='UpgradeOS();' class='buttons' id='OSUpgrade'>&nbsp;<input type='button' disabled value='Download Only' onClick='DownloadOS();' class='buttons' id='OSDownload'></td></tr>";
+                                            ?>
                                     <tr>
                                         <td>&nbsp;</td>
                                         <td>&nbsp;</td>
@@ -730,7 +777,7 @@ $freeSpace = disk_free_space($uploadDirectory);
                                                 }
                                             }
                                         }
-                                        closedir($handle);                                        
+                                        closedir($handle);
                                     }
                                     ?>
                                     <tr>
@@ -815,7 +862,7 @@ $freeSpace = disk_free_space($uploadDirectory);
                                                         <? printf("%2.0f%%", $percentageUsed); ?>
                                                     </div>
                                                 </div>
-                                                                                      </td>
+                                            </td>
                                         </tr>
                                         <tr>
                                             <td>Media (
@@ -863,7 +910,7 @@ $freeSpace = disk_free_space($uploadDirectory);
                                 </table>
                             </div>
                             <div class="clear"></div>
-                            </fieldset>
+
                         </div>
                         <?
                         $eepromFile = "/home/fpp/media/tmp/eeprom.bin";
@@ -875,12 +922,6 @@ $freeSpace = disk_free_space($uploadDirectory);
                         }
                         ?>
 
-                        <div id='logViewer' title='Log Viewer' style="display: none">
-                            <pre>
-            <div id='logText'>
-            </div>
-          </pre>
-                        </div>
                     </div>
                 </div>
             </div>

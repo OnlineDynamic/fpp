@@ -247,11 +247,11 @@ int MultiSync::Init(void) {
             RemoveInterface(name);
         } else if (i == NetworkMonitor::NetEventType::NEW_ADDR && up) {
             bool changed = FillInInterfaces();
+            setupMulticastReceive(true);
             if (changed) {
                 FillLocalSystemInfo();
                 Ping(0, false);
             }
-            setupMulticastReceive();
         }
     };
     NetworkMonitor::INSTANCE.registerCallback(f);
@@ -368,6 +368,9 @@ MultiSyncSystemType MultiSync::ModelStringToType(std::string model) {
         }
         return kSysTypeFPPBeagleBoneGreen;
     }
+    if (contains(model, "PocketBeagle2") || contains(model, "BeaglePlay")) {
+        return kSysTypeFPPPocketBeagle2;
+    }
     if (contains(model, "PocketBeagle")) {
         return kSysTypeFPPPocketBeagle;
     }
@@ -414,14 +417,14 @@ bool MultiSync::FillLocalSystemInfo(void) {
     }
 
     if (multiSyncInterface == "" && dockerAddress == "") {
-        //get all the addresses
+        // get all the addresses
         struct ifaddrs *interfaces, *tmp;
         getifaddrs(&interfaces);
         tmp = interfaces;
         while (tmp) {
             if (tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_INET) {
                 if (strncmp("usb", tmp->ifa_name, 3) != 0) {
-                    //skip the usb* interfaces as we won't support multisync on those
+                    // skip the usb* interfaces as we won't support multisync on those
                     memset(addressBuf, 0, sizeof(addressBuf));
 
                     struct sockaddr_in* sa = (struct sockaddr_in*)(tmp->ifa_addr);
@@ -431,7 +434,7 @@ bool MultiSync::FillLocalSystemInfo(void) {
                     }
                 }
             } else if (tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_INET6) {
-                //FIXME for ipv6 multisync
+                // FIXME for ipv6 multisync
             }
             tmp = tmp->ifa_next;
         }
@@ -540,7 +543,7 @@ std::string MultiSync::GetHardwareModel(void) {
  */
 std::string MultiSync::GetTypeString(MultiSyncSystemType type, bool local) {
     if (local && type == kSysTypeFPP) {
-        //unknown hardware, but we can figure out the OS version
+        // unknown hardware, but we can figure out the OS version
         if (FileExists("/etc/os-release")) {
             std::string file = GetFileContents("/etc/os-release");
             std::vector<std::string> lines = split(file, '\n');
@@ -646,6 +649,8 @@ std::string MultiSync::GetTypeString(MultiSyncSystemType type, bool local) {
         return "BeagleBone Green Wireless";
     case kSysTypeFPPPocketBeagle:
         return "PocketBeagle";
+    case kSysTypeFPPPocketBeagle2:
+        return "PocketBeagle2";
     case kSysTypeFPPSanCloudBeagleBoneEnhanced:
         return "SanCloud BeagleBone Enhanced";
 
@@ -688,8 +693,8 @@ static std::string createRanges(std::vector<std::pair<uint32_t, uint32_t>> range
         first = false;
     }
     while (range.size() > limit) {
-        //range won't fit within the space in the Ping packet, we need to shrink the range
-        // we'll find the smallest gap and combine into a larger range
+        // range won't fit within the space in the Ping packet, we need to shrink the range
+        //  we'll find the smallest gap and combine into a larger range
         int minGap = 9999999;
         int minIdx = -1;
         int last = ranges[0].first + ranges[1].second - 1;
@@ -778,17 +783,19 @@ void MultiSync::Discover() {
 void MultiSync::PerformHTTPDiscovery() {
     std::string subnetsStr = getSetting("MultiSyncHTTPSubnets");
 
-    Json::Value outputs = LoadJsonFromFile(FPP_DIR_CONFIG("/co-universes.json"));
-    if (outputs.isMember("channelOutputs")) {
-        for (int co = 0; co < outputs["channelOutputs"].size(); co++) {
-            if (outputs["channelOutputs"][co].isMember("universes")) {
-                for (int i = 0; i < outputs["channelOutputs"][co]["universes"].size(); i++) {
-                    if (outputs["channelOutputs"][co]["universes"][i].isMember("address")) {
-                        std::string ip = outputs["channelOutputs"][co]["universes"][i]["address"].asString();
-                        if (subnetsStr != "") {
-                            subnetsStr += ",";
+    if (FileExists(FPP_DIR_CONFIG("/co-universes.json"))) {
+        Json::Value outputs = LoadJsonFromFile(FPP_DIR_CONFIG("/co-universes.json"));
+        if (outputs.isMember("channelOutputs")) {
+            for (int co = 0; co < outputs["channelOutputs"].size(); co++) {
+                if (outputs["channelOutputs"][co].isMember("universes")) {
+                    for (int i = 0; i < outputs["channelOutputs"][co]["universes"].size(); i++) {
+                        if (outputs["channelOutputs"][co]["universes"][i].isMember("address")) {
+                            std::string ip = outputs["channelOutputs"][co]["universes"][i]["address"].asString();
+                            if (subnetsStr != "") {
+                                subnetsStr += ",";
+                            }
+                            subnetsStr += ip;
                         }
-                        subnetsStr += ip;
                     }
                 }
             }
@@ -1008,8 +1015,8 @@ void MultiSync::DiscoverViaHTTP(const std::set<std::string>& ipSet, const std::s
 
         curl_multi_add_handle(multi_handle, handles[ips]);
         if ((ips % 10) == 0) {
-            //periodically need to do a perform so DNS can work, otherwise
-            //it seems to max out at aroung 70 or 80
+            // periodically need to do a perform so DNS can work, otherwise
+            // it seems to max out at aroung 70 or 80
             curl_multi_perform(multi_handle, &still_running);
         }
         ips++;
@@ -1087,8 +1094,9 @@ void MultiSync::Ping(int discover, bool broadcast) {
         LogErr(VB_SYNC, "ERROR: Tried to send ping packet but control socket is not open.\n");
         return;
     }
+    setupMulticastReceive(discover ? true : false);
 
-    //update the range for local systems so it's accurate
+    // update the range for local systems so it's accurate
     const std::vector<std::pair<uint32_t, uint32_t>>& ranges = GetOutputRanges(true);
     std::string range = createRanges(ranges, 120);
     char outBuf[768];
@@ -1128,8 +1136,8 @@ void MultiSync::PeriodicPing() {
     }
     unsigned long lpt = m_lastPingTime + 60 * 60;
     if (lpt < (unsigned long)t) {
-        //once an hour, we'll send a ping letting everyone know we're still here
-        //mark ourselves as seen
+        // once an hour, we'll send a ping letting everyone know we're still here
+        // mark ourselves as seen
         std::unique_lock<std::recursive_mutex> lock(m_systemsLock);
         for (auto& sys : m_localSystems) {
             sys.lastSeen = (unsigned long)t;
@@ -1137,21 +1145,21 @@ void MultiSync::PeriodicPing() {
         lock.unlock();
         Ping();
     }
-    //every minute we'll loop through real quick and check for remote instances
-    //we haven't heard from in a while
+    // every minute we'll loop through real quick and check for remote instances
+    // we haven't heard from in a while
     lpt = m_lastCheckTime + 60;
     bool superLongGap = false;
     if (lpt < (unsigned long)t) {
         m_lastCheckTime = (unsigned long)t;
-        //anything we haven't heard from in 80 minutes we will re-ping to force
+        // anything we haven't heard from in 80 minutes we will re-ping to force
         unsigned long timeoutRePing = (unsigned long)t - 60 * 80;
-        //anything we haven't heard from in 2 hours we will remove.   That would
-        //have caused at least 4 pings to have been sent.  If it has responded
-        //to any of those 4, it's got to be down/gone.   Remove it.
+        // anything we haven't heard from in 2 hours we will remove.   That would
+        // have caused at least 4 pings to have been sent.  If it has responded
+        // to any of those 4, it's got to be down/gone.   Remove it.
         unsigned long timeoutRemove = (unsigned long)t - 60 * 120;
-        //if we hadn't heard from them in 10 hours, it's likely a clock change
-        //event, we'll resend a ping out to all to hopefully get everything
-        //updated and new timestamps
+        // if we hadn't heard from them in 10 hours, it's likely a clock change
+        // event, we'll resend a ping out to all to hopefully get everything
+        // updated and new timestamps
         unsigned long timeoutRePingAll = (unsigned long)t - 60 * 600;
         std::unique_lock<std::recursive_mutex> lock(m_systemsLock);
         for (auto it = m_remoteSystems.begin(); it != m_remoteSystems.end();) {
@@ -1382,13 +1390,13 @@ void MultiSync::SendSeqSyncPacket(const std::string& filename, int frames, float
     m_lastFrame = frames;
     int diff = frames - m_lastFrameSent;
     if (frames > 32) {
-        //after 32 frames, we send every 10
-        // that's either twice a second (50ms sequences) or 4 times (25ms)
+        // after 32 frames, we send every 10
+        //  that's either twice a second (50ms sequences) or 4 times (25ms)
         if (diff < 10) {
             return;
         }
     } else if (frames && diff < 4) {
-        //under 32 frames, we send every 4
+        // under 32 frames, we send every 4
         return;
     }
     m_lastFrameSent = frames;
@@ -1544,7 +1552,7 @@ void MultiSync::SendMediaSyncPacket(const std::string& filename, float seconds) 
 
     int curTS = (seconds * 2.0f);
     if (m_lastMediaHalfSecond == curTS) {
-        //not time to send
+        // not time to send
         return;
     }
     m_lastMediaHalfSecond = curTS;
@@ -1593,7 +1601,7 @@ void MultiSync::SendPluginData(const std::string& name, const uint8_t* data, int
     CommandPkt* epkt = (CommandPkt*)(outBuf + sizeof(ControlPkt));
 
     InitControlPacket(cpkt);
-    int nlen = strlen(name.c_str()) + 1; //add the null
+    int nlen = strlen(name.c_str()) + 1; // add the null
     cpkt->pktType = CTRL_PKT_PLUGIN;
     cpkt->extraDataLen = len + nlen;
 
@@ -1861,7 +1869,7 @@ void MultiSync::SendMulticastPacket(void* outBuf, int len) {
         bda.sin_addr.s_addr = MULTISYNC_MULTICAST_ADD;
 
         if (a.second.multicastSocket == -1) {
-            //create the socket
+            // create the socket
             a.second.multicastSocket = socket(AF_INET, SOCK_DGRAM, 0);
 
             if (a.second.multicastSocket < 0) {
@@ -1932,7 +1940,7 @@ bool MultiSync::FillInInterfaces() {
     while (tmp) {
         if (tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_INET) {
             if (isSupportedForMultisync("", tmp->ifa_name)) {
-                //skip the usb* interfaces as we won't support multisync on those
+                // skip the usb* interfaces as we won't support multisync on those
 #ifdef PLATFORM_OSX
                 struct sockaddr_in* ba = (struct sockaddr_in*)(tmp->ifa_dstaddr);
 #else
@@ -1949,7 +1957,7 @@ bool MultiSync::FillInInterfaces() {
                 info.broadcastAddress = ba->sin_addr.s_addr;
             }
         } else if (tmp->ifa_addr && tmp->ifa_addr->sa_family == AF_INET6) {
-            //FIXME for ipv6 multisync
+            // FIXME for ipv6 multisync
         }
         tmp = tmp->ifa_next;
     }
@@ -2052,7 +2060,7 @@ int MultiSync::OpenReceiveSocket(void) {
         rcvMsgs[i].msg_hdr.msg_controllen = 0x100;
     }
 
-    setupMulticastReceive();
+    setupMulticastReceive(false);
     return 1;
 }
 bool MultiSync::isSupportedForMultisync(const char* address, const char* intface) {
@@ -2066,9 +2074,9 @@ bool MultiSync::isSupportedForMultisync(const char* address, const char* intface
     return true;
 }
 
-void MultiSync::setupMulticastReceive() {
+void MultiSync::setupMulticastReceive(bool cycle) {
     LogDebug(VB_SYNC, "setupMulticastReceive()\n");
-    //loop through all the interfaces and subscribe to the group
+    // loop through all the interfaces and subscribe to the group
     std::unique_lock<std::mutex> lock(m_socketLock);
     for (auto& a : m_interfaces) {
         LogDebug(VB_SYNC, "   Adding interface %s - %s\n", a.second.interfaceName.c_str(), a.second.interfaceAddress.c_str());
@@ -2077,9 +2085,12 @@ void MultiSync::setupMulticastReceive() {
         mreq.imr_multiaddr.s_addr = inet_addr(MULTISYNC_MULTICAST_ADDRESS);
         mreq.imr_interface.s_addr = a.second.address;
         int rc = 0;
+        if (cycle) {
+            setsockopt(m_receiveSock, IPPROTO_IP, IP_DROP_MEMBERSHIP, &mreq, sizeof(mreq));
+        }
         if ((rc = setsockopt(m_receiveSock, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq))) < 0) {
             if (m_broadcastSock < 0) {
-                // first time through, log as warning, otherise error is likely due t already being subscribed
+                // first time through, log as warning, otherwise error is likely due to already being subscribed
                 LogWarn(VB_SYNC, "   Could not setup Multicast Group for interface %s    rc: %d\n", a.second.interfaceName.c_str(), rc);
             } else {
                 LogDebug(VB_SYNC, "   Could not setup Multicast Group for interface %s    rc: %d\n", a.second.interfaceName.c_str(), rc);
@@ -2224,18 +2235,25 @@ void MultiSync::ProcessControlPacket(bool pingOnly) {
                     ProcessCommandPacket(pkt, len, stats);
                     break;
                 case CTRL_PKT_SYNC:
-                    if (getFPPmode() == REMOTE_MODE)
+                    if (getFPPmode() == REMOTE_MODE) {
                         ProcessSyncPacket(pkt, len, stats);
+                    }
                     break;
                 case CTRL_PKT_BLANK:
                     if (getFPPmode() == REMOTE_MODE) {
+                        for (auto a : m_plugins) {
+                            a->ReceivedBlankingDataPacket();
+                        }
                         stats->pktBlank++;
                         sequence->SendBlankingData();
                     }
                     break;
-                case CTRL_PKT_PING:
-                    ProcessPingPacket(pkt, len, sourceIP, stats);
+                case CTRL_PKT_PING: {
+                    struct sockaddr_in* inAddr = (struct sockaddr_in*)(&rcvSrcAddr[msg]);
+                    std::string ip = inet_ntoa(inAddr->sin_addr);
+                    ProcessPingPacket(pkt, len, sourceIP, stats, ip);
                     break;
+                }
                 case CTRL_PKT_PLUGIN:
                     ProcessPluginPacket(pkt, len, stats);
                     break;
@@ -2249,25 +2267,33 @@ void MultiSync::ProcessControlPacket(bool pingOnly) {
     }
 }
 
-void MultiSync::OpenSyncedSequence(const char* filename) {
-    LogDebug(VB_SYNC, "OpenSyncedSequence(%s)\n", filename);
+void MultiSync::OpenSyncedSequence(const std::string& filename) {
+    LogDebug(VB_SYNC, "OpenSyncedSequence(%s)\n", filename.c_str());
 
+    for (auto a : m_plugins) {
+        a->ReceivedSeqOpenPacket(filename);
+    }
     ResetMasterPosition();
     sequence->OpenSequenceFile(filename);
 }
 
-void MultiSync::StartSyncedSequence(const char* filename) {
-    LogDebug(VB_SYNC, "StartSyncedSequence(%s)\n", filename);
+void MultiSync::StartSyncedSequence(const std::string& filename) {
+    LogDebug(VB_SYNC, "StartSyncedSequence(%s)\n", filename.c_str());
 
     ResetMasterPosition();
+    for (auto a : m_plugins) {
+        a->ReceivedSeqSyncStartPacket(filename);
+    }
     if (!sequence->IsSequenceRunning(filename) && !sequence->IsSequenceRunning("fallback.fseq")) {
         sequence->StartSequence(filename, 0);
     }
 }
 
-void MultiSync::StopSyncedSequence(const char* filename) {
-    LogDebug(VB_SYNC, "StopSyncedSequence(%s)\n", filename);
-
+void MultiSync::StopSyncedSequence(const std::string& filename) {
+    LogDebug(VB_SYNC, "StopSyncedSequence(%s)\n", filename.c_str());
+    for (auto a : m_plugins) {
+        a->ReceivedSeqSyncStopPacket(filename);
+    }
     sequence->CloseIfOpen(filename);
 }
 void MultiSync::SyncStopAll() {
@@ -2282,6 +2308,7 @@ void MultiSync::SyncStopAll() {
 void MultiSync::SyncPlaylistToMS(uint64_t ms, const std::string& pl, bool sendSyncPackets) {
     SyncPlaylistToMS(ms, -1, pl, sendSyncPackets);
 }
+
 void MultiSync::SyncPlaylistToMS(uint64_t ms, int pos, const std::string& pl, bool sendSyncPackets) {
     if (Player::INSTANCE.GetPlaylistName() != pl) {
         if (pl == "") {
@@ -2291,12 +2318,13 @@ void MultiSync::SyncPlaylistToMS(uint64_t ms, int pos, const std::string& pl, bo
     }
 
     int desiredpos = pos;
-    if (pos == -1) {
-        desiredpos = Player::INSTANCE.FindPosForMS(ms);
+    if (pos <= -1) {
+        desiredpos = Player::INSTANCE.FindPosForMS(ms, pos == -2);
     }
+
     float seconds = ms;
     seconds /= 1000;
-    if (desiredpos) {
+    if (desiredpos >= 0) {
         if (m_controlSock < 0 && sendSyncPackets) {
             OpenControlSockets();
         }
@@ -2349,16 +2377,19 @@ void MultiSync::SyncPlaylistToMS(uint64_t ms, int pos, const std::string& pl, bo
 /*
  *
  */
-void MultiSync::SyncSyncedSequence(const char* filename, int frameNumber, float secondsElapsed) {
+void MultiSync::SyncSyncedSequence(const std::string& filename, int frameNumber, float secondsElapsed) {
     LogExcess(VB_SYNC, "SyncSyncedSequence('%s', %d, %.2f)\n",
-              filename, frameNumber, secondsElapsed);
+              filename.c_str(), frameNumber, secondsElapsed);
 
+    for (auto a : m_plugins) {
+        a->ReceivedSeqSyncPacket(filename, frameNumber, secondsElapsed);
+    }
     if (!sequence->IsSequenceRunning(filename) && !sequence->IsSequenceRunning("fallback.fseq")) {
         sequence->StartSequence(filename, frameNumber);
     }
     if (sequence->IsSequenceRunning(filename)) {
         if (secondsElapsed > 0.0001f) {
-            //recalculate the frame number based on the seconds
+            // recalculate the frame number based on the seconds
             float step = sequence->GetSeqStepTime();
             float newFrame = secondsElapsed * 1000.0f / step;
             frameNumber = std::round(newFrame);
@@ -2367,30 +2398,38 @@ void MultiSync::SyncSyncedSequence(const char* filename, int frameNumber, float 
     }
 }
 
-void MultiSync::OpenSyncedMedia(const char* filename) {
-    LogDebug(VB_SYNC, "OpenSyncedMedia(%s)\n", filename);
+void MultiSync::OpenSyncedMedia(const std::string& filename) {
+    LogDebug(VB_SYNC, "OpenSyncedMedia(%s)\n", filename.c_str());
 
     if (mediaOutput) {
         LogDebug(VB_SYNC, "Start media %s received while playing media %s\n",
-                 filename, mediaOutput->m_mediaFilename.c_str());
+                 filename.c_str(), mediaOutput->m_mediaFilename.c_str());
 
         CloseMediaOutput();
+    }
+    for (auto a : m_plugins) {
+        a->ReceivedMediaOpenPacket(filename);
     }
 
     OpenMediaOutput(filename);
 }
 
-void MultiSync::StartSyncedMedia(const char* filename) {
-    LogDebug(VB_SYNC, "StartSyncedMedia(%s)\n", filename);
-
+void MultiSync::StartSyncedMedia(const std::string& filename) {
+    LogDebug(VB_SYNC, "StartSyncedMedia(%s)\n", filename.c_str());
+    for (auto a : m_plugins) {
+        a->ReceivedMediaSyncStartPacket(filename);
+    }
     StartMediaOutput(filename);
 }
 
 /*
  *
  */
-void MultiSync::StopSyncedMedia(const char* filename) {
-    LogDebug(VB_SYNC, "StopSyncedMedia(%s)\n", filename);
+void MultiSync::StopSyncedMedia(const std::string& filename) {
+    LogDebug(VB_SYNC, "StopSyncedMedia(%s)\n", filename.c_str());
+    for (auto a : m_plugins) {
+        a->ReceivedMediaSyncStopPacket(filename);
+    }
 
     if (!mediaOutput) {
         return;
@@ -2405,9 +2444,12 @@ void MultiSync::StopSyncedMedia(const char* filename) {
 /*
  *
  */
-void MultiSync::SyncSyncedMedia(const char* filename, int frameNumber, float secondsElapsed) {
+void MultiSync::SyncSyncedMedia(const std::string& filename, int frameNumber, float secondsElapsed) {
     LogExcess(VB_SYNC, "SyncSyncedMedia('%s', %d, %.2f)\n",
-              filename, frameNumber, secondsElapsed);
+              filename.c_str(), frameNumber, secondsElapsed);
+    for (auto a : m_plugins) {
+        a->ReceivedMediaSyncPacket(filename, secondsElapsed);
+    }
 
     UpdateMasterMediaPosition(filename, secondsElapsed);
 }
@@ -2510,7 +2552,7 @@ void MultiSync::ProcessCommandPacket(ControlPkt* pkt, int len, MultiSyncStats* s
 /*
  *
  */
-void MultiSync::ProcessPingPacket(ControlPkt* pkt, int len, const std::string& srcIp, MultiSyncStats* stats) {
+void MultiSync::ProcessPingPacket(ControlPkt* pkt, int len, const std::string& srcIp, MultiSyncStats* stats, const std::string& incomingIp) {
     LogDebug(VB_SYNC, "ProcessPingPacket()\n");
 
     if (pkt->extraDataLen < 169) { // v1 packet length
@@ -2545,20 +2587,28 @@ void MultiSync::ProcessPingPacket(ControlPkt* pkt, int len, const std::string& s
 
     FPPMode systemMode = (FPPMode)extraData[7];
 
-    char addrStr[16];
-    memset(addrStr, 0, sizeof(addrStr));
     bool isInstance = true;
-    if (extraData[8] == 0 && extraData[9] == 0 && extraData[10] == 0 && extraData[11] == 0 && discover) {
-        //No ip address in packet, this is a ping/discovery packet
-        //from something (xLights?) that is just trying to
-        //get a list of FPP instances, we won't record this
-        isInstance = false;
+    std::string address;
+    if (extraData[8] == 0 && extraData[9] == 0 && extraData[10] == 0 && extraData[11] == 0) {
+        if (discover) {
+            // No ip address in packet, this is a ping/discovery packet
+            // from something (xLights?) that is just trying to
+            // get a list of FPP instances, we won't record this
+            isInstance = false;
+            address = "0.0.0.0";
+        } else if (!incomingIp.empty()) {
+            address = incomingIp;
+        } else {
+            isInstance = false;
+            address = "0.0.0.0";
+        }
+    } else {
+        char addrStr[16];
+        memset(addrStr, 0, sizeof(addrStr));
+        snprintf(addrStr, 16, "%d.%d.%d.%d", extraData[8], extraData[9],
+                 extraData[10], extraData[11]);
+        address = addrStr;
     }
-
-    snprintf(addrStr, 16, "%d.%d.%d.%d", extraData[8], extraData[9],
-             extraData[10], extraData[11]);
-
-    std::string address = addrStr;
 
     char tmpStr[128];
     memset(tmpStr, 0, sizeof(tmpStr));
@@ -2596,15 +2646,15 @@ void MultiSync::ProcessPingPacket(ControlPkt* pkt, int len, const std::string& s
     if (discover) {
         lock.unlock();
         if ((hostname != m_hostname) && !isLocal) {
-            //very slight random delay so all the remotes don't send
-            //packets out at the same time
+            // very slight random delay so all the remotes don't send
+            // packets out at the same time
             std::srand(std::time(nullptr));
             int rand = std::rand() % 5000;
             std::this_thread::sleep_for(std::chrono::microseconds(rand));
             multiSync->Ping();
             rand = std::rand() % 1000;
             std::this_thread::sleep_for(std::chrono::microseconds(rand));
-            multiSync->PingSingleRemote(addrStr, 0);
+            multiSync->PingSingleRemote(address.c_str(), 0);
             if (address != srcIp) {
                 multiSync->PingSingleRemote(srcIp.c_str(), 0);
             }
@@ -2622,6 +2672,10 @@ void MultiSync::ProcessPluginPacket(ControlPkt* pkt, int plen, MultiSyncStats* s
     int nlen = strlen(pn) + 1;
     len -= nlen;
     uint8_t* data = (uint8_t*)&cpkt->command[nlen];
+
+    for (auto a : m_plugins) {
+        a->ReceivedPluginData(pn, data, len);
+    }
     PluginManager::INSTANCE.multiSyncData(pn, data, len);
 
     stats->pktPlugin++;
@@ -2658,7 +2712,9 @@ void MultiSync::ProcessFPPCommandPacket(ControlPkt* pkt, int len, MultiSyncStats
     }
     if (host == "" || MyHostMatches(host, m_hostname, m_localSystems)) {
         stats->pktFPPCommand++;
-
+        for (auto a : m_plugins) {
+            a->ReceivedFPPCommandPacket(cmd, args);
+        }
         CommandManager::INSTANCE.run(cmd, args);
     }
 }

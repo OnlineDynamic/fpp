@@ -27,6 +27,8 @@ public:
     virtual void enable(int id) override;
     virtual int32_t getValue(int id) override;
 
+    virtual bool isOK() const override;
+
 private:
     void update(bool forceInstant, bool fromSelect);
     std::vector<int32_t> values;
@@ -39,4 +41,5 @@ private:
 
     uint16_t* readBuffer = nullptr;
     size_t readBufferSize = 0;
+    float vScale = 0;
 };

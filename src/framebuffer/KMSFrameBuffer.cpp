@@ -14,8 +14,14 @@
 #include "KMSFrameBuffer.h"
 
 #ifdef HAS_KMS_FB
+#include <libdrm/drm.h>
+#include <sys/ioctl.h>
 
 #include <sys/mman.h>
+
+#include "../common_mini.h"
+#include "../log.h"
+#include "../mediaoutput/mediaoutput.h"
 
 std::atomic_int KMSFrameBuffer::FRAMEBUFFER_COUNT(0);
 std::map<kms::Card*, kms::ResourceManager*> KMSFrameBuffer::CARDS;
@@ -28,6 +34,7 @@ KMSFrameBuffer::KMSFrameBuffer() {
             if (FileExists("/dev/dri/card" + std::to_string(cn))) {
                 kms::Card* card = new kms::Card("/dev/dri/card" + std::to_string(cn));
                 CARDS[card] = new kms::ResourceManager(*card);
+                card->drop_master();
             }
         }
     }
@@ -52,6 +59,9 @@ int KMSFrameBuffer::InitializeFrameBuffer(void) {
             if (m_device == conn->fullname() && conn->connected()) {
                 m_resourceManager = card.second;
                 m_connector = m_resourceManager->reserve_connector(conn);
+                if (m_connector == nullptr) {
+                    continue;
+                }
                 m_crtc = m_resourceManager->reserve_crtc(conn);
                 if (m_crtc == nullptr) {
                     m_crtc = m_resourceManager->reserve_crtc(m_connector);
@@ -59,35 +69,7 @@ int KMSFrameBuffer::InitializeFrameBuffer(void) {
                 if (m_crtc == nullptr) {
                     return 0;
                 }
-                bool foundMode = false;
-                bool foundMultiMode = false;
-                kms::Videomode multiMode;
-
-                for (auto& m : m_connector->get_modes()) {
-                    if (m.hdisplay >= m_width && m.vdisplay >= m_height) {
-                        m_mode = m;
-                        foundMode = true;
-                    }
-                    if (m_width > 0 && m_height > 0 && ((m.hdisplay % m_width) == 0) && ((m.vdisplay % m_height) == 0)) {
-                        foundMultiMode = true;
-                        multiMode = m;
-                    }
-                }
-                if (!foundMode) {
-                    return 0;
-                }
-                if (foundMultiMode) {
-                    m_mode = multiMode;
-                }
-                LogDebug(VB_CHANNELOUT, "KMSFrameBuffer:   Connector: %s   Mode: %dx%d\n", conn->fullname().c_str(), m_mode.hdisplay, m_mode.vdisplay);
-                m_crtc->set_mode(m_connector, m_mode);
-
-                for (int x = 0; x < 2; x++) {
-                    m_fb[x] = new kms::DumbFramebuffer(*card.first, m_mode.hdisplay, m_mode.vdisplay, kms::PixelFormat::RGB888);
-                    m_pageBuffers[x] = m_fb[x]->map(0);
-                }
-                m_plane = m_resourceManager->reserve_generic_plane(m_crtc, m_fb[0]->format());
-                m_pages = 2;
+                m_mode = m_connector->get_default_mode();
 
                 if (m_width == 0) {
                     m_width = m_mode.hdisplay;
@@ -95,14 +77,39 @@ int KMSFrameBuffer::InitializeFrameBuffer(void) {
                 if (m_height == 0) {
                     m_height = m_mode.vdisplay;
                 }
+                if (m_pixelSize == 0) {
+                    // find a suitable pixel size to make it less "fuzzy" looking
+                    int mw = m_mode.hdisplay / m_width;
+                    int mh = m_mode.vdisplay / m_height;
+                    m_pixelSize = std::min(mw, mh);
+                    if (m_pixelSize < 1) {
+                        m_pixelSize = 1;
+                    }
+                    m_width *= m_pixelSize;
+                    m_height *= m_pixelSize;
+                }
+
+                m_bpp = 24;
+                for (int x = 0; x < 2; x++) {
+                    try {
+                        m_fb[x] = new kms::DumbFramebuffer(*card.first, m_width, m_height, kms::PixelFormat::RGB888);
+                    } catch (...) {
+                        m_fb[x] = new kms::DumbFramebuffer(*card.first, m_width, m_height, kms::PixelFormat::XRGB8888);
+                        m_bpp = 32;
+                    }
+                    m_pageBuffers[x] = m_fb[x]->map(0);
+                }
+                m_plane = m_resourceManager->reserve_generic_plane(m_crtc, m_fb[0]->format());
+                m_pages = 2;
+
                 m_cPage = 0;
                 m_pPage = 0;
-                m_bpp = 24;
                 m_rowStride = m_fb[0]->stride(0);
                 m_rowPadding = m_rowStride - (m_width * m_bpp / 8);
                 m_pageSize = m_fb[0]->size(0);
                 m_bufferSize = m_pageSize;
                 m_crtc->set_plane(m_plane, *m_fb[0], 0, 0, m_mode.hdisplay, m_mode.vdisplay, 0, 0, m_width, m_height);
+                m_cardFd = card.first->fd();
                 return 1;
             }
         }
@@ -136,14 +143,8 @@ void KMSFrameBuffer::DestroyFrameBuffer(void) {
 
 void KMSFrameBuffer::SyncLoop() {
     int dummy = 0;
-
     if (m_pages == 1) {
         return;
-    }
-    for (auto& card : CARDS) {
-        if (card.first->is_master()) {
-            card.first->drop_master();
-        }
     }
 
     while (m_runLoop) {
@@ -169,10 +170,22 @@ void KMSFrameBuffer::SyncDisplay(bool pageChanged) {
     if (!pageChanged | m_pages == 1)
         return;
 
-    m_crtc->page_flip(*m_fb[m_cPage], m_pageBuffers[m_cPage]);
-    for (auto& card : CARDS) {
-        if (card.first->is_master()) {
-            card.first->drop_master();
+    std::unique_lock<std::mutex> lock(mediaOutputLock);
+    if (mediaOutputStatus.mediaLoading) {
+        // we cannot do anything to the KMS connectors while VLC is getting setup
+        return;
+    }
+    if (mediaOutputStatus.output != m_connector->fullname()) {
+        // if there isn't media being output on this connector, we can display the page
+        int im = ioctl(m_cardFd, DRM_IOCTL_SET_MASTER, 0);
+        if (im == 0) {
+            // was able to get master so we cana page flip
+            int i = m_crtc->page_flip(*m_fb[m_cPage], m_pageBuffers[m_cPage]);
+            if (i) {
+                m_crtc->set_plane(m_plane, *m_fb[m_cPage], 0, 0, m_mode.hdisplay, m_mode.vdisplay, 0, 0, m_width, m_height);
+                m_crtc->page_flip(*m_fb[m_cPage], m_pageBuffers[m_cPage]);
+            }
+            ioctl(m_cardFd, DRM_IOCTL_DROP_MASTER, 0);
         }
     }
 }

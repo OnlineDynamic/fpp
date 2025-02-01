@@ -104,69 +104,129 @@ function files_rename()
 // GET /api/files/:DirName
 function GetFilesHelper($dirName, $prefix = '')
 {
-    $files = array();
+    global $SUDO;
 
     if ($prefix != '') {
         $prefix .= '/';
     }
 
+    $doSudo = $SUDO;
+    $user = get_current_user();
+    if ($user == "fpp" || $user == "root") {
+        //don't need sudo to do the find so skip it to avoid the pam auth logs
+        $doSudo = "";
+    }
+
     // if ?nameOnly=1 was passed, then just array of names
     if (isset($_GET['nameOnly']) && ($_GET['nameOnly'] == '1')) {
         $rc = array();
-        foreach (scandir($dirName) as $fileName) {
+        $filelist = array();
+        exec("$doSudo find $dirName -type f -follow -printf \"%P\n\"", $filelist);
+        foreach ($filelist as $fileName) {
             if ($fileName != '.' && $fileName != '..') {
-                if (is_dir($dirName . '/' . $fileName)) {
-                    $rc = array_merge($rc, GetFilesHelper($dirName . '/' . $fileName, $prefix . $fileName));
-                } else {
-                    if (!preg_match("//u", $fileName)) {
-                        $fileName = iconv("ISO-8859-1", 'UTF-8//TRANSLIT', $fileName);
-                    }
-                    array_push($rc, $prefix . $fileName);
+                if (!preg_match("//u", $fileName)) {
+                    $fileName = iconv("ISO-8859-1", 'UTF-8//TRANSLIT', $fileName);
                 }
+                array_push($rc, $prefix . $fileName);
             }
         }
+
         if (strtolower(params("DirName")) == "logs") {
             array_push($rc, "/var/log/messages");
             array_push($rc, "/var/log/syslog");
         }
+        sort($rc);
         return $rc;
-    }
+    } else {
+        $files = array();
+        $subDirList = array();
+        exec("$doSudo find $dirName -type d -follow -printf \"%P|||%T@\n\" | sort", $subDirList);
+        foreach ($subDirList as $dirDetails) {
+            $Details = explode("|||", $dirDetails);
+            $fileName = $Details[0];
+            $mTime = $Details[1];
+            if ($fileName != "") {
+                $current = array();
+                $current["name"] = $prefix . $fileName;
+                $current["mtime"] = date('m/d/y  h:i A', $mTime);
+                $current["sizeBytes"] = 0;
+                $current["sizeHuman"] = 'Directory';
 
-    foreach (scandir($dirName) as $fileName) {
-        if ($fileName != '.' && $fileName != '..') {
-            if (is_dir($dirName . '/' . $fileName)) {
-                $entries = GetFilesHelper($dirName . '/' . $fileName, $prefix . $fileName);
-                if (!count($entries)) {
-                    $current = array();
-                    $current["name"] = $prefix . $fileName;
-                    $current["mtime"] = date('m/d/y  h:i A', filemtime($dirName . '/' . $fileName));
-                    $current["sizeBytes"] = 0;
-                    $current["sizeHuman"] = 'Directory';
+                $entries = array($current);
 
-                    $entries = array($current);
-                }
                 $files = array_merge($files, $entries);
-            } else {
-                if (!preg_match("//u", $fileName)) {
-                    $fileName = iconv("ISO-8859-1", 'UTF-8//TRANSLIT', $fileName);
-                }
-                GetFileInfo($files, $dirName, $fileName, $prefix);
             }
         }
-    }
 
-    if (strtolower(params("DirName")) == "logs") {
-        if (file_exists("/var/log/messages")) {
-            GetFileInfo($files, "", "/var/log/messages");
+        $filelist = array();
+        exec("$doSudo find $dirName -type f -follow -printf \"%P|||%s|||%T@\n\" | sort", $filelist);
+
+        foreach ($filelist as $fileDetails) {
+            $Details = explode("|||", $fileDetails);
+            $fileName = $Details[0];
+            $mTime = $Details[2];
+            $Size = $Details[1];
+            if (!preg_match("//u", $fileName)) {
+                $fileName = iconv("ISO-8859-1", 'UTF-8//TRANSLIT', $fileName);
+            }
+            $current = array();
+            $current["name"] = $prefix . $fileName;
+            $current["mtime"] = date('m/d/y  h:i A', $mTime);
+            $sizeInt = intval($Size);
+            if (PHP_INT_SIZE === 4 && $sizeInt < PHP_INT_MAX) {
+                $current["sizeBytes"] = $sizeInt;
+            } else {
+                $current["sizeBytes"] = $Size;
+            }
+            $current["sizeHuman"] = humanFileSize($Size);
+
+            if (strpos(strtolower($dirName), "music") !== false || strpos(strtolower($dirName), "video") !== false) {
+
+                //Check the cache first
+                $cache_duration = media_duration_cache($fileName, null, $Size);
+                //cache duration will be null if not in cache, then retrieve it
+                if ($cache_duration == null) {
+
+                    $resp = GetMetaDataFromFFProbe($fileName);
+
+                    //cache it
+                    if (isset($resp['format']['duration'])) {
+                        media_duration_cache($fileName, $resp['format']['duration'], $Size);
+                    }
+
+                } else {
+                    $resp['format']['duration'] = $cache_duration;
+                }
+
+                if (isset($resp['format']['duration'])) {
+                    $current["playtimeSeconds"] = human_playtime($resp['format']['duration']);
+                } else {
+                    $current["playtimeSeconds"] = "Unknown";
+                }
+
+            }
+
+
+            $entries = array($current);
+
+            $files = array_merge($files, $entries);
+
         }
 
-        if (file_exists("/var/log/syslog")) {
-            GetFileInfo($files, "", "/var/log/syslog");
+
+        if (strtolower(params("DirName")) == "logs") {
+            if (file_exists("/var/log/messages")) {
+                GetFileInfo($files, "", "/var/log/messages");
+            }
+
+            if (file_exists("/var/log/syslog")) {
+                GetFileInfo($files, "", "/var/log/syslog");
+            }
+
         }
 
+        return $files;
     }
-
-    return $files;
 }
 
 function GetFiles()
@@ -242,10 +302,12 @@ function CallPluginFileUploaded($dir, $filename)
             }
         }
     }
+    return "Could not find plugin to handle " . $filename;
 }
 function PluginFileOnUpload()
 {
     global $mediaDirectory;
+
     $ext = params("ext");
     $fileName = params(0);
     return CallPluginFileUploaded($mediaDirectory . "/" . $ext, $fileName);
@@ -323,7 +385,8 @@ function GetFileImpl($dir, $filename, $lines, $play, $attach)
         $filename = substr($filename, 8);
     }
 
-    if (!file_exists($dir . '/' . $filename)) {
+    if (!file_exists($dir . '/' . $filename) || !is_file($dir . '/' . $filename)) {
+        http_response_code(404);
         echo "File $dir/$filename does not exist.";
         return;
     }
@@ -671,21 +734,23 @@ function DeleteFile()
     $status = "File not found";
     $dirName = params("DirName");
     $dir = MapDirectoryKey($dirName);
-    $fileName = findFile($dir, params(0));
+    $fileName = params(0);
 
-    $fullPath = "$dir/$fileName";
+    // Avoid too much saniziation so that we can delete files with unicode in them
+    $allowedDir = realpath($dir); // Allowed base directory
+    $constructedPath = "$dir/$fileName";
+    $fullPath = realpath($constructedPath); // Full resolved path of the target file
 
-    if (preg_match('/\/\.\.\//', $fileName)) {
-        $status = 'Cannot access parent directory';
-    } else if ($dir == "") {
-        $status = "Invalid Directory";
+    if (!$allowedDir || !$fullPath || strpos($fullPath, $allowedDir) !== 0) {
+        $status = "Invalid path: directory traversal detected or file outside allowed directory";
     } else if (!file_exists($fullPath)) {
         $status = "File Not Found";
     } else {
         if (unlink($fullPath)) {
             $status = "OK";
         } else {
-            $status = "Unable to delete file";
+            $errorDetails = error_get_last();
+            $status = "Unable to delete file: " . ($errorDetails['message'] ?? 'Unknown');
         }
     }
 

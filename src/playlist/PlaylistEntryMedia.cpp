@@ -336,11 +336,11 @@ int PlaylistEntryMedia::OpenMediaOutput(void) {
         vOut = getSetting("VideoOutput");
     }
     if (vOut == "") {
-#if !defined(PLATFORM_BBB)
-        vOut = "--HDMI--";
-#else
-        vOut = "--Disabled--";
-#endif
+        if (FileExists("/sys/class/drm/card0-HDMI-A-1/status") || FileExists("/sys/class/drm/card1-HDMI-A-1/status")) {
+            vOut = "--HDMI--";
+        } else {
+            vOut = "--Disabled--";
+        }
     }
 
     m_mediaOutput = CreateMediaOutput(tmpFile, vOut);
@@ -458,6 +458,8 @@ Json::Value PlaylistEntryMedia::GetConfig(void) {
         result["minutesTotal"] = status.minutesTotal;
         result["secondsTotal"] = status.secondsTotal;
         result["mediaSeconds"] = status.mediaSeconds;
+        result["mediaSeconds"] = status.mediaSeconds;
+        result["millisecondsElapsed"] = status.secondsElapsed * 1000 + status.subSecondsElapsed * 10;
     }
 
     return result;
@@ -467,6 +469,7 @@ Json::Value PlaylistEntryMedia::GetMqttStatus(void) {
     Json::Value result = PlaylistEntryBase::GetMqttStatus();
     MediaOutputStatus status = IsPaused() ? m_pausedStatus : mediaOutputStatus;
     result["secondsElapsed"] = status.secondsElapsed;
+    result["millisecondsElapsed"] = status.secondsElapsed * 1000 + status.subSecondsElapsed * 10;
     result["secondsRemaining"] = status.secondsRemaining;
     result["secondsTotal"] = status.minutesTotal * 60 + status.secondsTotal;
     result["mediaName"] = m_mediaFilename;

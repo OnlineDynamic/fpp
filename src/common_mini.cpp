@@ -9,6 +9,9 @@
  * This source file is covered under the LGPL v2.1 as described in the
  * included LICENSE.LGPL file.
  */
+// This #define must be before any #include's
+#define _FILE_OFFSET_BITS 64
+#define __STDC_FORMAT_MACROS
 
 #include "common_mini.h"
 
@@ -46,11 +49,11 @@
 #include <map>
 #include <netdb.h>
 #include <pwd.h>
+#include <sstream>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <string>
-#include <sstream>
 #include <unistd.h>
 #include <utility>
 #include <vector>
@@ -445,9 +448,19 @@ std::string GetFileContents(const std::string& filename) {
         flock(fileno(fd), LOCK_SH);
         fseeko(fd, 0, SEEK_END);
         size_t sz = ftello(fd);
-        contents.resize(sz);
         fseeko(fd, 0, SEEK_SET);
-        fread(&contents[0], contents.size(), 1, fd);
+        if (sz == 0) {
+            char buf[4097];
+            size_t i = fread(buf, 1, 4096, fd);
+            while (i > 0) {
+                buf[i] = 0;
+                contents += buf;
+                i = fread(buf, 1, 4096, fd);
+            }
+        } else {
+            contents.resize(sz);
+            fread(&contents[0], contents.size(), 1, fd);
+        }
         flock(fileno(fd), LOCK_UN);
         fclose(fd);
         int x = contents.size() - 1;
@@ -465,7 +478,9 @@ bool PutFileContents(const std::string& filename, const std::string& str) {
     FILE* fd = fopen(filename.c_str(), "w");
     if (fd != nullptr) {
         flock(fileno(fd), LOCK_EX);
-        fwrite(&str[0], str.size(), 1, fd);
+        if (!str.empty()) {
+            fwrite(&str[0], str.size(), 1, fd);
+        }
         flock(fileno(fd), LOCK_UN);
         fclose(fd);
         SetFilePerms(filename);

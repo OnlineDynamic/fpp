@@ -11,10 +11,6 @@ function GetSequences()
     foreach (glob($dir . "/*.fseq") as $filename) {
         array_push($sequences, basename($filename, ".fseq"));
     }
-    $dir = $settings['effectDirectory'];
-    foreach (glob($dir . "/*.eseq") as $filename) {
-        array_push($sequences, basename($filename, ".eseq"));
-    }
 
     return json($sequences);
 }
@@ -177,15 +173,6 @@ function GetSequenceTogglePause()
 function GetSequenceStop()
 {
     SendCommand("StopSequence");
-    $rc = array("status" => "OK");
-    return json($rc);
-
-}
-
-// GET api/sequence/current/step
-function GetSequenceStepBack()
-{
-    SendCommand("SingleStepSequenceBack");
     $rc = array("status" => "OK");
     return json($rc);
 

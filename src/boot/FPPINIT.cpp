@@ -96,8 +96,8 @@ static void exec(const std::string& cmd) {
         printf(buffer.data());
     }
 }
-static void execbg(const std::string& cmd) {
-    system(cmd.c_str());
+static int execbg(const std::string& cmd) {
+    return system(cmd.c_str());
 }
 static std::string execAndReturn(const std::string& cmd) {
     std::array<char, 128> buffer;
@@ -116,7 +116,6 @@ static void DetectCape() {
     if (!FileExists("/.dockerenv")) {
 #ifdef CAPEDETECT
         printf("FPP - Checking for Cape/Hat\n");
-        remove_recursive("/home/fpp/media/tmp/", false);
         exec("/opt/fpp/src/fppcapedetect -no-set-permissions");
 #endif
     }
@@ -138,7 +137,7 @@ static void checkSSHKeys() {
     }
     printf("      - Regenerating SSH keys\n");
     if (FileExists("/dev/hwrng")) {
-        // if the hwrng exists, use it to see the urandom generator
+        // if the hwrng exists, use it to seed the urandom generator
         // with some random data
         exec("dd if=/dev/hwrng of=/dev/urandom count=1 bs=4096 status=none");
     }
@@ -162,6 +161,7 @@ static void handleBootPartition() {
     if (DirectoryExists(bootDir + "/fpp")) {
         if (!FileExists(bootDir + "/fpp/copy_done")) {
             std::string cmd = "/usr/bin/cp -a " + bootDir + "/fpp/* " + FPP_MEDIA_DIR;
+            exec(cmd);
             PutFileContents(bootDir + "/fpp/copy_done", "1");
         }
     }
@@ -216,21 +216,22 @@ static void checkHostName() {
 }
 
 static void runScripts(const std::string tp, bool userBefore = true) {
+    std::string pfx = "FPPDIR=/opt/fpp SRCDIR=/opt/fpp/src ";
+
     if (userBefore && FileExists(FPP_MEDIA_DIR + "/scripts/UserCallbackHook.sh")) {
-        exec("/bin/bash " + FPP_MEDIA_DIR + "/scripts/UserCallbackHook.sh " + tp);
+        execbg(pfx + FPP_MEDIA_DIR + "/scripts/UserCallbackHook.sh " + tp);
     }
     for (const auto& entry : std::filesystem::directory_iterator(FPP_MEDIA_DIR + "/plugins")) {
         if (entry.is_directory()) {
             std::string filename = entry.path().filename();
             std::string cmd = FPP_MEDIA_DIR + "/plugins/" + filename + "/scripts/" + tp + ".sh";
             if (FileExists(cmd)) {
-                printf("Running %s\n", cmd.c_str());
-                exec("/bin/bash " + cmd);
+                execbg(pfx + cmd);
             }
         }
     }
     if (!userBefore && FileExists(FPP_MEDIA_DIR + "/scripts/UserCallbackHook.sh")) {
-        exec("/bin/bash " + FPP_MEDIA_DIR + "/scripts/UserCallbackHook.sh " + tp);
+        execbg(pfx + FPP_MEDIA_DIR + "/scripts/UserCallbackHook.sh " + tp);
     }
 }
 
@@ -303,6 +304,16 @@ void handleBootActions() {
     }
 }
 
+inline const std::string& mapBBBLedValue(const std::string& v) {
+#ifdef PLATFORM_BB64
+    if (v == "cpu") {
+        static const std::string activity = "activity";
+        return activity;
+    }
+#endif
+    return v;
+}
+
 void configureBBB() {
 #ifdef PLATFORM_BBB
     if (FileExists("/dev/mmcblk1")) {
@@ -326,29 +337,40 @@ void configureBBB() {
     }
 
     // Beagle LEDS
-    std::string led;
-    if (getRawSetting("BBBLedPWR", led) && !led.empty()) {
-        if (led == "0") {
-            led = "0x00";
+    std::string pled;
+    if (getRawSetting("BBBLedPWR", pled) && !pled.empty()) {
+        if (pled == "0") {
+            pled = "0x00";
         } else {
-            led = "0x38";
+            pled = "0x38";
         }
         exec("/usr/sbin/i2cset -f -y 0 0x24 0x0b 0x6e");
-        exec("/usr/sbin/i2cset -f -y 0 0x24 0x13 " + led);
+        exec("/usr/sbin/i2cset -f -y 0 0x24 0x13 " + pled);
         exec("/usr/sbin/i2cset -f -y 0 0x24 0x0b 0x6e");
-        exec("/usr/sbin/i2cset -f -y 0 0x24 0x13 " + led);
+        exec("/usr/sbin/i2cset -f -y 0 0x24 0x13 " + pled);
     }
+#endif
+#if defined(PLATFORM_BBB) || defined(PLATFORM_BB64)
+    std::string led;
     if (getRawSetting("BBBLeds0", led) && !led.empty()) {
-        PutFileContents("/sys/class/leds/beaglebone:green:usr0/trigger", led);
+        PutFileContents("/sys/class/leds/beaglebone:green:usr0/trigger", mapBBBLedValue(led));
+    } else {
+        PutFileContents("/sys/class/leds/beaglebone:green:usr0/trigger", "heartbeat");
     }
     if (getRawSetting("BBBLeds1", led) && !led.empty()) {
-        PutFileContents("/sys/class/leds/beaglebone:green:usr1/trigger", led);
+        PutFileContents("/sys/class/leds/beaglebone:green:usr1/trigger", mapBBBLedValue(led));
+    } else {
+        PutFileContents("/sys/class/leds/beaglebone:green:usr1/trigger", "mmc0");
     }
     if (getRawSetting("BBBLeds2", led) && !led.empty()) {
-        PutFileContents("/sys/class/leds/beaglebone:green:usr2/trigger", led);
+        PutFileContents("/sys/class/leds/beaglebone:green:usr2/trigger", mapBBBLedValue(led));
+    } else {
+        PutFileContents("/sys/class/leds/beaglebone:green:usr3/trigger", mapBBBLedValue("cpu"));
     }
     if (getRawSetting("BBBLeds3", led) && !led.empty()) {
         PutFileContents("/sys/class/leds/beaglebone:green:usr3/trigger", led);
+    } else {
+        PutFileContents("/sys/class/leds/beaglebone:green:usr3/trigger", "mmc1");
     }
 #endif
 }
@@ -449,15 +471,20 @@ static std::string CreateHostAPDConfig(const std::string& interface) {
         cmd = "/usr/bin/qrencode -t ASCII -m 3 -s 6 -l H -o \"";
         cmd.append(FPP_MEDIA_DIR).append("/tmp/wifi-H.ascii\" \"WIFI:T:WPA;S:");
         cmd.append(ssid).append(";P:").append(psk).append(";;\"");
+        exec(cmd);
     }
 
     return content;
 }
-static void setupNetwork() {
+static void unblockWifi() {
     if (FileExists("/usr/sbin/rfkill")) {
         exec("/usr/sbin/rfkill unblock wifi");
         exec("/usr/sbin/rfkill unblock all");
     }
+}
+
+static void setupNetwork() {
+    unblockWifi();
     auto dnsSettings = loadSettingsFile(FPP_MEDIA_DIR + "/config/dns");
     std::string dns = dnsSettings["DNS1"];
     if (dnsSettings["DNS2"] != "") {
@@ -535,17 +562,39 @@ static void setupNetwork() {
                     addressLines.append("Address=192.168.8.1/24\n");
                 } else if (!interfaceSettings["SSID"].empty()) {
                     std::string wpa = "ctrl_interface=/var/run/wpa_supplicant\nctrl_interface_group=0\nupdate_config=1\ncountry=";
-                    wpa.append(WifiRegulatoryDomain).append("\n\nnetwork={\n  ssid=\"").append(interfaceSettings["SSID"]);
+                    wpa.append(WifiRegulatoryDomain);
+                    if (!interfaceSettings["WPA3"].empty()) {
+                        wpa.append("\nsae_pwe=1\n");
+                    }
+                    wpa.append("\n\nnetwork={\n  ssid=\"").append(interfaceSettings["SSID"]);
                     if (!interfaceSettings["PSK"].empty()) {
                         wpa.append("\"\n  psk=\"").append(interfaceSettings["PSK"]);
                     }
-                    wpa.append("\"\n  key_mgmt=WPA-PSK\n  scan_ssid=1\n  priority=100\n}\n\n");
+                    wpa.append("\"\n  key_mgmt=");
+                    if (!interfaceSettings["WPA3"].empty()) {
+                        wpa.append("SAE WPA-PSK\n  sae_password=\"").append(interfaceSettings["PSK"]).append("\"");
+                    } else {
+                        wpa.append("WPA-PSK");
+                    }
+                    if (!interfaceSettings["HIDDEN"].empty()) {
+                        wpa.append("\n  scan_ssid=1");
+                    }
+                    wpa.append("\n  priority=100\n  ieee80211w=1\n}\n\n");
                     if (!interfaceSettings["BACKUPSSID"].empty() && interfaceSettings["BACKUPSSID"] != "\"\"") {
                         wpa.append("\nnetwork={\n  ssid=\"").append(interfaceSettings["BACKUPSSID"]);
                         if (!interfaceSettings["BACKUPPSK"].empty()) {
                             wpa.append("\"\n  psk=\"").append(interfaceSettings["BACKUPPSK"]);
                         }
-                        wpa.append("\"\n  key_mgmt=WPA-PSK\n  scan_ssid=1\n  priority=100\n}\n\n");
+                        wpa.append("\"\n  key_mgmt=");
+                        if (!interfaceSettings["BACKUPWPA3"].empty()) {
+                            wpa.append("SAE WPA-PSK\n  sae_password=\"").append(interfaceSettings["PSK"]).append("\"");
+                        } else {
+                            wpa.append("WPA-PSK");
+                        }
+                        if (!interfaceSettings["BACKUPHIDDEN"].empty()) {
+                            wpa.append("\n  scan_ssid=1");
+                        }
+                        wpa.append("\n  priority=90\n  ieee80211w=1\n}\n\n");
                     }
                     filesNeeded["/etc/wpa_supplicant/wpa_supplicant-" + interface + ".conf"] = wpa;
                     commandsToRun.emplace_back("systemctl enable \"wpa_supplicant@" + interface + ".service\" &");
@@ -581,7 +630,7 @@ static void setupNetwork() {
             }
             content.append("\n");
             if (interfaceSettings["PROTO"] == "dhcp") {
-                content.append("[DHCPv4]\nClientIdentifier=mac\n");
+                content.append("[DHCPv4]\nClientIdentifier=mac\nUseDomains=true\n");
             } else if (ROUTEMETRIC != 0) {
                 content.append("[DHCPv4]\n");
             }
@@ -605,7 +654,7 @@ static void setupNetwork() {
                 if (!FileExists(FPP_MEDIA_DIR + "/config/proxies")) {
                     // DHCPServer is on, lets make sure proxies are enabled
                     // so they can be found via the proxies page
-                    std::string c2 = "RewriteEngine on\nRewriteBase /proxy/\n\nRewriteRule ^(.*)/(.*)$  http://$1/$2  [P,L]\nRewriteRule ^(.*)$  $1/  [R,L]\n";
+                    std::string c2 = "RewriteEngine on\nRewriteBase /proxy/\n\nRewriteCond %{HTTP:Upgrade}     \"websocket\" [NC]\nRewriteCond %{HTTP:Connection}  \"Upgrade\" [NC]\nRewriteRule ^(.*)/(.*)$ \"ws://$1/$2\" [P]\n\nRewriteRule ^(.*)/(.*)$  http://$1/$2  [P,L]\nRewriteRule ^(.*)$  $1/  [R,L]\n";
                     PutFileContents(FPP_MEDIA_DIR + "/config/proxies", c2);
                 }
             }
@@ -633,6 +682,7 @@ static void setupNetwork() {
         }
         execbg("/usr/bin/systemctl reload-or-restart systemd-networkd.service &");
         if (hostapd) {
+            unblockWifi();
             execbg("/usr/bin/systemctl reload-or-restart hostapd.service &");
         } else {
             if (contains(execAndReturn("/usr/bin/systemctl is-enabled hostapd"), "enabled")) {
@@ -641,11 +691,12 @@ static void setupNetwork() {
             if (!contains(execAndReturn("/usr/bin/systemctl is-active hostapd"), "inactive")) {
                 execbg("/usr/bin/systemctl stop hostapd.service &");
             }
+            exec("rm -f /home/fpp/media/tmp/wifi-*.ascii");
         }
     }
 
     printf("FPP - Setting max IGMP memberships\n");
-    exec("/usr/sbin/sysctl net/ipv4/igmp_max_memberships=512 > /dev/null 2>&1");
+    exec("/usr/sbin/sysctl -w net/core/rmem_max=393216 net/core/wmem_max=393216 net/ipv4/igmp_max_memberships=512  > /dev/null 2>&1");
     if (ipForward) {
         exec("/usr/sbin/sysctl net.ipv4.ip_forward=1");
     } else {
@@ -701,7 +752,7 @@ static void setupTimezone() {
         if (c != s) {
             printf("Resetting timezone from %s to %s\n", c.c_str(), s.c_str());
             exec("/usr/bin/timedatectl set-timezone " + s);
-            exec("/usr/sbin/dpkg-reconfigure -f noninteractive tzdata");
+            execbg("/usr/sbin/dpkg-reconfigure -f noninteractive tzdata &");
         }
     }
 }
@@ -749,7 +800,7 @@ void cleanupChromiumFiles() {
     exec("/usr/bin/rm -rf /home/fpp/.config/chromium/Singleton* 2>/dev/null > /dev/null");
 }
 
-static void waitForInterfacesUp() {
+static bool waitForInterfacesUp(bool flite, int timeOut) {
     bool found = false;
     int count = 0;
     std::string announce;
@@ -772,9 +823,9 @@ static void waitForInterfacesUp() {
                 tmpAddrPtr = &((struct sockaddr_in*)ifa->ifa_addr)->sin_addr;
                 char addressBuffer[INET_ADDRSTRLEN];
                 inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
-                printf("FPP - Found %s IP Address %s\n", ifa->ifa_name, addressBuffer);
                 std::string addr = addressBuffer;
                 if (!contains(addr, "192.168.6.2") && !contains(addr, "192.168.7.2") && !contains(addr, "192.168.8.1")) {
+                    printf("FPP - Found %s IP Address %s\n", ifa->ifa_name, addressBuffer);
                     announce += ", " + std::string(addressBuffer);
                     found = true;
                 }
@@ -787,14 +838,16 @@ static void waitForInterfacesUp() {
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
             ++count;
         }
-    } while (!found && (count < 100));
+    } while (!found && (count < timeOut));
     if (!found) {
         printf("FPP - Could not get a valid IP address\n");
+        return false;
     } else {
         printf("FPP - Waited for %d seconds for IP address\n", (count / 5));
-        if (!getRawSettingInt("disableIPAnnouncement", 0) && FileExists("/usr/bin/flite")) {
+        if (!getRawSettingInt("disableIPAnnouncement", 0) && FileExists("/usr/bin/flite") && flite) {
             execbg("/usr/bin/flite -voice awb -t \"" + announce + "\" &");
         }
+        return true;
     }
 }
 static void disableWLANPowerManagement() {
@@ -871,7 +924,9 @@ static void maybeEnableTethering() {
                        "PoolSize=100\n"
                        "EmitDNS=no\n\n");
         PutFileContents("/etc/systemd/network/10-" + tetherInterface + ".network", content);
+        unblockWifi();
         exec("/usr/bin/systemctl reload-or-restart systemd-networkd.service");
+        unblockWifi();
         exec("/usr/bin/systemctl reload-or-restart hostapd.service");
     }
 }
@@ -894,20 +949,79 @@ static void detectNetworkModules() {
         // PutFileContents("/home/fpp/media/config/fpp-network-modules.conf", content);
     }
 }
+static void checkPi5Wifi() {
+#ifdef PLATFORM_PI
+    if (startsWith(GetFileContents("/proc/device-tree/model"), "Raspberry Pi 5")) {
+        // Pi5 does not have external wifi adapters, make sure we have them disabled
+        if (FileExists("/etc/modprobe.d/blacklist-native-wifi.conf")) {
+            unlink("/etc/modprobe.d/blacklist-native-wifi.conf");
+        }
+        std::string v;
+        getRawSetting("wifiDrivers", v);
+        if (v != "Kernel") {
+            setRawSetting("wifiDrivers", "Kernel");
+        }
+    }
+#endif
+}
+void removeDummyInterface() {
+    exec("ip link delete dummy0 > /dev/null 2>&1");
+}
 
 static void setupAudio() {
     if (!FileExists("/root/.libao")) {
         PutFileContents("/root/.libao", "dev=default");
     }
     std::string aplay = execAndReturn("/usr/bin/aplay -l 2>&1");
-    if (contains(aplay, "no soundcards")) {
+    std::vector<std::string> lines = split(aplay, '\n');
+    std::map<std::string, std::string> cards;
+    std::map<std::string, bool> hdmiStatus;
+    bool hasNonHDMI = false;
+    for (auto& l : lines) {
+        if (l.starts_with("card ")) {
+            std::string k = l.substr(0, 6);
+            std::string v = l.substr(8);
+            int idx = v.find(' ');
+            v = v.substr(0, idx);
+            cards[k] = v;
+            hasNonHDMI |= !l.contains("vc4hdmi");
+        }
+    }
+    int hdmiIdx = 0;
+    for (int x = 0; x < 4; x++) {
+        std::string cstr = "/sys/class/drm/card" + std::to_string(x) + "-HDMI-A-1/status";
+        if (FileExists(cstr)) {
+            for (int p = 1; p < 5; p++) {
+                std::string cstr = "/sys/class/drm/card" + std::to_string(x) + "-HDMI-A-" + std::to_string(p) + "/status";
+                std::string c = GetFileContents(cstr);
+                std::string k = "vc4hdmi" + std::to_string(hdmiIdx);
+                hdmiStatus[k] = c.contains("connected") && !c.contains("disconnected");
+                hdmiIdx++;
+            }
+        }
+    }
+    if (!hasNonHDMI || contains(aplay, "no soundcards")) {
         printf("FPP - No Soundcard Detected, loading snd-dummy\n");
         modprobe("snd-dummy");
     }
     int card = getRawSettingInt("AudioOutput", 0);
-    int count = 0;
+    std::string cstr = "card " + std::to_string(card);
     bool found = false;
-    do {
+    int count = 0;
+
+    if (cards[cstr].starts_with("vc4hdmi") && !hdmiStatus[cards[cstr]]) {
+        // nothing connected to the HDMI port so it's definitely not going to work
+        // flip to the dummy output
+        if (!cards.empty() && !cards["card 0"].starts_with("vc4hdmi")) {
+            printf("FPP - Could not find audio device %d, attempting device 0.\n", card);
+            card = 0;
+        } else {
+            card = cards.size();
+            found = true;
+            setRawSetting("AudioOutput", std::to_string(card));
+        }
+    }
+    while (!found && count < 50) {
         std::string amixer = execAndReturn("/usr/bin/amixer -c " + std::to_string(card) + " cset numid=3 1  2>&1");
         if (contains(amixer, "Invalid ")) {
             ++count;
@@ -915,7 +1029,7 @@ static void setupAudio() {
         } else {
             found = true;
         }
-    } while (!found && count < 50);
+    }
     if (!found) {
         printf("FPP - Could not find audio device %d, defaulting to device 0.\n", card);
         CopyFileContents("/opt/fpp/etc/asoundrc.plain", "/root/.asoundrc");
@@ -967,7 +1081,11 @@ static void setupAudio() {
             asoundrc = GetFileContents("/opt/fpp/etc/asoundrc.dmix");
         }
     }
+    int bufSize = getRawSettingInt("AudioBufferSize", 3072);
+    int perSize = getRawSettingInt("AudioPeriodSize", 1024);
     replaceAll(asoundrc, "CARDTYPE", cardType);
+    replaceAll(asoundrc, "BUFFERSIZE", std::to_string(bufSize));
+    replaceAll(asoundrc, "PERIODSIZE", std::to_string(perSize));
     for (int x = 0; x < 10; x++) {
         if (x != card) {
             replaceAll(asoundrc, "card " + std::to_string(x), "card " + std::to_string(card));
@@ -994,13 +1112,13 @@ static void setupAudio() {
         break;
     }
     PutFileContents("/root/.asoundrc", asoundrc);
-    std::string mixers = execAndReturn("/usr/bin/amixer -c " + std::to_string(card) + " scontrols | head -1 | cut -f2 -d\"'\"");
+    std::string mixers = execAndReturn("/usr/bin/amixer -c " + std::to_string(card) + " scontrols | cut -f2 -d\"'\"");
     if (mixers.empty()) {
         // for some sound cards, the mixer devices won't show up
         // until something is played.  Play one second of silence
         exec("/usr/bin/aplay -d 1 /opt/fpp/media/silence_5sec.wav >> /dev/null 2>&1  &");
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
-        mixers = execAndReturn("/usr/bin/amixer -c " + std::to_string(card) + " scontrols | head -1 | cut -f2 -d\"'\"");
+        mixers = execAndReturn("/usr/bin/amixer -c " + std::to_string(card) + " scontrols | cut -f2 -d\"'\"");
     }
     TrimWhiteSpace(mixers);
     std::string mixer;
@@ -1026,23 +1144,33 @@ void detectFalconHardware() {
     setRawSetting("FalconHardwareDetected", fnd ? "1" : "0");
 #endif
 }
-void setupKiosk() {
+
+void setupKiosk(bool force = false) {
     int km = getRawSettingInt("Kiosk", 0);
-    if (km) {
+    if (km || force) {
         std::string url = "http://localhost/";
         getRawSetting("KioskUrl", url);
         std::string value = "{\"RestoreOnStartup\": 4,\"RestoreOnStartupURLs\": [\"" + url + "\"]}";
+        mkdir("/etc/chromium/", 0775);
+        mkdir("/etc/chromium/policies", 0775);
+        mkdir("/etc/chromium/policies/managed", 0775);
         PutFileContents("/etc/chromium/policies/managed/policy.json", value);
     }
+}
+
+void installKiosk() {
+    int km = getRawSettingInt("Kiosk", 0);
     if (FileExists("/fpp_kiosk")) {
         unlink("/fpp_kiosk");
-        if (!FileExists("/etc/fpp/kiosk")) {
-            // need to re-install kiosk mode
-            exec("/opt/fpp/SD/FPP_Kiosk.sh");
-            if (FileExists("/etc/fpp/kiosk")) {
-                exec("/usr/sbin/reboot");
-            }
+        km = true;
+    }
+    if (km && !FileExists("/etc/fpp/kiosk")) {
+        // need to re-install kiosk mode
+        exec("/opt/fpp/SD/FPP_Kiosk.sh");
+        if (FileExists("/etc/fpp/kiosk")) {
+            exec("/usr/sbin/reboot");
         }
+        setupKiosk(true);
     }
 }
 
@@ -1069,8 +1197,8 @@ static void setupChannelOutputs() {
     bool hasDPI = false;
     bool hasRPIMatrix = false;
     Json::Value v;
-    if (FileExists("/home/fpp/media/config/channelOutputs.json")) {
-        if (LoadJsonFromString(GetFileContents("/home/fpp/media/config/channelOutputs.json"), v)) {
+    if (FileExists("/home/fpp/media/config/channeloutputs.json")) {
+        if (LoadJsonFromString(GetFileContents("/home/fpp/media/config/channeloutputs.json"), v)) {
             for (int x = 0; x < v["channelOutputs"].size(); x++) {
                 if (v["channelOutputs"][x]["subType"].asString() == "RGBMatrix" && v["channelOutputs"][x]["enabled"].asInt() == 1) {
                     hasRPIMatrix = true;
@@ -1151,6 +1279,7 @@ static void setupChannelOutputs() {
 }
 
 int main(int argc, char* argv[]) {
+    std::string networkSetupMut = FPP_MEDIA_DIR + "/tmp/networkSetup";
     std::string action = "start";
     if (argc > 1) {
         action = argv[1];
@@ -1173,17 +1302,28 @@ int main(int argc, char* argv[]) {
     } else {
         printf("Could not too output to log.  Directory might not be writable or maybe full.\n");
     }
-    printf("------------------------------\nRunning FPPINIT %s\n", action.c_str());
+    printf("------------------------------\nRunning FPPINIT %s", action.c_str());
+    for (int x = 2; x < argc; x++) {
+        printf(" %s", argv[x]);
+    }
+    printf("\n");
     if (action == "start") {
+        if (!FileExists("/.dockerenv")) {
+#ifdef CAPEDETECT
+            printf("FPP - Cleaning tmp\n");
+            remove_recursive("/home/fpp/media/tmp/", false);
+#endif
+        }
         createDirectories();
         printf("FPP - Directories created\n");
         checkSSHKeys();
         handleBootPartition();
+        checkPi5Wifi();
         checkHostName();
         checkFSTAB();
         setupApache();
-        setupTimezone();
         DetectCape();
+        setupTimezone();
         int reboot = getRawSettingInt("rebootFlag", 0);
         if (reboot) {
             printf("FPP - Clearing reboot flags\n");
@@ -1197,23 +1337,27 @@ int main(int argc, char* argv[]) {
         }
         configureBBB();
         setupChannelOutputs();
+        setupKiosk();
         checkUnpartitionedSpace();
         printf("Setting file ownership\n");
         setFileOwnership();
+        PutFileContents(FPP_MEDIA_DIR + "/tmp/cape_detect_done", "1");
     } else if (action == "postNetwork") {
         handleBootDelay();
         // turn off blinking cursor
         PutFileContents("/sys/class/graphics/fbcon/cursor_blink", "0");
         cleanupChromiumFiles();
         setupAudio();
-        waitForInterfacesUp(); // call to flite requires audio, so do audio before this
+        waitForInterfacesUp(true, 100); // call to flite requires audio, so do audio before this
         if (!FileExists("/etc/fpp/desktop")) {
             maybeEnableTethering();
             detectNetworkModules();
         }
+        setupTimezone(); // this may not have worked in the init phase, try again
         detectFalconHardware();
-        setupKiosk();
+        installKiosk();
         setFileOwnership();
+        removeDummyInterface();
     } else if (action == "bootPre") {
         int restart = getRawSettingInt("restartFlag", 0);
         if (restart) {
@@ -1235,6 +1379,46 @@ int main(int argc, char* argv[]) {
         runScripts("postStop", false);
     } else if (action == "setupAudio") {
         setupAudio();
+    } else if (action == "configureBBB") {
+        configureBBB();
+    } else if (action == "setupNetwork") {
+        PutFileContents(networkSetupMut, "1");
+        setupNetwork();
+        waitForInterfacesUp(false, 70);
+        detectNetworkModules();
+        maybeEnableTethering();
+        unlink(networkSetupMut.c_str());
+    } else if (action == "checkForTether") {
+        if (!FileExists(networkSetupMut)) {
+            std::string a = execAndReturn("systemctl is-active fpp_postnetwork");
+            TrimWhiteSpace(a);
+            if (a.starts_with("active") && argc >= 3) {
+                std::string iface = argv[2];
+                if (iface.starts_with("wlan")) {
+                    waitForInterfacesUp(false, 20);
+                    maybeEnableTethering();
+                    detectNetworkModules();
+                }
+            }
+        }
+    } else if (action == "maybeRemoveTether") {
+        if (!FileExists(networkSetupMut)) {
+            std::string e = execAndReturn("systemctl is-enabled hostapd");
+            std::string a = execAndReturn("systemctl is-active hostapd");
+            TrimWhiteSpace(e);
+            TrimWhiteSpace(a);
+            if (a.starts_with("active") || e.starts_with("enabled")) {
+                std::string iface = argv[2];
+                if (FindTetherWIFIAdapater() != iface && !iface.starts_with("usb") && !iface.starts_with("lo") && waitForInterfacesUp(false, 10)) {
+                    exec("rm -f /etc/systemd/network/10-" + FindTetherWIFIAdapater() + ".network");
+                    exec("rm -f /home/fpp/media/tmp/wifi-*.ascii");
+                    exec("systemctl stop hostapd.service");
+                    exec("systemctl disable hostapd.service");
+                    exec("systemctl reload-or-restart systemd-networkd.service");
+                }
+            }
+        }
     }
+    printf("------------------------------\n");
     return 0;
 }

@@ -221,7 +221,7 @@ $settings["IsDesktop"] = false;
 if (file_exists("/etc/fpp/desktop")) {
     $settings["IsDesktop"] = true;
 }
-
+$settings['BeaglePlatform'] = false;
 if ($settings['Platform'] == "Raspberry Pi") {
     $settings['OSImagePrefix'] = "Pi";
     $settings['LogoLink'] = "http://raspberrypi.org/";
@@ -274,11 +274,26 @@ if ($settings['Platform'] == "Raspberry Pi") {
         $settings['Variant'] = "UNKNOWN";
         $settings['Logo'] = "Raspberry_Pi_Logo.png";
     }
+} else if ($settings['Platform'] == "BeagleBone 64") {
+    $settings['OSImagePrefix'] = "BB64";
+    $settings['LogoLink'] = "http://beagleboard.org/";
+    $settings['BBB_Tethering'] = "1";
+    $settings['SubPlatform'] = trim(file_get_contents("/proc/device-tree/model"));
+    $settings['BeaglePlatform'] = true;
+    if (preg_match('/PocketBeagle2/', $settings['SubPlatform'])) {
+        $settings['Variant'] = "PocketBeagle2";
+        $settings['Logo'] = "beagle_pocket.png";
+    } else {
+        // for now, eventually support others?
+        $settings['Variant'] = "PocketBeagle2";
+        $settings['Logo'] = "beagle_pocket.png";
+    }
 } else if ($settings['Platform'] == "BeagleBone Black") {
     $settings['OSImagePrefix'] = "BBB";
     $settings['LogoLink'] = "http://beagleboard.org/";
     $settings['BBB_Tethering'] = "1";
     $settings['SubPlatform'] = trim(file_get_contents("/proc/device-tree/model"));
+    $settings['BeaglePlatform'] = true;
     if (preg_match('/PocketBeagle/', $settings['SubPlatform'])) {
         $settings['Variant'] = "PocketBeagle";
         $settings['Logo'] = "beagle_pocket.png";
@@ -549,7 +564,7 @@ $settings['emailtoemail'] = $emailtoemail;
 $settings['outputProcessorsFile'] = $outputProcessorsFile;
 
 /*
- * Load default values from settings.json
+ * Load setting info and default values from settings.json
  */
 LoadSettingInfos();
 
@@ -681,6 +696,8 @@ function GetDirSetting($dir)
         return GetSettingValue('mediaDirectory') . '/tmp';
     } else if ($dir == 'crashes') {
         return GetSettingValue('mediaDirectory') . '/crashes';
+    } else if ($dir == 'backups') {
+        return GetSettingValue('mediaDirectory') . '/backups';
     } else if ($dir == 'playlists') {
         return GetSettingValue('playlistDirectory');
     } else if ($dir == 'plugins') {
@@ -714,22 +731,11 @@ if (file_exists($pluginDirectory)) {
 // so we'll make sure it's in a comment so that discovery will work
 if (!isset($skipJSsettings)) {
     ?>
-    <!-- Falcon Player - FPP -->
+    <!--Falcon Player - FPP-->
     <script type="text/javascript">
+        // Standard Common JS Variables
         MINYEAR = <? echo MINYEAR; ?>;
         MAXYEAR = <? echo MAXYEAR; ?>;
-        var settings = new Array();
-        <?
-        foreach ($settings as $key => $value) {
-            if (!is_array($value)) {
-                printf("	settings['%s'] = \"%s\";\n", $key, $value);
-            } else {
-                $js_array = json_encode($value);
-                printf("    settings['%s'] = %s;\n", $key, $js_array);
-            }
-        }
-        ?>
-
         var FPP_FULL_VERSION = '<? echo getFPPVersion(); ?>';
         var FPP_VERSION = '<? echo getFPPVersionFloatStr(); ?>';
         var FPP_MAJOR_VERSION = <? echo getFPPMajorVersion(); ?>;
@@ -740,7 +746,8 @@ if (!isset($skipJSsettings)) {
             var FPP_PATCH_VERSION = <? echo getFPPPatchVersion(); ?>;
         <? } ?>
 
-        var pageName = "<? echo str_ireplace('.php', '', basename($_SERVER['PHP_SELF'])) ?>";
+        <? $pageName = str_ireplace('.php', '', basename($_SERVER['PHP_SELF'])); ?>
+        var pageName = "<? echo $pageName; ?>";
 
         var helpPage = "<? echo basename($_SERVER['PHP_SELF']) ?>";
         if (pageName == "plugin") {
@@ -751,6 +758,41 @@ if (!isset($skipJSsettings)) {
         else {
             helpPage = "help/" + helpPage;
         }
+
+
+        // Dynamic JS Settings Array with settings which need to be exposed on a page by page basis to browser
+        var settings = new Array();
+        <?
+
+        foreach ($settings as $key => $value) {
+
+            //Print Out settings which haven't been defined at all in www/settings.json
+            if (!isset($settingInfos[$key])) {
+                //Print out settings that need to be exposed to the browser in JS settings array - this is temporary until all settings properly define in json file
+                if (!is_array($value)) {
+                    printf("	settings['%s'] = \"%s\"; // Needs proper defintion in JSON\n", $key, $value);
+                } else {
+                    $js_array = json_encode($value);
+                    printf("    settings['%s'] = %s; // Needs proper defintion in JSON\n", $key, $js_array);
+                }
+                // printf("	console.log(\"%s\");\n", $key);     //Debugging
+            }
+
+            //Print out settings that are marked to be exposed to the browser via the config flag in www/settings.json
+            if (isset($settingInfos[$key]["exposedAsJSToPages"])) {
+                if (in_array($pageName, $settingInfos[$key]["exposedAsJSToPages"]) || in_array("all", $settingInfos[$key]["exposedAsJSToPages"])) {
+                    //Print out settings to browser
+                    if (!is_array($value)) {
+                        printf("	settings['%s'] = \"%s\";\n", $key, $value);
+                    } else {
+                        $js_array = json_encode($value);
+                        printf("    settings['%s'] = %s;\n", $key, $js_array);
+                    }
+                }
+            }
+        }
+        ?>
+
 
     </script>
     <?

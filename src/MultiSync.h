@@ -17,8 +17,8 @@
 #include <pthread.h>
 #include <set>
 
-#include "settings.h"
 #include "SysSocket.h"
+#include "settings.h"
 
 #define FPP_CTRL_PORT 32320
 
@@ -80,6 +80,7 @@ typedef enum systemType {
     kSysTypeFPPBeagleBoneGreenWireless = 0x44,
     kSysTypeFPPPocketBeagle = 0x45,
     kSysTypeFPPSanCloudBeagleBoneEnhanced = 0x46,
+    kSysTypeFPPPocketBeagle2 = 0x47,
     kSysTypeFPPArmbian = 0x60,
     kSysTypeMacOS = 0x70,
     // Values under 0x80 are "FPP based" and run full FPP
@@ -194,6 +195,20 @@ public:
 
     virtual void SendPluginData(const std::string& name, const uint8_t* data, int len) {}
     virtual void SendFPPCommandPacket(const std::string& host, const std::string& cmd, const std::vector<std::string>& args) {}
+
+    virtual void ReceivedSeqOpenPacket(const std::string& filename) {}
+    virtual void ReceivedSeqSyncStartPacket(const std::string& filename) {}
+    virtual void ReceivedSeqSyncStopPacket(const std::string& filename) {}
+    virtual void ReceivedSeqSyncPacket(const std::string& filename, int frames, float seconds) {}
+
+    virtual void ReceivedMediaOpenPacket(const std::string& filename) {}
+    virtual void ReceivedMediaSyncStartPacket(const std::string& filename) {}
+    virtual void ReceivedMediaSyncStopPacket(const std::string& filename) {}
+    virtual void ReceivedMediaSyncPacket(const std::string& filename, float seconds) {}
+
+    virtual void ReceivedBlankingDataPacket(void) {}
+    virtual void ReceivedPluginData(const std::string& name, const uint8_t* data, int len) {}
+    virtual void ReceivedFPPCommandPacket(const std::string& cmd, const std::vector<std::string>& args) {}
 };
 
 class NetInterfaceInfo {
@@ -263,15 +278,15 @@ public:
     void addMultiSyncPlugin(MultiSyncPlugin* p);
     void removeMultiSyncPlugin(MultiSyncPlugin* p);
 
-    void OpenSyncedSequence(const char* filename);
-    void StartSyncedSequence(const char* filename);
-    void StopSyncedSequence(const char* filename);
-    void SyncSyncedSequence(const char* filename, int frameNumber, float secondsElapsed);
+    void OpenSyncedSequence(const std::string& filename);
+    void StartSyncedSequence(const std::string& filename);
+    void StopSyncedSequence(const std::string& filename);
+    void SyncSyncedSequence(const std::string& filename, int frameNumber, float secondsElapsed);
 
-    void OpenSyncedMedia(const char* filename);
-    void StartSyncedMedia(const char* filename);
-    void StopSyncedMedia(const char* filename);
-    void SyncSyncedMedia(const char* filename, int frameNumber, float secondsElapsed);
+    void OpenSyncedMedia(const std::string& filename);
+    void StartSyncedMedia(const std::string& filename);
+    void StopSyncedMedia(const std::string& filename);
+    void SyncSyncedMedia(const std::string& filename, int frameNumber, float secondsElapsed);
 
     void SyncPlaylistToMS(uint64_t ms, const std::string& pl = "", bool sendSyncPackets = false);
     void SyncPlaylistToMS(uint64_t ms, int pos, const std::string& pl = "", bool sendSyncPackets = false);
@@ -284,13 +299,13 @@ public:
 
     void StoreHTTPResponse(std::string* ipp, uint8_t* data, int sz);
 
-    [[nodiscard]] std::vector<MultiSyncSystem> const& GetLocalSystems(){ return m_localSystems; }
-    [[nodiscard]] std::vector<MultiSyncSystem> const& GetRemoteSystems(){ return m_remoteSystems; }
+    [[nodiscard]] std::vector<MultiSyncSystem> const& GetLocalSystems() { return m_localSystems; }
+    [[nodiscard]] std::vector<MultiSyncSystem> const& GetRemoteSystems() { return m_remoteSystems; }
 
 private:
     bool isSupportedForMultisync(const char* address, const char* intface);
 
-    void setupMulticastReceive();
+    void setupMulticastReceive(bool cycle);
     void PingSingleRemote(MultiSyncSystem& sys, int discover = 0);
     void PingSingleRemoteViaHTTP(const std::string& address);
     int CreatePingPacket(MultiSyncSystem& sys, char* outBuf, int discover);
@@ -316,7 +331,7 @@ private:
 
     void ProcessSyncPacket(ControlPkt* pkt, int len, MultiSyncStats* stats);
     void ProcessCommandPacket(ControlPkt* pkt, int len, MultiSyncStats* stats);
-    void ProcessPingPacket(ControlPkt* pkt, int len, const std::string& src, MultiSyncStats* stats);
+    void ProcessPingPacket(ControlPkt* pkt, int len, const std::string& src, MultiSyncStats* stats, const std::string& incomingIp = "");
     void ProcessPluginPacket(ControlPkt* pkt, int len, MultiSyncStats* stats);
     void ProcessFPPCommandPacket(ControlPkt* pkt, int len, MultiSyncStats* stats);
 

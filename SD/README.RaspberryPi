@@ -3,8 +3,7 @@ Instructions for creating a new FPP SD image package for the Raspberry Pi
 =============================================================================
 
 Install the latest Raspbian Bullseye Lite image to the SD card.  The last
-version tested 2024-03-12-raspios-bookworm-armhf-lite.img.xz
-
+version tested 2024-07-04-raspios-bookworm-armhf-lite.img.xz
 Resize the root partition to 3.5GB using fdisk (substitute the proper device
 for your SD card).
 
@@ -33,7 +32,7 @@ Disable the auto partition resize script on the SD and enable the SSH server whi
 we have the partition mounted:
 
 	# Make a temp mount location
-	mkdir /mnt/tmp
+	mkdir -f /mnt/tmp
 	# Mount the boot partition
 	mount /dev/sdc1 /mnt/tmp
 	# Backup the cmdline.txt file
@@ -75,18 +74,36 @@ Do a system upgrade to make sure everything is at the latest versions
 
 # For debian 12, we'd like to move to kernel 6.6+ and drop compiled wifi drivers, this still
 # needs some work to figure out and LOTS more testing
+# If the kernel version is NOT already 6.6.x (depends on the image used), then you need to update:
 PRUNE_MODULES=1 WANT_PI5=1 rpi-update
 KV=$(uname -r)
 KV=${KV::-3}
 rm -f /boot/*-${KV}*
 rm -rf /lib/modules/${KV}*
 rm -rf /usr/lib/linux-image-${KV}*
+
+
 # remove the 16K page kernel as some of the libraries are incompatible with it
 rm -rf /boot/firmware/kernel_2712.img
 rm -rf /lib/modules/*-16k*
 
-
 Reboot again to pick up the latest kernel that may have been installed with the dist-upgrade
+
+
+# build/install the wifi drivers
+KV=6.6.51
+apt-get install git bc
+# apt-get install linux-image-${KV}+rpt-rpi-v6 linux-image-${KV}+rpt-rpi-v7 linux-image-${KV}+rpt-rpi-v7l linux-image-${KV}+rpt-rpi-v8
+apt-get install linux-headers-${KV}+rpt-rpi-v7l linux-headers-${KV}+rpt-rpi-v7 linux-headers-${KV}+rpt-rpi-v6 linux-headers-${KV}+rpt-common-rpi linux-kbuild-${KV}+rpt
+
+cd ~
+wget -O ./FPP-Wifi-Drivers.sh https://raw.githubusercontent.com/FalconChristmas/fpp/master/SD/FPP-Wifi-Drivers.sh
+chmod +x ./FPP-Wifi-Drivers.sh
+./FPP-Wifi-Drivers.sh
+
+apt-get remove --purge linux-headers-${KV}+rpt-rpi-v7l linux-headers-${KV}+rpt-rpi-v7 linux-headers-${KV}+rpt-rpi-v6 linux-headers-${KV}+rpt-common-rpi linux-kbuild-${KV}+rpt
+rm ./FPP-Wifi-Drivers.sh
+
 
 
 On the Pi, run the FPP installer:
@@ -105,6 +122,8 @@ up.
 
 If you are installing to create a SD image zip, do the following:
     apt-get remove -y --purge --autoremove raspberrypi-kernel-headers
+    KV=6.6.51
+    apt-get remove -y --purge --autoremove linux-headers-${KV}+rpt-rpi-v8 linux-headers-${KV}+rpt-rpi-v7l linux-headers-${KV}+rpt-rpi-v7 linux-headers-${KV}+rpt-rpi-v6
     apt-get clean
 
 	# Reboot to make sure things take
@@ -124,9 +143,9 @@ the proper device name for your SD card in place of '/dev/sdg'):
     NOTE: the linux system needs to have zerofree and squashfs-tools installed
        apt-get install zerofree squashfs-tools
 
-    DEVICE=/dev/sdb
-    VERSION=8.0-beta1
-    OSVERSION=2024-07
+    DEVICE=/dev/sdd
+    VERSION=8.1
+    OSVERSION=2024-10
     BLOCKS=6800
     mount "${DEVICE}2" /mnt
     rm -rf /mnt/usr/src/linux-headers-*
@@ -139,6 +158,7 @@ the proper device name for your SD card in place of '/dev/sdg'):
     rm -f /mnt/var/log/*
     rm -f /mnt/etc/ssh/*key*
     rm -f /mnt/root/.bash_history
+    echo "uninitialized" > /mnt/etc/machine-id
     umount /mnt
     zerofree -v "${DEVICE}2"
 	time dd if=${DEVICE} of=FPP-v${VERSION}-Pi.img bs=1M count=${BLOCKS}

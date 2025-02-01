@@ -3,7 +3,8 @@
 
 <head>
     <?php
-    require_once ('config.php');
+    include 'common/htmlMeta.inc';
+    require_once('config.php');
 
     writeFPPVersionJavascriptFunctions();
 
@@ -111,22 +112,26 @@
         }
 
         function UninstallPlugin(plugin) {
-            var url = 'api/plugin/' + plugin;
-            $('html,body').css('cursor', 'wait');
-            $.ajax({
-                url: url,
-                type: 'DELETE',
-                dataType: 'json',
-                success: function (data) {
-                    $('html,body').css('cursor', 'auto');
-                    if (data.Status == 'OK')
-                        location.reload(true);
-                    else
-                        alert('ERROR: ' + data.Message);
-                },
-                error: function () {
-                    $('html,body').css('cursor', 'auto');
-                    alert('Error, API call to uninstall plugin failed');
+            var url = 'api/plugin/' + plugin + '?stream=true'; // Assuming your API supports streaming for uninstall
+            DisplayProgressDialog("pluginsProgressPopup", "Uninstall Plugin");
+            StreamURL(url, 'pluginsProgressPopupText', 'PluginProgressDialogDone', 'PluginProgressDialogDone', 'DELETE');
+        }
+
+        function ShowUninstallPluginPopup(plugin, pluginName) {
+            DoModalDialog({
+                id: "uninstallPluginDialog",
+                class: "modal-lg",
+                title: "Warning: Uninstalling Plugin",
+                body: "Please confirm you wish to uninstall the " + pluginName + " plugin",
+                backdrop: true,
+                keyboard: true,
+                buttons: {
+                    Uninstall: function () {
+                        UninstallPlugin(plugin);
+                    },
+                    Abort: function () {
+                        CloseModalDialog("uninstallPluginDialog");
+                    }
                 }
             });
         }
@@ -240,7 +245,7 @@
                 }
 
                 html += '</div><div align="right">';
-                html += "<button class='buttons btn-outline-danger'  onClick='UninstallPlugin(\"" + data.repoName + "\");'><i class='fas fa-trash-alt'></i> Uninstall</button>";
+                html += "<button class='buttons btn-outline-danger'  onClick='ShowUninstallPluginPopup(\"" + data.repoName + "\",\"" + data.name + "\");'><i class='fas fa-trash-alt'></i> Uninstall</button>";
             } else {
                 html += '</div><div align="right">';
                 html += '</div><div align="right">';
@@ -253,9 +258,9 @@
             html += '</div>';
 
             html += '</div></div>';
-            html += '<div class="row fppPluginEntryFooter"><div class="col-lg"><a href="' + data.homeURL + '" target="_blank"><i class="fas fa-home"></i> ' + data.homeURL + '</a></div>';
-            html += '<div class="col-lg-auto"><a href="' + data.srcURL + '" target="_blank"><i class="fas fa-code"></i> View Source</a>';
-            html += ' <a href="' + data.bugURL + '" target="_blank" class="ps-2"><i class="fas fa-bug"></i> Report a Bug</a>';
+            html += '<div class="row fppPluginEntryFooter"><div class="col-lg"><a href="' + data.homeURL + '" target="_blank" rel="noopener noreferrer"><i class="fas fa-home"></i> ' + data.homeURL + '</a></div>';
+            html += '<div class="col-lg-auto"><a href="' + data.srcURL + '" target="_blank" rel="noopener noreferrer"><i class="fas fa-code"></i> View Source</a>';
+            html += ' <a href="' + data.bugURL + '" target="_blank" rel="noopener noreferrer" class="ps-2"><i class="fas fa-bug"></i> Report a Bug</a>';
             html += '</div>';
             html += '</div>';
             html += '</div>';
@@ -286,6 +291,8 @@
                                 html += "Pi";
                             } else if (platforms[p] == 'BeagleBone Black') {
                                 html += "BBB";
+                            } else if (platforms[p] == 'BeagleBone 64') {
+                                html += "BB64";
                             } else {
                                 html += platforms[p];
                             }
@@ -342,6 +349,7 @@
         function LoadInstalledPlugins() {
             for (var i = 0; i < installedPlugins.length; i++) {
                 var url = 'api/plugin/' + installedPlugins[i];
+                let index = i;
                 $.ajax({
                     url: url,
                     dataType: 'json',
@@ -350,7 +358,7 @@
                         FilterPlugins();
                     },
                     error: function () {
-                        alert('Error, failed to fetch ' + installedPlugins[i]);
+                        alert('Error, failed to fetch ' + installedPlugins[index]);
                     }
                 });
             }
@@ -360,7 +368,7 @@
             for (var i = 0; i < pluginList.length; i++) {
                 if (!PluginIsInstalled(pluginList[i][0])) {
                     var url = pluginList[i][1];
-
+                    let index = i;
                     pluginInfoURLs[pluginList[i][0]] = url;
 
                     $('html,body').css('cursor', 'wait');
@@ -374,9 +382,12 @@
                             FilterPlugins();
 
                         },
-                        error: function () {
+                        error: function (d) {
                             $('html,body').css('cursor', 'auto');
-                            alert('Error, failed to fetch ' + pluginList[i]);
+                            if (d.statusText !== undefined) {
+                                d = d.statusText;
+                            }
+                            alert('Error, failed to fetch ' + pluginList[index] + " - " + d);
                         }
                     });
                 }
@@ -402,9 +413,12 @@
                         $('#pluginInput').val('');
                         FilterPlugins();
                     },
-                    error: function () {
+                    error: function (d) {
                         $('html,body').css('cursor', 'auto');
-                        alert('Error, failed to fetch ' + pluginInfos[i]);
+                        if (d.statusText !== undefined) {
+                            d = d.statusText;
+                        }
+                        alert('Error, failed to fetch ' + pluginInfos[i] + " - " + d);
                     }
                 });
             }

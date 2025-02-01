@@ -3,6 +3,7 @@
 
 <head>
     <?php
+    include 'common/htmlMeta.inc';
     require_once 'config.php';
     require_once "common.php";
     include 'common/menuHead.inc';
@@ -50,7 +51,7 @@
     <script type="text/javascript" src="js/fpp-filemanager.js"></script>
 
     <script>
-        const pluginFileExtensions = [ <? echo implode(", ", array_map(fn($arg) => "'$arg'", $fileExtensions)); ?> ];
+        const pluginFileExtensions = [ <? echo implode(", ", array_map(fn($arg) => "'$arg'", $fileExtensions)); ?>];
         GetAllFiles();
     </script>
 
@@ -172,13 +173,17 @@
                                 Crash Reports
                             </a>
                         </li>
+                        <li class="nav-item">
+                            <a class="nav-link " id="tab-backups-tab" data-bs-toggle="pill"
+                                data-bs-target="#tab-backups" href="#tab-backups" role="tab"
+                                aria-controls="tab-backups">
+                                Backups
+                            </a>
+                        </li>
                     </ul>
 
 
 
-                    <div id="tablefilterChk">
-                        <?php PrintSetting('fileManagerTableFilter', 'FileManagerFilterToggled'); ?>
-                    </div>
                     <script>
                         //set filter state
                         $('#fileManagerTableFilter').prop('checked', (settings.fileManagerTableFilter == "1" ? true : false));
@@ -189,11 +194,21 @@
                         <div class="tab-pane fade show active" id="tab-sequence" role="tabpanel"
                             aria-labelledby="tab-sequence-tab">
 
-                            <div id="divSeq">
+                            <div id="divSequences">
                                 <div class="backdrop">
-                                    <div class="tableHeaderRow">
-                                        <h2> Sequence Files (.fseq) </h2>
+                                    <div class="row justify-content-between fileDetailsHeader">
+                                        <div class="col-auto">
+                                            <h2>Sequence Files (.fseq)</h2>
+                                        </div>
+                                        <div class="col-auto fileCountDetails">
+                                            <div class="row">
+                                                <div class="col-auto fileCountlabelHeading">Items</div>
+                                                <div class="col-auto fileCountlabelValue"><span id="fileCount_Sequences"
+                                                        class='badge text-bg-secondary'>0</span></div>
+                                            </div>
+                                        </div>
                                     </div>
+
                                     <div id="divSeqData" class="fileManagerDivData">
                                         <table id="tblSequences" class="tablesorter">
                                             <thead>
@@ -244,7 +259,20 @@
                             <div id="divMusic">
 
                                 <div class="backdrop">
-                                    <h2> Music Files (.mp3/.ogg/.m4a/.flac/.aac/.wav/.m4p) </h2>
+                                    <div class="row justify-content-between fileDetailsHeader">
+                                        <div class="col-auto">
+                                            <h2>Music Files (.mp3/.ogg/.m4a/.flac/.aac/.wav/.m4p)</h2>
+                                        </div>
+                                        <div class="col-auto fileCountDetails">
+                                            <div class="row">
+                                                <div class="col-auto fileCountlabelHeading">Items</div>
+                                                <div class="col-auto fileCountlabelValue"><span id="fileCount_Music"
+                                                        class='badge text-bg-secondary'>0</span></div>
+                                            </div>
+                                        </div>
+
+                                    </div>
+
                                     <div id="divMusicData" class="fileManagerDivData">
                                         <table id="tblMusic" class="tablesorter">
                                             <thead>
@@ -290,10 +318,23 @@
                         </div>
 
                         <div class="tab-pane fade" id="tab-video" role="tabpanel" aria-labelledby="tab-video-tab">
-                            <div id="divVideo">
+                            <div id="divVideos">
 
                                 <div class="backdrop">
-                                    <h2> Video Files (.mp4/.mkv/.avi/.mpg/.mov) </h2>
+                                    <div class="row justify-content-between fileDetailsHeader">
+                                        <div class="col-auto">
+                                            <h2>Video Files (.mp4/.mkv/.avi/.mpg/.mov)</h2>
+                                        </div>
+                                        <div class="col-auto fileCountDetails">
+                                            <div class="row">
+                                                <div class="col-auto fileCountlabelHeading">Items</div>
+                                                <div class="col-auto fileCountlabelValue"><span id="fileCount_Videos"
+                                                        class='badge text-bg-secondary'>0</span></div>
+                                            </div>
+                                        </div>
+
+                                    </div>
+
                                     <div id="divVideoData" class="fileManagerDivData">
                                         <table id="tblVideos" class="tablesorter">
                                             <thead>
@@ -335,10 +376,24 @@
                         </div>
 
                         <div class="tab-pane fade" id="tab-images" role="tabpanel" aria-labelledby="tab-images-tab">
-                            <div id="divImage">
+                            <div id="divImages">
 
                                 <div class="backdrop">
-                                    <h2> Images </h2>
+                                    <div class="row justify-content-between fileDetailsHeader">
+                                        <div class="col-auto">
+                                            <h2>Images</h2>
+                                        </div>
+                                        <div class="col-auto fileCountDetails">
+                                            <div class="row">
+                                                <div class="col-auto fileCountlabelHeading"><span class="">Items:<span>
+                                                </div>
+                                                <div class="col-auto fileCountlabelValue"><span id="fileCount_Images"
+                                                        class='badge text-bg-secondary'>0</span></div>
+                                            </div>
+                                        </div>
+
+                                    </div>
+
                                     <div id="divImagesData" class="fileManagerDivData">
                                         <table id="tblImages" class="tablesorter">
                                             <thead>
@@ -379,7 +434,20 @@
                             <div id="divEffects">
 
                                 <div class="backdrop">
-                                    <h2> Effect Sequences (.eseq) </h2>
+                                    <div class="row justify-content-between fileDetailsHeader">
+                                        <div class="col-auto">
+                                            <h2>Effect Sequences (.eseq)</h2>
+                                        </div>
+                                        <div class="col-auto fileCountDetails">
+                                            <div class="row">
+                                                <div class="col-auto fileCountlabelHeading">Items</div>
+                                                <div class="col-auto fileCountlabelValue"><span id="fileCount_Effects"
+                                                        class='badge text-bg-secondary'>0</span></div>
+                                            </div>
+                                        </div>
+
+                                    </div>
+
                                     <div id="divEffectsData" class="fileManagerDivData">
                                         <table id="tblEffects" class="tablesorter">
                                             <thead>
@@ -419,7 +487,20 @@
                         <div class="tab-pane fade" id="tab-scripts" role="tabpanel" aria-labelledby="tab-scripts-tab">
                             <div id="divScripts">
                                 <div class="backdrop">
-                                    <legend> Scripts (.sh/.pl/.pm/.php/.py)</legend>
+                                    <div class="row justify-content-between fileDetailsHeader">
+                                        <div class="col-auto">
+                                            <h2>Scripts (.sh/.pl/.pm/.php/.py)</h2>
+                                        </div>
+                                        <div class="col-auto fileCountDetails">
+                                            <div class="row">
+                                                <div class="col-auto fileCountlabelHeading">Items</div>
+                                                <div class="col-auto fileCountlabelValue"><span id="fileCount_Scripts"
+                                                        class='badge text-bg-secondary'>0</span></div>
+                                            </div>
+                                        </div>
+
+                                    </div>
+
                                     <div id="divScriptsData" class="fileManagerDivData">
                                         <table id="tblScripts" class="tablesorter">
                                             <thead>
@@ -464,13 +545,25 @@
                         </div>
                         <?php
                         foreach ($tabDivs as $td) {
-                            include ($td);
+                            include($td);
                         }
                         ?>
                         <div class="tab-pane fade" id="tab-logs" role="tabpanel" aria-labelledby="tab-logs-tab">
                             <div id="divLogs">
                                 <div class="backdrop">
-                                    <legend> Log Files </legend>
+                                    <div class="row justify-content-between fileDetailsHeader">
+                                        <div class="col-auto">
+                                            <h2>Log Files</h2>
+                                        </div>
+                                        <div class="col-auto fileCountDetails">
+                                            <div class="row">
+                                                <div class="col-auto fileCountlabelHeading">Items</div>
+                                                <div class="col-auto fileCountlabelValue"><span id="fileCount_Logs"
+                                                        class='badge text-bg-secondary'>0</span></div>
+                                            </div>
+                                        </div>
+
+                                    </div>
                                     <div id="divLogsData" class="fileManagerDivData">
                                         <table id="tblLogs" class="tablesorter">
                                             <thead>
@@ -510,7 +603,19 @@
                         <div class="tab-pane fade" id="tab-uploads" role="tabpanel" aria-labelledby="tab-uploads-tab">
                             <div id="divUploads">
                                 <div class="backdrop">
-                                    <legend> Uploaded Files </legend>
+                                    <div class="row justify-content-between fileDetailsHeader">
+                                        <div class="col-auto">
+                                            <h2>Uploaded Files</h2>
+                                        </div>
+                                        <div class="col-auto fileCountDetails">
+                                            <div class="row">
+                                                <div class="col-auto fileCountlabelHeading">Items</div>
+                                                <div class="col-auto fileCountlabelValue"><span id="fileCount_Uploads"
+                                                        class='badge text-bg-secondary'>0</span></div>
+                                            </div>
+                                        </div>
+
+                                    </div>
                                     <div id="divUploadsData" class="fileManagerDivData">
                                         <table id="tblUploads" class="tablesorter">
                                             <thead>
@@ -547,7 +652,19 @@
                         <div class="tab-pane fade" id="tab-crashes" role="tabpanel" aria-labelledby="tab-crashes-tab">
                             <div id="divCrashes">
                                 <div class="backdrop">
-                                    <legend> Crash Reports </legend>
+                                    <div class="row justify-content-between fileDetailsHeader">
+                                        <div class="col-auto">
+                                            <h2>Crash Reports</h2>
+                                        </div>
+                                        <div class="col-auto fileCountDetails">
+                                            <div class="row">
+                                                <div class="col-auto fileCountlabelHeading">Items</div>
+                                                <div class="col-auto fileCountlabelValue"><span id="fileCount_Crashes"
+                                                        class='badge text-bg-secondary'>0</span></div>
+                                            </div>
+                                        </div>
+
+                                    </div>
                                     <div id="divCrashesData" class="fileManagerDivData">
                                         <table id="tblCrashes" class="tablesorter">
                                             <thead>
@@ -579,9 +696,62 @@
                             </div>
 
                         </div>
+                        <div class="tab-pane fade" id="tab-backups" role="tabpanel" aria-labelledby="tab-backups-tab">
+                            <div id="divBackups">
+                                <div class="backdrop">
+                                    <div class="row justify-content-between fileDetailsHeader">
+                                        <div class="col-auto">
+                                            <h2>Backup Files</h2>
+                                        </div>
+                                        <div class="col-auto fileCountDetails">
+                                            <div class="row">
+                                                <div class="col-auto fileCountlabelHeading">Items</div>
+                                                <div class="col-auto fileCountlabelValue"><span id="fileCount_Backups"
+                                                        class='badge text-bg-secondary'>0</span></div>
+                                            </div>
+                                        </div>
+
+                                    </div>
+                                    <div id="divBackupsData" class="fileManagerDivData">
+                                        <table id="tblBackups" class="tablesorter">
+                                            <thead>
+                                                <tr">
+                                                    <th>File</th>
+                                                    <th class="sorter-metric" data-metric-name-full="byte|Byte|BYTE"
+                                                        data-metric-name-abbr="b|B">Size</th>
+                                                    <th>Date Modified</th>
+                                                    </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr class='unselectableRow'>
+                                                    <td colspan=8 align='center'>Loading Files...</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    <div class='form-actions'>
+                                        <input onclick="ClearSelections('Backups');" class="buttons" type="button"
+                                            value="Clear" />
+                                        <input onclick="ButtonHandler('Backups', 'download');"
+                                            class="disableButtons singleBackupsButton multiBackupsButton" type="button"
+                                            value="Download" />
+                                        <input onclick="ButtonHandler('Backups', 'delete');"
+                                            class="disableButtons singleBackupsButton multiBackupsButton" type="button"
+                                            value="Delete" />
+                                    </div>
+                                    <div class="note"><strong>CTRL+Click to select multiple items</strong></div>
+
+                                </div>
+                            </div>
+
+                        </div>
                         <div id='fileponduploader' class='fileponduploader ui-tabs-panel'>
                             <input type="file" class="filepond" id="filepondInput" multiple>
                         </div>
+                    </div>
+                    <div id="tablefilterChk">
+                        <?php PrintSetting('fileManagerTableFilter', 'FileManagerFilterToggled'); ?>
                     </div>
                 </div>
                 <div id="overlay">

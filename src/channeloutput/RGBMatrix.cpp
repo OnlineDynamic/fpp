@@ -13,6 +13,7 @@
 #include "fpp-pch.h"
 
 #include <cmath>
+#include <unistd.h>
 
 #include "../Warnings.h"
 #include "../log.h"
@@ -67,9 +68,12 @@ RGBMatrixOutput::RGBMatrixOutput(unsigned int startChannel,
 RGBMatrixOutput::~RGBMatrixOutput() {
     LogDebug(VB_CHANNELOUT, "RGBMatrixOutput::~RGBMatrixOutput()\n");
 
-    delete m_rgbmatrix;
-    delete m_matrix;
-    delete m_panelMatrix;
+    if (m_rgbmatrix)
+        delete m_rgbmatrix;
+    if (m_matrix)
+        delete m_matrix;
+    if (m_panelMatrix)
+        delete m_panelMatrix;
 }
 
 /*
@@ -78,8 +82,31 @@ RGBMatrixOutput::~RGBMatrixOutput() {
 int RGBMatrixOutput::Init(Json::Value config) {
     LogDebug(VB_CHANNELOUT, "RGBMatrixOutput::Init(JSON)\n");
 
+    if (startsWith(GetFileContents("/proc/device-tree/model"), "Raspberry Pi 5")) {
+        LogErr(VB_CHANNELOUT, "RGBMatrix does work on Raspberry Pi 5\n");
+        return 0;
+    }
+
     m_panelWidth = config["panelWidth"].asInt();
     m_panelHeight = config["panelHeight"].asInt();
+
+    std::string modules = GetFileContents("/proc/modules");
+    if (modules.contains("snd_bcm2835")) {
+        LogInfo(VB_CHANNELOUT, "snd_bcm2835 is loaded, attempting to unload.");
+        system("rmmod snd_bcm2835");
+        system("modprobe snd_dummy");
+    }
+    modules = GetFileContents("/proc/modules");
+    if (modules.contains("snd_bcm2835")) {
+        LogWarn(VB_CHANNELOUT, "snd_bcm2835 is stil loaded. Cannot proceed.");
+        std::string nvresults;
+        urlPut("http://127.0.0.1/api/settings/rebootFlag", "1", nvresults);
+        std::string errStr = "RGBMatrix cannot run with snd_bcm2835 enabled.   Please reboot.";
+        WarningHolder::AddWarning(errStr);
+        errStr += "\n";
+        LogErr(VB_CHANNELOUT, errStr.c_str());
+        return false;
+    }
 
     if (!m_panelWidth)
         m_panelWidth = 32;
@@ -193,13 +220,13 @@ int RGBMatrixOutput::Init(Json::Value config) {
     /* mortification77 - 2023-11-30: Add panelRowAddressType
 
         panelRowAddressType Definitions
-        
+
         0 = default
         1 = AB-addressed panels
         2 = direct row select
         3 = ABC-addressed panels
         4 = ABC Shift + DE direct (Default: 0).
-    
+
     */
 
     if (config.isMember("panelRowAddressType")) {
@@ -286,7 +313,7 @@ int RGBMatrixOutput::Close(void) {
     return ChannelOutput::Close();
 }
 
-void RGBMatrixOutput::OverlayTestData(unsigned char* channelData, int cycleNum, float percentOfCycle, int testType) {
+void RGBMatrixOutput::OverlayTestData(unsigned char* channelData, int cycleNum, float percentOfCycle, int testType, const Json::Value& config) {
     for (int output = 0; output < m_outputs; output++) {
         int panelsOnOutput = m_panelMatrix->m_outputPanels[output].size();
         for (int i = 0; i < panelsOnOutput; i++) {

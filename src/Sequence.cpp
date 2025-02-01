@@ -235,12 +235,16 @@ int Sequence::OpenSequenceFile(const std::string& filename, int startFrame, int 
         }
     }
 
-    if (IsSequenceRunning())
+    if (IsSequenceRunning()) 
         CloseSequenceFile();
 
+    std::unique_lock<std::mutex> lock(frameCacheLock);
     if (m_seqFile) {
         delete m_seqFile;
         m_seqFile = nullptr;
+        commandPresets.clear();
+        effectsOn.clear();
+        effectsOff.clear();
     }
 
     m_seqStarting = 2;
@@ -249,8 +253,6 @@ int Sequence::OpenSequenceFile(const std::string& filename, int startFrame, int 
     if (startFrame) {
         m_lastFrameRead = startFrame - 1;
     }
-
-    std::unique_lock<std::mutex> lock(frameCacheLock);
     clearCaches();
     lock.unlock();
 
@@ -336,7 +338,9 @@ int Sequence::OpenSequenceFile(const std::string& filename, int startFrame, int 
     SetChannelOutputRefreshRate(m_seqRefreshRate);
 
     //start reading frames
+    lock.lock();
     m_seqFile = seqFile;
+    lock.unlock();
     m_seqStarting = 1; //beyond header, read loop can start reading frames
     frameLoadSignal.notify_all();
     m_seqPaused = 0;
@@ -515,6 +519,7 @@ void Sequence::SingleStepSequence(void) {
     m_seqSingleStep = 1;
 }
 
+// Broken per issue #986
 void Sequence::SingleStepSequenceBack(void) {
     m_seqSingleStepBack = 1;
 }
@@ -706,10 +711,9 @@ void Sequence::SendSequenceData() {
     if (m_lastFrameData) {
         uint32_t frame = m_lastFrameData->frame;
         if (!commandPresets.empty()) {
-            std::map<std::string, std::string> keywords;
-            keywords["SEQUENCE_NAME"] = m_seqFilename;
             const auto& p = commandPresets.find(frame);
             if (p != commandPresets.end()) {
+                std::map<std::string, std::string> keywords({{"SEQUENCE_NAME", m_seqFilename}});
                 for (auto& cmd : p->second) {
                     CommandManager::INSTANCE.TriggerPreset(cmd, keywords);
                 }
@@ -768,8 +772,10 @@ void Sequence::CloseSequenceFile(void) {
 
     std::unique_lock<std::mutex> readLock(readFileLock);
     if (m_seqFile) {
+        std::unique_lock<std::mutex> fclock(frameCacheLock);
         delete m_seqFile;
         m_seqFile = nullptr;
+        fclock.unlock();
 
         std::map<std::string, std::string> keywords;
         keywords["SEQUENCE_NAME"] = m_seqFilename;

@@ -1,12 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
-<?php
-require_once 'config.php';
-include 'common/menuHead.inc';
-require_once "common.php";
-?>
 
 <head>
+    <?php
+    include 'common/htmlMeta.inc';
+    require_once 'config.php';
+    include 'common/menuHead.inc';
+    require_once "common.php";
+    ?>
     <script type="text/javascript" src="js/validate.min.js"></script>
 
     <script language="Javascript">
@@ -30,8 +31,8 @@ require_once "common.php";
             $('#proxyTable tbody').append(
                 "<tr id='row'" + currentRows + " class='fppTableRow proxyRow'>" +
                 "<td>" + (currentRows + 1) + "</td>" +
-                "<td><input id='ipRow" + currentRows + "' class='active' type='text' size='40' oninput='UpdateLink(" + (currentRows) + ")'></td>" +
-                "<td><input id='descRow" + currentRows + "' class='active' type='text' size='40' oninput='UpdateLink(" + (currentRows) + ")' value=''></td>" +
+                "<td><input id='ipRow" + currentRows + "' class='ipaddress' type='text' size='40' oninput='UpdateLink(" + (currentRows) + ")'></td>" +
+                "<td><input id='descRow" + currentRows + "' class='description' type='text' size='40' oninput='UpdateLink(" + (currentRows) + ")' value=''></td>" +
                 "<td id='linkRow" + currentRows + "'> </td>" +
                 "</tr>");
         }
@@ -41,8 +42,8 @@ require_once "common.php";
             $('#proxyTable tbody').append(
                 "<tr id='row'" + currentRows + " class='fppTableRow proxyRow'>" +
                 "<td>" + (currentRows + 1) + "</td>" +
-                "<td><input id='ipRow" + currentRows + "' class='active' type='text' size='40' oninput='UpdateLink(" + (currentRows) + ")' value='" + host + "'></td>" +
-                "<td><input id='descRow" + currentRows + "' class='active' type='text' size='40' oninput='UpdateLink(" + (currentRows) + ")' value='" + description + "'></td>" +
+                "<td><input id='ipRow" + currentRows + "' class='ipaddress' type='text' size='40' oninput='UpdateLink(" + (currentRows) + ")' value='" + host + "'></td>" +
+                "<td><input id='descRow" + currentRows + "' class='description' type='text' size='40' oninput='UpdateLink(" + (currentRows) + ")' value='" + description + "'></td>" +
                 "<td id='linkRow" + currentRows + "'>" +
                 <? if (!$settings['hideExternalURLs']) { ?>
                     "<a target='_blank' href='proxy/" + host + "'>" + host + "</a>" +
@@ -73,20 +74,38 @@ require_once "common.php";
             var formStr = "<form action='proxies.php' method='post' id='proxyForm'>";
 
             var json = new Array();
-            var row = 0;
             $(".proxyRow").each(function () {
-                console.log("Hello!!!");
-                var ip = $(this).find("#ipRow" + row).val();
-                console.log("" + ip);
+                var ip = $(this).find(".ipaddress").val();
+                if (ip === undefined || ip === null || ip === '') { ip = ""; }
                 if (isValidHostname(ip) || isValidIpAddress(ip)) {
-                    var desc = $(this).find("#descRow" + row).val();
+                    var desc = $(this).find(".description").val();
+                    if (desc === undefined || desc === null || desc === '') {
+                        desc = "";
+                    }
                     json.push({
-                            "host" : ip,
-                            "description" : desc
-                        });
-                    ++row;
+                        "host": ip,
+                        "description": desc
+                    });
                 }
             });
+            if ($(".proxyRow").length == 0) {
+                $.ajax({
+                    url: 'api/proxies',
+                    type: 'GET',
+                    async: true,
+                    dataType: 'json',
+                    success: function (data) {
+                        proxyInfos = data;
+                        for (var i = 0; i < proxyInfos.length; i++) {
+                            Delete("api/proxies/" + proxyInfos[i].host, true, null, true);
+                        }
+                    },
+                    error: function () {
+                        $.jGrowl('Error: Unable to get list of proxies', { themeState: 'danger' });
+                    }
+                });
+            }
+
             Post("api/proxies", false, JSON.stringify(json, null, 2));
             location.reload();
         }
@@ -102,21 +121,21 @@ require_once "common.php";
             SetupSelectableTableRow(tableInfo);
 
             $.ajax({
-				url: 'api/proxies',
-				type: 'GET',
-				async: true,
-				dataType: 'json',
-				success: function (data) {
-					proxyInfos = data;
-					for (var i = 0; i < proxyInfos.length; i++) {
-						AddProxyForHost(proxyInfos[i].host, proxyInfos[i].description);						
-					}
-				},
-				error: function () {
-					$.jGrowl('Error: Unable to get list of proxies', { themeState: 'danger' });
-				}
-			});
-            
+                url: 'api/proxies',
+                type: 'GET',
+                async: true,
+                dataType: 'json',
+                success: function (data) {
+                    proxyInfos = data;
+                    for (var i = 0; i < proxyInfos.length; i++) {
+                        AddProxyForHost(proxyInfos[i].host, proxyInfos[i].description);
+                    }
+                },
+                error: function () {
+                    $.jGrowl('Error: Unable to get list of proxies', { themeState: 'danger' });
+                }
+            });
+
         });
     </script>
 

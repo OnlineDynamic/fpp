@@ -12,6 +12,7 @@
 
 #include "fpp-pch.h"
 
+#include <cinttypes>
 #include <cmath>
 #include <fcntl.h>
 #include <httpserver.hpp>
@@ -100,7 +101,9 @@ public:
         CurrentMonitorBase(c) {
         sensor = Sensors::INSTANCE.getSensorSource(c["sensor"].asString());
         channel = c["channel"].asInt();
-        sensor->enable(channel);
+        if (sensor) {
+            sensor->enable(channel);
+        }
     }
     virtual float getRawValue() override {
         if (sensor) {
@@ -121,7 +124,12 @@ public:
     int pixelCount = -1;
     int configuredCount = -1;
     float current = 0.0f;
+
     std::string warning;
+    int retryCount = 0;
+    int okCount = 0;
+    long long firstTriggerTime = 0;
+    long long nextRetryTime = 0;
 };
 
 class PortPinInfo {
@@ -321,6 +329,9 @@ OutputMonitor::~OutputMonitor() {
 }
 
 void OutputMonitor::Initialize(std::map<int, std::function<bool(int)>>& callbacks) {
+    eFuseRetryCount = getSettingInt("eFuseRetryCount", 0);
+    eFuseRetryInterval = getSettingInt("eFuseRetryInterval", 100);
+
     CommandManager::INSTANCE.addCommand(&FPPEnableOutputsCommand::INSTANCE);
     CommandManager::INSTANCE.addCommand(&FPPDisableOutputsCommand::INSTANCE);
     if (!portPins.empty()) {
@@ -466,13 +477,18 @@ void OutputMonitor::AddPortConfiguration(int port, const Json::Value& pinConfig,
         std::string ep = pinConfig.get("enablePin", "").asString();
         if (ep != "") {
             pi->enablePin = AddOutputPin(name, ep);
+            if (!pi->enablePin) {
+                enabled = false;
+            }
             pi->highToEnable = (ep[0] != '!');
             if (!enabled) {
                 pi->receivers[0].enabled = false;
-                if (pi->highToEnable) {
-                    pullHighOutputPins.pop_back();
-                } else {
-                    pullLowOutputPins.pop_back();
+                if (pi->enablePin) {
+                    if (pi->highToEnable) {
+                        pullHighOutputPins.pop_back();
+                    } else {
+                        pullLowOutputPins.pop_back();
+                    }
                 }
             }
             hasInfo = true;
@@ -523,8 +539,10 @@ void OutputMonitor::AddPortConfiguration(int port, const Json::Value& pinConfig,
                                     }
                                     if (a->receivers[0].isOn && !a->receivers[0].hasTriggered) {
                                         // Output SHOULD be on, but the fuse triggered.  That's a warning.
-                                        addEFuseWarning(a, 0);
                                         a->receivers[0].hasTriggered = true;
+                                        if (checkEFuseRetry(a)) {
+                                            addEFuseWarning(a, 0);
+                                        }
                                     }
                                 }
                             }
@@ -565,7 +583,7 @@ void OutputMonitor::AddPortConfiguration(int port, const Json::Value& pinConfig,
                             // make sure the port is turned off
                             pi->enablePin->setValue(pi->highToEnable ? 0 : 1);
                         }
-                        if (pi->receivers[0].isOn) {
+                        if (pi->receivers[0].isOn && checkEFuseRetry(pi)) {
                             addEFuseWarning(pi, 0);
                         }
                     }
@@ -650,8 +668,8 @@ const PinCapabilities* OutputMonitor::AddOutputPin(const std::string& name, cons
         WarningHolder::AddWarning("Could not find pin " + pin + " to enable output " + name);
         return nullptr;
     }
-    op.push_back(pc);
     std::unique_lock<std::mutex> lock(gpioLock);
+    op.push_back(pc);
     pc->configPin("gpio", true);
     pc->setValue(!highToEnable);
     return pc;
@@ -714,36 +732,96 @@ void OutputMonitor::GetCurrentPortStatusJson(Json::Value& result) {
 }
 
 void OutputMonitor::addEFuseWarning(PortPinInfo* pi, int rec) {
-    std::string name = pi->name;
-    if (pi->isSmartReceiver) {
-        name += std::string(1, 'A' + rec);
-    }
-    std::string warn = "eFUSE Triggered for " + name;
-
-    if (!pi->receivers[rec].warning.starts_with(warn)) {
-        if (sequence->IsSequenceRunning()) {
-            std::string seq = sequence->m_seqFilename;
-            int sTime = sequence->m_seqMSElapsed / 1000;
-            warn += " (" + seq + "/" + std::to_string(sTime / 60) + ":" + std::to_string(sTime % 60) + ")";
+    if (pi && rec < 6) {
+        std::string name = pi->name;
+        if (pi->isSmartReceiver) {
+            name += std::string(1, 'A' + rec);
         }
+        std::string warn = "eFUSE Triggered for " + name;
 
-        LogWarn(VB_CHANNELOUT, warn + "\n");
-        // Output SHOULD be on, but the fuse triggered.  That's a warning.
-        WarningHolder::AddWarning(warn);
-        pi->receivers[rec].warning = warn;
+        if (!pi->receivers[rec].warning.starts_with(warn)) {
+            if (sequence->IsSequenceRunning()) {
+                std::string seq = sequence->m_seqFilename;
+                int sTime = sequence->m_seqMSElapsed / 1000;
+                warn += " (" + seq + "/" + std::to_string(sTime / 60) + ":" + std::to_string(sTime % 60) + ")";
+            }
 
-        std::map<std::string, std::string> keywords;
-        keywords["PORT"] = name;
-        CommandManager::INSTANCE.TriggerPreset("EFUSE_TRIGGERED", keywords);
+            LogWarn(VB_CHANNELOUT, warn + "\n");
+            // Output SHOULD be on, but the fuse triggered.  That's a warning.
+            WarningHolder::AddWarning(warn);
+            pi->receivers[rec].warning = warn;
+
+            std::map<std::string, std::string> keywords;
+            keywords["PORT"] = name;
+            CommandManager::INSTANCE.TriggerPreset("EFUSE_TRIGGERED", keywords);
+        }
     }
 }
 void OutputMonitor::clearEFuseWarning(PortPinInfo* port, int rec) {
-    if (!port->receivers[rec].warning.empty()) {
-        WarningHolder::RemoveWarning(port->receivers[rec].warning);
-        port->receivers[rec].warning.clear();
+    if (port && rec < 6) {
+        if (!port->receivers[rec].warning.empty()) {
+            WarningHolder::RemoveWarning(port->receivers[rec].warning);
+            port->receivers[rec].warning.clear();
+        }
+        port->receivers[rec].retryCount = 0;
     }
 }
-
+bool OutputMonitor::checkEFuseRetry(PortPinInfo* port) {
+    if (port && port->receivers[0].retryCount < eFuseRetryCount) {
+        LogDebug(VB_CHANNELOUT, "eFuse triggered for %s.  Attempting reset retry #%d\n", port->name.c_str(), port->receivers[0].retryCount + 1);
+        if (std::find(eFuseRetries.begin(), eFuseRetries.end(), port) == eFuseRetries.end()) {
+            eFuseRetries.push_back(port);
+        }
+        if (!retryTimerRunning) {
+            Timers::INSTANCE.addPeriodicTimer("eFuse Retry", 100, [this]() {
+                processRetries();
+            });
+            retryTimerRunning = true;
+        }
+        return false;
+    }
+    return true;
+}
+void OutputMonitor::processRetries() {
+    long long ft = GetTimeMS();
+    std::list<PortPinInfo*> toRemove;
+    for (auto p : eFuseRetries) {
+        if (p->eFusePin->getValue() == p->eFuseOKValue) {
+            p->receivers[0].okCount++;
+            // must be good for at least two seconds
+            long long resetTime = p->receivers[0].nextRetryTime;
+            resetTime += 2000;
+            if (ft > resetTime) {
+                long long ft2 = ft % 20000;
+                long long rt2 = resetTime % 20000;
+                p->receivers[0].retryCount = 0;
+                toRemove.push_back(p);
+            }
+        } else if (p->receivers[0].retryCount > eFuseRetryCount) {
+            // still not good after all the retries, mark it bad and send the warning
+            toRemove.push_back(p);
+            addEFuseWarning(p);
+        } else if (p->receivers[0].retryCount == 0 || ft > p->receivers[0].nextRetryTime) {
+            p->receivers[0].enabled = true;
+            p->receivers[0].hasTriggered = false;
+            if (p->receivers[0].retryCount == 0) {
+                p->receivers[0].firstTriggerTime = ft;
+                p->receivers[0].nextRetryTime = ft;
+            }
+            p->receivers[0].nextRetryTime += eFuseRetryInterval;
+            p->receivers[0].retryCount++;
+            p->enablePin->setValue(p->highToEnable ? 0 : 1);
+            p->enablePin->setValue(p->highToEnable ? 1 : 0);
+        }
+    }
+    for (auto p : toRemove) {
+        eFuseRetries.remove(p);
+    }
+    if (eFuseRetries.empty()) {
+        Timers::INSTANCE.stopPeriodicTimer("eFuse Retry");
+        retryTimerRunning = false;
+    }
+}
 void OutputMonitor::setSmartReceiverInfo(int port, int index, bool enabled, bool tripped, int current, int pixelCount) {
     // printf("      %d  %c:     Current:  %d     PC:  %d    EN: %d    TR: %d\n", port + 1, (char)('A' + index), current, pixelCount, enabled, tripped);
     if (port < portPins.size()) {

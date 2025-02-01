@@ -71,6 +71,7 @@
 #include "fppversion.h"
 #include "gpio.h"
 #include "httpAPI.h"
+#include "ping.h"
 #include "channeloutput/ChannelOutputSetup.h"
 #include "channeloutput/channeloutputthread.h"
 #include "channeltester/ChannelTester.h"
@@ -86,7 +87,7 @@
 
 #include "fppd.h"
 
-#if defined(PLATFORM_BBB)
+#if defined(PLATFORM_BBB) ||  defined(PLATFORM_BB64) 
 #include "util/BBBUtils.h"
 #define PLAT_GPIO_CLASS BBBPinProvider
 #elif defined(PLATFORM_PI)
@@ -331,6 +332,8 @@ static void handleCrash(int s) {
             char sysType[] = "Armbian";
 #elif defined(PLATFORM_BBB)
             char sysType[] = "BBB";
+#elif defined(PLATFORM_BB64)
+            char sysType[] = "BB64";
 #elif defined(PLATFORM_PI)
             char sysType[] = "Pi";
 #elif defined(PLATFORM_OSX)
@@ -345,12 +348,14 @@ static void handleCrash(int s) {
             char zfName[256];
             snprintf(zfName, sizeof(zfName), "crashes/fpp-%s-%s-%s-%s.zip", sysType, getFPPVersion(), SystemUUID.c_str(), tbuffer);
 
-            char zName[1024];
-            snprintf(zName, sizeof(zfName), "zip -r %s /tmp/fppd_crash.log", zfName);
+            char zName[1224];
+            snprintf(zName, sizeof(zfName), "zip -r %s /tmp/fppd_crash.log fpp-info.json", zfName);
             if (crashLog > 1) {
                 strcat(zName, " settings");
                 if (crashLog > 2) {
-                    strcat(zName, " config tmp logs/fppd.log logs/apache2-error.log playlists /etc/fppd");
+                    system("dmesg -T > tmp/boot.log");
+                    system("journalctl -b -u fppinit -u fppoled -u fpp_postnetwork >> tmp/boot.log");
+                    strcat(zName, " config tmp logs/fppd.log logs/apache2-error.log playlists /etc/fpp");
                 }
             }
             system(zName);
@@ -365,7 +370,9 @@ static void handleCrash(int s) {
     runMainFPPDLoop = 0;
     if (s != SIGQUIT && s != SIGUSR1) {
         WarningHolder::StopNotifyThread();
-        WarningHolder::writeWarningsFile("['FPPD has crashed.  Check crash reports.']");
+        WarningHolder::RemoveAllWarnings();
+        WarningHolder::AddWarning(1, "FPPD has crashed.  Check crash reports.");
+        WarningHolder::WriteWarningsFile();
         exit(-1);
     }
 }
@@ -620,7 +627,7 @@ int main(int argc, char* argv[]) {
     FPPLogger::INSTANCE.Init();
     LoadSettings(argv[0]);
 
-    // save the UUID so crash reports can add that to the filename 
+    // save the UUID so crash reports can add that to the filename
     // to make it easier to collect crashes from a single system
     // for analysis
     SystemUUID = getSetting("SystemUUID", "unknown");
@@ -726,6 +733,7 @@ int main(int argc, char* argv[]) {
 
     InitMediaOutput();
     PixelOverlayManager::INSTANCE.Initialize();
+    PingManager::INSTANCE.Initialize();
     InitializeChannelOutputs();
     PluginManager::INSTANCE.loadUserPlugins();
 
@@ -748,6 +756,7 @@ int main(int argc, char* argv[]) {
     CleanupMediaOutput();
     CloseEffects();
     CloseChannelOutputs();
+    PingManager::INSTANCE.Cleanup();
     OutputMonitor::INSTANCE.Cleanup();
     CommandManager::INSTANCE.Cleanup();
     MultiSync::INSTANCE.ShutdownSync();
@@ -774,7 +783,7 @@ int main(int argc, char* argv[]) {
     CloseCommand();
     CloseOpenFiles();
 
-    WarningHolder::clearWarningsFile();
+    WarningHolder::ClearWarningsFile();
 
     if (restartFPPD) {
         LogInfo(VB_GENERAL, "Performing Restart.\n");
@@ -889,9 +898,9 @@ void MainLoop(void) {
 
     int lowestLogLevel = FPPLogger::INSTANCE.MinimumLogLevel();
     if (lowestLogLevel == LOG_EXCESSIVE)
-        WarningHolder::AddWarning(EXCESSIVE_LOG_LEVEL_WARNING);
+        WarningHolder::AddWarning(2, EXCESSIVE_LOG_LEVEL_WARNING);
     else if (lowestLogLevel == LOG_DEBUG)
-        WarningHolder::AddWarning(DEBUG_LOG_LEVEL_WARNING);
+        WarningHolder::AddWarning(3, DEBUG_LOG_LEVEL_WARNING);
 
     memset(events, 0, sizeof(events));
     int idleCount = 0;
@@ -1007,6 +1016,8 @@ void MainLoop(void) {
                 publishCounter = 60480;
                 publishReason = "normal";
             }
+            // also do the periodic work in the api server while idle
+            apiServer.periodicWork();
         }
         Timers::INSTANCE.fireTimers();
         CurlManager::INSTANCE.processCurls();

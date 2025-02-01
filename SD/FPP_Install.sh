@@ -48,8 +48,8 @@
 #
 #############################################################################
 FPPBRANCH=${FPPBRANCH:-"master"}
-FPPIMAGEVER="2024-07"
-FPPCFGVER="88"
+FPPIMAGEVER="2025-01"
+FPPCFGVER="93"
 FPPPLATFORM="UNKNOWN"
 FPPDIR=/opt/fpp
 FPPUSER=fpp
@@ -177,7 +177,12 @@ then
     desktop=false
 elif [ -e "/sys/class/leds/beaglebone:green:usr0" ]
 then
+    ARCH=$(uname -m)
+if [ "$ARCH" == "aarch64" ]; then
+    FPPPLATFORM="BeagleBone 64"
+else
 	FPPPLATFORM="BeagleBone Black"
+fi
     isimage=true
     desktop=false
 elif [ -f "/etc/armbian-release" ]
@@ -302,7 +307,10 @@ echo "------------------------------------------------------------------------"
 if [ -e "/etc/fpp" ]
 then
 	echo "FPP - Removing old /etc/fpp"
-	rm -rf /etc/fpp
+	rm -f /etc/fpp/config_version
+    rm -f /etc/fpp/platform
+    rm -f /etc/fpp/rfs_version
+    rm -f /etc/fpp/desktop
 fi
 
 #######################################
@@ -379,27 +387,13 @@ cd /opt 2> /dev/null || mkdir /opt
 export DEBIAN_FRONTEND=noninteractive
 
 case "${OSVER}" in
-	debian_11 | debian_12 | ubuntu_22.04 | ubuntu_22.10 | linuxmint_21)
-		case $FPPPLATFORM in
-			'BeagleBone Black')
-				echo "FPP - Skipping non-free for $FPPPLATFORM"
-				;;
-			*)
-				echo "FPP - Enabling non-free repo"
-				sed -i -e "s/Components: main/Components: main contrib non-free non-free-firmware/" /etc/apt/sources.list.d/debian.sources
-                #sed -i -e "s/^deb \(.*\)/deb \1 non-free/" /etc/apt/sources.list
-				#sed -i -e "s/non-free\(.*\)non-free/non-free\1/" /etc/apt/sources.list
-				;;
-		esac
-
+	debian_12 | ubuntu_24.* | linuxmint_21)
 
         #remove a bunch of packages that aren't neeeded, free's up space
-        PACKAGE_REMOVE="nginx nginx-full nginx-common python3-numpy python3-opencv python3-pip python3-pkg-resources python3-scipy python3-setuptools triggerhappy pocketsphinx-en-us python3-smbus guile-2.2-libs \
-            python3-werkzeug python3-click python3-colorama python3-decorator python3-dev python3-distro \
-            python3-flask python3-itsdangerous python3-jinja2 python3-lib2to3 python3-libgpiod python3-markupsafe \
-            gfortran glib-networking libxmuu1 xauth network-manager dhcpcd5 fake-hwclock ifupdown isc-dhcp-client isc-dhcp-common openresolv iwd"
-        if [ "$FPPPLATFORM" == "BeagleBone Black" ]; then
-            PACKAGE_REMOVE="$PACKAGE_REMOVE nodejs bb-node-red-installer mender-client"
+        PACKAGE_REMOVE="nginx nginx-full nginx-common  triggerhappy pocketsphinx-en-us guile-2.2-libs \
+            gfortran glib-networking libxmuu1 xauth network-manager dhcpcd5 fake-hwclock ifupdown isc-dhcp-client isc-dhcp-common openresolv"
+        if [ "$FPPPLATFORM" == "BeagleBone 64" -o "$FPPPLATFORM" == "BeagleBone Black" ]; then
+            PACKAGE_REMOVE="$PACKAGE_REMOVE nodejs bb-node-red-installer mender-client bb-code-server"
         fi
         if $desktop; then
             #don't remove anything from a desktop
@@ -480,8 +474,15 @@ case "${OSVER}" in
             ACTUAL_PHPVER="8.2"
             PHPVER="8.2"
         fi
+
+        #########################################
+        # WARNING
+        # ---------------------------------------
+        # If you modify this file, be sure to update Docker/Dockerfile
+        #########################################
+
         PACKAGE_LIST="alsa-utils arping avahi-daemon avahi-utils locales nano net-tools \
-                      apache2 apache2-bin apache2-data apache2-utils \
+                      apache2 apache2-bin apache2-data apache2-utils libavahi-client-dev \
                       bc bash-completion btrfs-progs exfat-fuse lsof ethtool curl zip unzip bzip2 wireless-tools dos2unix \
                       fbi fbset file flite ca-certificates lshw gettext wget iproute2 \
                       build-essential ffmpeg gcc g++ gdb vim vim-common bison flex device-tree-compiler dh-autoreconf \
@@ -489,23 +490,23 @@ case "${OSVER}" in
                       samba rsync sudo shellinabox dnsmasq hostapd vsftpd ntp sqlite3 at haveged samba samba-common-bin \
                       mp3info exim4 mailutils dhcp-helper parprouted bridge-utils libiio-utils libfmt9 \
                       php${PHPVER} php${PHPVER}-cli php${PHPVER}-fpm php${PHPVER}-common php${PHPVER}-curl php-pear \
-                      php${PHPVER}-bcmath php${PHPVER}-sqlite3 php${PHPVER}-zip php${PHPVER}-xml \
+                      php${PHPVER}-bcmath php${PHPVER}-sqlite3 php${PHPVER}-zip php${PHPVER}-xml ccache \
                       libavcodec-dev libavformat-dev libswresample-dev libswscale-dev libavdevice-dev libavfilter-dev libtag1-dev \
                       vorbis-tools libgraphicsmagick++1-dev graphicsmagick-libmagick-dev-compat libmicrohttpd-dev \
                       gettext apt-utils x265 libtheora-dev libvorbis-dev libx265-dev iputils-ping mp3gain \
                       libmosquitto-dev mosquitto-clients mosquitto libzstd-dev lzma zstd gpiod libgpiod-dev libjsoncpp-dev libcurl4-openssl-dev \
                       fonts-freefont-ttf flex bison pkg-config libasound2-dev mesa-common-dev qrencode libusb-1.0-0-dev \
-                      flex bison pkg-config libasound2-dev python3-distutils libssl-dev libtool bsdextrautils iw rsyslog tzdata"
+                      flex bison pkg-config libasound2-dev python3-setuptools libssl-dev libtool bsdextrautils iw rsyslog tzdata"
 
-        if [ "$FPPPLATFORM" == "Raspberry Pi" -o "$FPPPLATFORM" == "BeagleBone Black" ]; then
+        if [ "$FPPPLATFORM" == "Raspberry Pi" -o "$FPPPLATFORM" == "BeagleBone Black"  -o "$FPPPLATFORM" == "BeagleBone 64" ]; then
             PACKAGE_LIST="$PACKAGE_LIST firmware-realtek firmware-atheros firmware-ralink firmware-brcm80211 firmware-iwlwifi firmware-libertas firmware-zd1211 firmware-ti-connectivity zram-tools"
-            if [ "${OSVER}" == "debian_12" ]; then
-                PACKAGE_LIST="$PACKAGE_LIST ccache"
+            if [ "$FPPPLATFORM" == "Raspberry Pi" ]; then
+                PACKAGE_LIST="$PACKAGE_LIST libva-dev smartmontools"
+            fi
+            if [ "$FPPPLATFORM" == "BeagleBone Black"  -o "$FPPPLATFORM" == "BeagleBone 64" ]; then
+                PACKAGE_LIST="$PACKAGE_LIST ti-pru-cgt-v2.3"
             fi
         else
-            PACKAGE_LIST="$PACKAGE_LIST ccache"
-        fi
-        if [ "$FPPPLATFORM" != "BeagleBone Black" ]; then
             PACKAGE_LIST="$PACKAGE_LIST libva-dev smartmontools"
         fi
         if $isimage; then
@@ -514,10 +515,18 @@ case "${OSVER}" in
         if ! $build_vlc; then
             PACKAGE_LIST="$PACKAGE_LIST vlc libvlc-dev"
         fi
+        if [ "${OSVER}" == "debian_12" ]; then
+            PACKAGE_LIST="$PACKAGE_LIST python3-distutils"
+        fi
 
+        
         if $skip_apt_install; then
+            echo "skipping apt install because skpt_apt_install == $skip_apt_install"
             PACKAGE_LIST=""
         else
+            echo "--------------------------"
+            echo "INSTALLING $PACKAGE_LIST"
+            echo "--------------------------"
             apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" install ${PACKAGE_LIST}
         fi
         
@@ -528,15 +537,7 @@ case "${OSVER}" in
         (cd /opt/ && git clone https://github.com/tomba/kmsxx && cd kmsxx && apt-get install -y meson cmake libfmt-dev && meson setup build --prefix=/usr -Dpykms=disabled && ninja -C build install && cd /opt/ && rm -rf kmsxx && apt-get remove -y --purge --autoremove meson cmake libfmt-dev && ccache -C)
         
         if $isimage; then
-            if [ "${OSVER}" == "debian_12" ]; then
-                apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" install systemd wpasupplicant
-            elif [ "$FPPPLATFORM" == "BeagleBone Black" ]; then
-                # Since we rely heavily on systemd-networkd and wpasupplicant for networking features, grab the latest backports
-                # This cannot work on Raspberry Pi as the Pi Zero and older Pi's are armv6 and bullseye-backports is armv7
-                apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" -t bullseye-backports install systemd wpasupplicant
-            else
-                apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" install systemd wpasupplicant
-            fi
+            apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" install systemd wpasupplicant
         fi
         echo "FPP - Cleaning up after installing packages"
         apt-get -y clean
@@ -716,6 +717,11 @@ case "${FPPPLATFORM}" in
         systemctl disable unattended-upgrades
         systemctl disable resize_filesystem
 		;;
+    'BeagleBone 64')
+        systemctl disable keyboard-setup
+        systemctl disable unattended-upgrades
+        systemctl disable resize_filesystem
+        ;;
 
 	'Raspberry Pi')
 		echo "FPP - Updating firmware for Raspberry Pi install"
@@ -875,6 +881,10 @@ EOF
             echo "FPP - Removing extraneous blacklisted modules"
             rm -f /etc/modprobe.d/blacklist-*8192cu.conf
             rm -f /etc/modprobe.d/blacklist-*8xxxu.conf
+            
+            # this causes a symlink from gpiochip4 -> gpiochip0 which then prevents a gpio expander that would be
+            # gpiochip4 from actually loading and getting a dev entry
+            rm -f /usr/lib/udev/rules.d/60-gpiochip4.rules
         fi
         
 		echo "FPP - Disabling getty on onboard serial ttyAMA0"
@@ -988,12 +998,12 @@ bash scripts/upgrade_config -notee
 
 
 #######################################
-PHPDIR="/etc/php/7.4"
-if [ "${OSVER}" == "ubuntu_22.10" ]; then
-    PHPDIR="/etc/php/8.1"
-fi
-if [ "${OSVER}" == "debian_12" ]; then
+if [ -d /etc/php/8.3 ]; then
+    PHPDIR="/etc/php/8.3"
+elif [ -d /etc/php/8.2 ]; then
     PHPDIR="/etc/php/8.2"
+elif [ -d /etc/php/8.1 ]; then
+    PHPDIR="/etc/php/8.1"
 fi
 
 echo "FPP - Configuring PHP"
@@ -1056,6 +1066,7 @@ if getent group spi > /dev/null; then
 fi
 adduser ${FPPUSER} video
 adduser ${FPPUSER} audio
+adduser ${FPPUSER} dialout
 # FIXME, use ${FPPUSER} here instead of hardcoding
 sed -i -e 's/^fpp:\*:/fpp:\$6\$rA953Jvd\$oOoLypAK8pAnRYgQQhcwl0jQs8y0zdx1Mh77f7EgKPFNk\/jGPlOiNQOtE.ZQXTK79Gfg.8e3VwtcCuwz2BOTR.:/' /etc/shadow
 
@@ -1121,21 +1132,18 @@ sed -i -e "s/rotate .*/rotate 2/" /etc/logrotate.conf
 sed -i -e "s/weekly/daily/" /etc/logrotate.d/rsyslog
 
 #######################################
+# Disable duplicate logging to save on disk space 
+sudo sed -i '/auth,authpriv\.\*/s/^/# /' /etc/rsyslog.conf
+sudo sed -i '/cron\.\*/s/^/# /' /etc/rsyslog.conf
+sudo sed -i '/kern\.\*/s/^/# /' /etc/rsyslog.conf
+sudo sed -i '/mail\.\*/s/^/# /' /etc/rsyslog.conf
+sudo sed -i '/user\.\*/s/^/# /' /etc/rsyslog.conf
+
+#######################################
 # Configure ccache
 echo "FPP - Configuring ccache"
 mkdir -p /root/.ccache
-if [ "$FPPPLATFORM" == "Raspberry Pi" -o "$FPPPLATFORM" == "BeagleBone Black" ]; then
-    # On Beagle/Pi, we'll use a newer ccache to allow developer sharing of the cache
-    if [ "x${OSVER}" != "xdebian_12" ]; then
-        cd /opt/fpp/SD
-        ./buildCCACHE.sh
-        ccache -M 350M
-    else
-        ccache -M 500M
-    fi
-else
-    ccache -M 350M
-fi
+ccache -M 500M
 ccache --set-config=temporary_dir=/tmp
 ccache --set-config=sloppiness=pch_defines,time_macros
 ccache --set-config=hard_link=true
@@ -1292,7 +1300,9 @@ sed -i -e "s/APACHE_RUN_GROUP=.*/APACHE_RUN_GROUP=${FPPUSER}/" /etc/apache2/envv
 sed -i -e "s#APACHE_LOG_DIR=.*#APACHE_LOG_DIR=${FPPHOME}/media/logs#" /etc/apache2/envvars
 sed -i -e "s/Listen 8080.*/Listen 80/" /etc/apache2/ports.conf
 
+#Copy FPP Defined Apache configs
 cat /opt/fpp/etc/apache2.site > /etc/apache2/sites-enabled/000-default.conf
+cat /opt/fpp/etc/apache2.status > /etc/apache2/mods-enabled/status.conf
 
 # Enable Apache modules
 a2dismod php${ACTUAL_PHPVER}
@@ -1301,6 +1311,7 @@ a2enmod mpm_event
 a2enmod http2
 a2enmod cgi
 a2enmod rewrite
+a2enmod expires
 a2enmod proxy
 a2enmod proxy_http
 a2enmod proxy_http2
@@ -1331,6 +1342,13 @@ sed -i '/^pool.*/d' /etc/ntpsec/ntp.conf
 sed -i '$s/$/\npool falconplayer.pool.ntp.org iburst minpoll 8 maxpoll 12 prefer/' /etc/ntpsec/ntp.conf
 
 
+if [ "x${FPPPLATFORM}" = "xBeagleBone 64" ]; then
+    #Set colored prompt
+    sed -i -e "s/#force_color_prompt=yes/force_color_prompt=yes/" /home/fpp/.bashrc
+    # remove the udev rules that create the SoftAp interface on the bbbw and bbggw
+    rm -f /etc/udev/rules.d/*SoftAp*
+    
+fi
 if [ "x${FPPPLATFORM}" = "xBeagleBone Black" ]; then
     #######################################
     systemctl disable dev-hugepages.mount
@@ -1349,10 +1367,7 @@ if [ "x${FPPPLATFORM}" = "xBeagleBone Black" ]; then
     make -j ${CPUS}
     make install
     make clean
-    
-    # install the newer pru code generator
-    apt-get install ti-pru-cgt-v2.3
-    
+        
     #Set colored prompt
     sed -i -e "s/#force_color_prompt=yes/force_color_prompt=yes/" /home/fpp/.bashrc
     
@@ -1404,6 +1419,24 @@ if [ "x${FPPPLATFORM}" = "xBeagleBone Black" ]; then
     rm -rf /usr/lib/arm-linux-gnueabihf/dri/sun*
     rm -rf /usr/lib/arm-linux-gnueabihf/dri/vmw*
 fi
+if [ "x${FPPPLATFORM}" = "xBeagleBone 64" ]; then
+    #######################################
+    ## With just 512M of ram, reserving hugepages makes little sense
+    systemctl disable dev-hugepages.mount
+    ## BB64 pretty much requires "real" swap so we won't use the zramswap
+    systemctl disable zramswap
+    
+    cd /opt/fpp/capes/drivers/bb64
+    make -j ${CPUS}
+    make install
+    make clean
+    cp /boot/firmware/extlinux/extlinux.conf /boot/firmware/extlinux/extlinux.conf.orig
+    cp extlinux/extlinux.conf /boot/firmware/extlinux/extlinux.conf
+    cd ~
+        
+    #Set colored prompt
+    sed -i -e "s/#force_color_prompt=yes/force_color_prompt=yes/" /home/fpp/.bashrc
+fi
 
 if $isimage; then
     rm -rf /usr/share/doc/*
@@ -1420,7 +1453,8 @@ if [ "$FPPPLATFORM" == "BeagleBone Black" ]; then
 fi
 cp /opt/fpp/etc/avahi/* /etc/avahi/services
 if $isimage; then
-    cp /opt/fpp/etc/networkd-dispatcher/routable.d/* /etc/networkd-dispatcher/routable.d
+    mkdir -p /etc/networkd-dispatcher/initialized.d
+    cp -a /opt/fpp/etc/networkd-dispatcher/* /etc/networkd-dispatcher
 fi
 
 systemctl disable mosquitto
@@ -1452,20 +1486,7 @@ make clean ; make -j ${CPUS} optimized
 
 
 ######################################
-if [ "$FPPPLATFORM" == "Raspberry Pi" -o "$FPPPLATFORM" == "BeagleBone Black" ]; then
-    if [ "x${OSVER}" != "xdebian_12" ]; then
-        if [ "$FPPPLATFORM" == "Raspberry Pi" ]; then
-            echo "FPP - Install kernel headers so modules can be compiled later"
-            apt-get -y install raspberrypi-kernel-headers
-            apt-get clean
-        fi
-
-        echo "FPP - Compiling WIFI drivers"
-        cd /opt/fpp/SD
-        bash ./FPP-Wifi-Drivers.sh
-        rm -f /etc/modprobe.d/rtl8723bu-blacklist.conf
-    fi
-    
+if [ "$FPPPLATFORM" == "Raspberry Pi" -o "$FPPPLATFORM" == "BeagleBone Black" -o "$FPPPLATFORM" == "BeagleBone 64" ]; then
     # replace entry already there
     sed -i 's/^DAEMON_CONF.*/DAEMON_CONF="\/etc\/hostapd\/hostapd.conf"/g' /etc/default/hostapd
     if ! grep -q etc/hostapd/hostapd.conf "/etc/default/hostapd"; then

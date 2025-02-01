@@ -35,8 +35,6 @@ static unsigned int proc_read(const char* const fname) {
     return x;
 }
 
-static bool hasUIO = true;
-
 class PRUCoreInfo {
 public:
     int pru_num = 0;
@@ -44,47 +42,56 @@ public:
     uintptr_t dataRamPhyLoc = 0;
     int dataRamSize = 0;
     uint8_t* sharedRam = nullptr;
-    uint32_t sharedRamPhyLoc = 0;
+    uintptr_t sharedRamPhyLoc = 0;
     int sharedRamSize = 0;
 
-    uint8_t* instructionRam = nullptr;
-    int instructionRamSize = 0;
-
-    unsigned int* controlRegs = nullptr;
-
     void disable() {
-        if (!hasUIO) {
-            std::string filename = "/sys/class/remoteproc/remoteproc" + std::to_string(pru_num) + "/state";
-            if (FileExists(filename)) {
-                FILE* rp = fopen(filename.c_str(), "w");
-                fprintf(rp, "stop");
-                fclose(rp);
+        std::string filename = "/sys/class/remoteproc/remoteproc" + std::to_string(pru_num) + "/state";
+        if (FileExists(filename)) {
+            FILE* rp = fopen(filename.c_str(), "w");
+            fprintf(rp, "stop");
+            fclose(rp);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            std::string f = GetFileContents(filename);
+            TrimWhiteSpace(f);
+            int cnt = 0;
+            while (f != "offline" && cnt < 500) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                f = GetFileContents(filename);
+                TrimWhiteSpace(f);
+                cnt++;
             }
-        } else {
-            controlRegs[0] = 1;
+            if (f != "offline") {
+                LogWarn(VB_CHANNELOUT, "BBBPru::Pru::disable() - could not stop PRU core %d   State: %s\n", pru_num, f.c_str());
+            }
         }
     }
-    void enable(uint32_t addr = 0) {
-        if (!hasUIO) {
-            std::string filename = "/sys/class/remoteproc/remoteproc" + std::to_string(pru_num) + "/state";
-            int cnt = 0;
-            while (!FileExists(filename) && cnt < 20000) {
-                cnt++;
+    void enable() {
+        std::string filename = "/sys/class/remoteproc/remoteproc" + std::to_string(pru_num) + "/state";
+        int cnt = 0;
+        while (!FileExists(filename) && cnt < 10000) {
+            cnt++;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        if (FileExists(filename) && cnt < 10000) {
+            FILE* rp = fopen(filename.c_str(), "w");
+            fprintf(rp, "start");
+            fclose(rp);
+            cnt = 0;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            std::string f = GetFileContents(filename);
+            TrimWhiteSpace(f);
+            while (f != "running" && cnt < 500) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                f = GetFileContents(filename);
+                TrimWhiteSpace(f);
+                cnt++;
             }
-            if (FileExists(filename) && cnt < 20000) {
-                FILE* rp = fopen(filename.c_str(), "w");
-                fprintf(rp, "start");
-                fclose(rp);
-            } else {
-                LogWarn(VB_CHANNELOUT, "BBBPru::Pru::enable() - could not start PRU core %d\n", pru_num);
+            if (f != "running") {
+                LogWarn(VB_CHANNELOUT, "BBBPru::Pru::enable() - could not start PRU core %d    State: %s\n", pru_num, f.c_str());
             }
         } else {
-            uint32_t a = addr;
-            a /= sizeof(uint32_t);
-            a <<= 16;
-            a |= 2;
-            controlRegs[0] = a;
+            LogWarn(VB_CHANNELOUT, "BBBPru::Pru::enable() - could not start PRU core %d\n", pru_num);
         }
     }
 };
@@ -97,51 +104,66 @@ static size_t ddr_filelen = 0;
 static uint8_t* base_memory_location = nullptr;
 static PRUCoreInfo prus[2];
 
-#define AM33XX_PRU_BASE 0x4a300000
-#define AM33XX_PRUSS_MMAP_SIZE 0x40000
+#if defined(PLATFORM_BBB)
 
-#define AM33XX_DATARAM0_PHYS_BASE 0x4a300000
-#define AM33XX_DATARAM1_PHYS_BASE 0x4a302000
-#define AM33XX_INTC_PHYS_BASE 0x4a320000
-#define AM33XX_PRU0CONTROL_PHYS_BASE 0x4a322000
-#define AM33XX_PRU0DEBUG_PHYS_BASE 0x4a322400
-#define AM33XX_PRU1CONTROL_PHYS_BASE 0x4a324000
-#define AM33XX_PRU1DEBUG_PHYS_BASE 0x4a324400
-#define AM33XX_PRU0IRAM_PHYS_BASE 0x4a334000
-#define AM33XX_PRU1IRAM_PHYS_BASE 0x4a338000
-#define AM33XX_PRUSS_SHAREDRAM_BASE 0x4a310000
-#define AM33XX_PRUSS_CFG_BASE 0x4a326000
-#define AM33XX_PRUSS_UART_BASE 0x4a328000
-#define AM33XX_PRUSS_IEP_BASE 0x4a32e000
-#define AM33XX_PRUSS_ECAP_BASE 0x4a330000
-#define AM33XX_PRUSS_MIIRT_BASE 0x4a332000
-#define AM33XX_PRUSS_MDIO_BASE 0x4a332400
+constexpr uintptr_t PRUSS_MMAP_BASE = 0x4a300000;
+constexpr size_t PRUSS_MMAP_SIZE = 0x40000;
+
+constexpr uintptr_t PRUSS_DATARAM0_PHYS_BASE = 0x4a300000;
+constexpr uintptr_t PRUSS_DATARAM1_PHYS_BASE = 0x4a302000;
+constexpr size_t PRUSS_DATARAM_SIZE = 8 * 1024; // 8K
+
+constexpr uintptr_t PRUSS_SHAREDRAM_BASE = 0x4a310000;
+constexpr size_t PRUSS_SHAREDRAM_SIZE = 12 * 1024; // 12K
+
+constexpr uint32_t DDR_ADDR = 0x8f000000;
+constexpr size_t DDR_SIZE = 0x00400000;
+
+constexpr std::string FIRMWARE_PREFIX = "am335x";
+constexpr bool FAKE_PRU = false;
+
+#elif defined(PLATFORM_BB64)
+constexpr uintptr_t PRUSS_MMAP_BASE = 0x30040000;
+constexpr size_t PRUSS_MMAP_SIZE = 0x80000;
+
+constexpr size_t PRUSS_DATARAM_SIZE = 8 * 1024; // 8K
+constexpr uintptr_t PRUSS_DATARAM0_PHYS_BASE = 0x30040000;
+constexpr uintptr_t PRUSS_DATARAM1_PHYS_BASE = 0x30042000;
+
+constexpr uintptr_t PRUSS_SHAREDRAM_BASE = 0x30050000;
+constexpr size_t PRUSS_SHAREDRAM_SIZE = 32 * 1024; // 32K
+
+constexpr uint32_t DDR_ADDR = 0x8f000000;
+constexpr size_t DDR_SIZE = 0x00400000;
+
+constexpr std::string FIRMWARE_PREFIX = "am62x";
+
+static bool FAKE_PRU = !FileExists("/sys/class/remoteproc/remoteproc0/state");
+#endif
 
 static void initPrus() {
     const int mem_fd = open("/dev/mem", O_RDWR);
 
-    base_memory_location = (uint8_t*)mmap(0,
-                                          AM33XX_PRUSS_MMAP_SIZE,
-                                          PROT_WRITE | PROT_READ,
-                                          MAP_SHARED,
-                                          mem_fd,
-                                          AM33XX_PRU_BASE);
-
-    uintptr_t ddr_addr = 0x8f000000;
-    uintptr_t ddr_sizeb = 0x00400000;
-
-    if (FileExists("/sys/class/uio/uio0/maps/map1/addr")) {
-        hasUIO = true;
-        ddr_addr = proc_read("/sys/class/uio/uio0/maps/map1/addr");
-        ddr_sizeb = proc_read("/sys/class/uio/uio0/maps/map1/size");
-        ddr_filelen = ddr_sizeb;
+    if (!FAKE_PRU) {
+        base_memory_location = (uint8_t*)mmap(0,
+                                              PRUSS_MMAP_SIZE,
+                                              PROT_WRITE | PROT_READ,
+                                              MAP_SHARED,
+                                              mem_fd,
+                                              PRUSS_MMAP_BASE);
     } else {
-        hasUIO = false;
-        if (!FileExists("/sys/class/remoteproc/remoteproc0/state")) {
-            system("modprobe pru_rproc");
-        }
+        base_memory_location = (uint8_t*)mmap(0,
+                                              PRUSS_MMAP_SIZE,
+                                              PROT_WRITE | PROT_READ,
+                                              MAP_PRIVATE | MAP_ANONYMOUS,
+                                              0,
+                                              0);
     }
-    if (ddr_mem_loc == nullptr) {
+
+    uint32_t ddr_addr = DDR_ADDR;
+    size_t ddr_sizeb = DDR_SIZE;
+
+    if (ddr_mem_loc == nullptr && !FAKE_PRU) {
         ddr_phy_mem_loc = ddr_addr;
         ddr_filelen = ddr_sizeb;
         ddr_mem_loc = (uint8_t*)mmap(0,
@@ -150,31 +172,37 @@ static void initPrus() {
                                      MAP_SHARED,
                                      mem_fd,
                                      ddr_addr);
+    } else if (ddr_addr == 0 || FAKE_PRU) {
+        // just malloc some memory so we don't crash
+        ddr_phy_mem_loc = ddr_addr;
+        ddr_filelen = ddr_sizeb;
+        ddr_mem_loc = (uint8_t*)mmap(0,
+                                     ddr_filelen,
+                                     PROT_WRITE | PROT_READ,
+                                     MAP_PRIVATE | MAP_ANONYMOUS,
+                                     0,
+                                     0);
     }
     close(mem_fd);
 
     prus[0].pru_num = 0;
     prus[1].pru_num = 1;
-    prus[0].controlRegs = (uint32_t*)(base_memory_location + (AM33XX_PRU0CONTROL_PHYS_BASE - AM33XX_PRU_BASE));
-    prus[1].controlRegs = (uint32_t*)(base_memory_location + (AM33XX_PRU1CONTROL_PHYS_BASE - AM33XX_PRU_BASE));
-    prus[0].dataRam = base_memory_location + (AM33XX_DATARAM0_PHYS_BASE - AM33XX_PRU_BASE);
-    prus[0].dataRamSize = 8 * 1024;
-    prus[0].dataRamPhyLoc = AM33XX_DATARAM0_PHYS_BASE;
-    prus[1].dataRam = base_memory_location + (AM33XX_DATARAM1_PHYS_BASE - AM33XX_PRU_BASE);
-    prus[1].dataRamSize = 8 * 1024;
-    prus[1].dataRamPhyLoc = AM33XX_DATARAM1_PHYS_BASE;
-    prus[0].sharedRam = base_memory_location + (AM33XX_PRUSS_SHAREDRAM_BASE - AM33XX_PRU_BASE);
-    prus[0].sharedRamSize = 12 * 1024;
-    prus[0].sharedRamPhyLoc = AM33XX_PRUSS_SHAREDRAM_BASE;
-    prus[1].sharedRam = base_memory_location + (AM33XX_PRUSS_SHAREDRAM_BASE - AM33XX_PRU_BASE);
-    prus[1].sharedRamSize = 12 * 1024;
-    prus[1].sharedRamPhyLoc = AM33XX_PRUSS_SHAREDRAM_BASE;
-    prus[0].instructionRam = base_memory_location + (AM33XX_PRU0IRAM_PHYS_BASE - AM33XX_PRU_BASE);
-    prus[0].instructionRamSize = 8 * 1024;
-    prus[1].instructionRam = base_memory_location + (AM33XX_PRU1IRAM_PHYS_BASE - AM33XX_PRU_BASE);
-    prus[1].instructionRamSize = 8 * 1024;
+    prus[0].dataRam = base_memory_location + (PRUSS_DATARAM0_PHYS_BASE - PRUSS_MMAP_BASE);
+    prus[0].dataRamSize = PRUSS_DATARAM_SIZE;
+    prus[0].dataRamPhyLoc = PRUSS_DATARAM0_PHYS_BASE;
+    prus[1].dataRam = base_memory_location + (PRUSS_DATARAM1_PHYS_BASE - PRUSS_MMAP_BASE);
+    prus[1].dataRamSize = PRUSS_DATARAM_SIZE;
+    prus[1].dataRamPhyLoc = PRUSS_DATARAM1_PHYS_BASE;
+    prus[0].sharedRam = base_memory_location + (PRUSS_SHAREDRAM_BASE - PRUSS_MMAP_BASE);
+    prus[0].sharedRamSize = PRUSS_SHAREDRAM_SIZE;
+    prus[0].sharedRamPhyLoc = PRUSS_SHAREDRAM_BASE;
+    prus[1].sharedRam = base_memory_location + (PRUSS_SHAREDRAM_BASE - PRUSS_MMAP_BASE);
+    prus[1].sharedRamSize = PRUSS_SHAREDRAM_SIZE;
+    prus[1].sharedRamPhyLoc = PRUSS_SHAREDRAM_BASE;
 
-    memset(ddr_mem_loc, 0, ddr_sizeb);
+    if (ddr_sizeb) {
+        memset(ddr_mem_loc, 0, ddr_sizeb);
+    }
     __asm__ __volatile__("" ::
                              : "memory");
 }
@@ -218,7 +246,7 @@ BBBPru::~BBBPru() {
             ddr_mem_loc = nullptr;
         }
         if (base_memory_location) {
-            munmap(base_memory_location, AM33XX_PRUSS_MMAP_SIZE);
+            munmap(base_memory_location, PRUSS_MMAP_SIZE);
             base_memory_location = nullptr;
         }
     }
@@ -227,72 +255,85 @@ BBBPru::~BBBPru() {
 int BBBPru::run(const std::string& program) {
     LogDebug(VB_CHANNELOUT, "BBBPru[%d]::run(%s)\n", pru_num, program.c_str());
 
-    if (!hasUIO) {
-        LogDebug(VB_CHANNELOUT, "Using remoteproc: %s\n", program.c_str());
+    if (!FAKE_PRU) {
         prus[pru_num].disable();
-        CopyFileContents(program, "/lib/firmware/am335x-pru" + std::to_string(pru_num) + "-fw");
+        CopyFileContents(program, "/lib/firmware/" + FIRMWARE_PREFIX + "-pru" + std::to_string(pru_num) + "-fw");
         prus[pru_num].enable();
-
-        memset(prus[pru_num].dataRam, 0, prus[pru_num].dataRamSize);
-        memset(prus[pru_num].dataRam, 0, prus[pru_num].dataRamSize);
-
-        return false;
-    }
-
-    struct stat st;
-    stat(program.c_str(), &st);
-    size_t file_size = st.st_size;
-    uint32_t startOffset = 0;
-    int fhand = open(program.c_str(), O_RDWR);
-    uint8_t* buf = (uint8_t*)mmap(0, file_size, PROT_READ, MAP_FILE | MAP_PRIVATE, fhand, 0);
-    close(fhand);
-
-    prus[pru_num].disable();
-    if (buf[0] == ELFMAG0 && buf[1] == ELFMAG1 && buf[2] == ELFMAG2 && buf[3] == ELFMAG3) {
-        // elf linked unit
-        LogDebug(VB_CHANNELOUT, "Elf: %s\n", program.c_str());
-
-        if (buf[EI_CLASS] == ELFCLASS32) {
-            Elf32_Ehdr* hdr = (Elf32_Ehdr*)buf;
-            uint32_t saddress = hdr->e_entry;
-            Elf32_Phdr* phdr = (Elf32_Phdr*)&buf[hdr->e_phoff];
-            for (int pn = 0; pn < hdr->e_phnum; pn++, phdr++) {
-                if (phdr->p_type == PT_LOAD && (phdr->p_flags & PF_X)) {
-                    // printf("Type: %d     VA: %X    OFF: %X   SZ: %d\n", phdr->p_type, phdr->p_vaddr, phdr->p_offset, phdr->p_memsz);
-                    startOffset = phdr->p_vaddr;
-                    uint32_t* tt2 = (uint32_t*)prus[pru_num].instructionRam;
-                    for (int x = 0; x < startOffset / 4; x++) {
-                        // kind of a no-op (LDI r2, 1) to fill space until the real starting point
-                        tt2[x] = 0x240001e2;
-                    }
-                    memcpy(&prus[pru_num].instructionRam[startOffset], &buf[phdr->p_offset], phdr->p_memsz);
-                    __asm__ __volatile__("" ::
-                                             : "memory");
-                }
-            }
-        } else {
-            printf("FIXME for 64bit\n");
-        }
     } else {
-        LogDebug(VB_CHANNELOUT, "Raw bin: %s\n", program.c_str());
-        // raw bin file
-        if (file_size < prus[pru_num].instructionRamSize) {
-            memcpy(prus[pru_num].instructionRam, buf, file_size);
-        }
+        CopyFileContents(program, "/lib/firmware/" + FIRMWARE_PREFIX + "-pru" + std::to_string(pru_num) + "-fw");
     }
-    munmap(buf, file_size);
+
+    clearPRUMem(data_ram, data_ram_size);
+    if (shared_ram) {
+        clearPRUMem(shared_ram, shared_ram_size);
+    }
+    if (other_data_ram) {
+        clearPRUMem(other_data_ram, other_data_ram_size);
+    }
 
     /*
-    char bname[50];
-    snprintf(bname, sizeof(bname), "/tmp/pru-%d.bin", pru_num);
-    fhand = open(bname, O_CREAT | O_RDWR);
-    write(fhand, prus[pru_num].instructionRam, 3000);
-    close(fhand);
+    printf("DL:  %p\n", data_ram);
+    printf("OL:  %p\n", other_data_ram);
+    printf("SH:  %p\n", shared_ram);
+    printf("DDR:  %p\n", ddr);
     */
-
-    prus[pru_num].enable(startOffset);
     return false;
 }
+
+#ifdef PLATFORM_BBB
+void BBBPru::clearPRUMem(uint8_t* ptr, size_t sz) {
+    memset(ptr, 0, sz);
+}
+void BBBPru::memcpyToPRU(uint8_t* dst, uint8_t* src, size_t sz) {
+    memcpy(dst, src, sz);
+}
+#elif defined(PLATFORM_BB64)
+#pragma GCC push_options
+#pragma GCC optimize("O0")
+// The optimized memset and memcpy on Arm64 will segfault
+// when doing certain sized operations to un-cacheable
+// ram segments.  Need to use ldnp/stnp instructions
+void memcpy_ldnp(volatile unsigned char* dst, volatile unsigned char* src, int sztotal) {
+    int sz = sztotal - sztotal & 64;
+
+    for (int x = sz; x < sztotal; x++) {
+        dst[x] = src[x];
+    }
+    asm volatile(
+        "NEONCopyPLD: \n"
+        "sub %[dst], %[dst], #64 \n"
+        "1: \n"
+        "ldnp q0, q1, [%[src]] \n"
+        "ldnp q2, q3, [%[src], #32] \n"
+        "add %[dst], %[dst], #64 \n"
+        "subs %[sz], %[sz], #64 \n"
+        "add %[src], %[src], #64 \n"
+        "stnp q0, q1, [%[dst]] \n"
+        "stnp q2, q3, [%[dst], #32] \n"
+        "b.gt 1b \n"
+        : [dst] "+r"(dst), [src] "+r"(src), [sz] "+r"(sz) : : "q0", "q1", "q2", "q3", "cc", "memory");
+}
+
+void BBBPru::clearPRUMem(uint8_t* ptr, size_t sz) {
+    __uint128_t z = 0;
+    int c = sz / sizeof(z);
+    __uint128_t* p = (__uint128_t*)ptr;
+    for (int x = 0; x < c; ++x) {
+        *p = z;
+        p++;
+    }
+    for (int x = c * sizeof(z); x < sz; ++x) {
+        ptr[x] = 0;
+    }
+}
+void BBBPru::memcpyToPRU(uint8_t* dst, uint8_t* src, size_t sz) {
+    memcpy_ldnp(dst, src, sz);
+}
+#pragma GCC pop_options
+#endif
+
 void BBBPru::stop() {
-    prus[pru_num].disable();
+    if (!FAKE_PRU) {
+        prus[pru_num].disable();
+    }
 }

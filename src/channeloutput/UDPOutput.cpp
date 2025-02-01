@@ -20,9 +20,9 @@
 #include <unistd.h>
 
 #include <curl/curl.h>
-
 #include <set>
 
+#include "../CurlManager.h"
 #include "../Warnings.h"
 #include "../common.h"
 #include "../log.h"
@@ -40,6 +40,9 @@
 #include "Twinkly.h"
 
 #include "Plugin.h"
+
+constexpr int UDP_PING_TIMEOUT = 250;
+
 class UDPPlugin : public FPPPlugins::Plugin, public FPPPlugins::ChannelOutputPlugin {
 public:
     UDPPlugin() :
@@ -58,11 +61,6 @@ FPPPlugins::Plugin* createPlugin() {
 
 static inline std::string createWarning(const std::string& host, const std::string& type, const std::string& description) {
     return "Cannot Ping " + type + " Channel Data Target " + host + " " + description;
-}
-
-static void DoPingThread(UDPOutput* output) {
-    SetThreadName("FPP-UDPPing");
-    output->BackgroundThreadPing();
 }
 
 class SendSocketInfo {
@@ -230,35 +228,23 @@ bool UDPOutputData::NeedToOutputFrame(unsigned char* channelData, int startChann
 }
 
 UDPOutput::UDPOutput(unsigned int startChannel, unsigned int channelCount) :
-    pingThread(nullptr),
-    runPingThread(true),
     networkCallbackId(0),
     doneWorkCount(0),
     numWorkThreads(0),
     runWorkThreads(true),
-    useThreadedOutput(true) {
+    useThreadedOutput(true),
+    blockingOutput(false) {
     INSTANCE = this;
-    m_curlm = curl_multi_init();
 }
 UDPOutput::~UDPOutput() {
     runWorkThreads = false;
     workSignal.notify_all();
 
     INSTANCE = nullptr;
-    runPingThread = false;
-    pingThreadCondition.notify_all();
-    if (pingThread) {
-        pingThread->join();
-        delete pingThread;
-        pingThread = nullptr;
-    }
     NetworkMonitor::INSTANCE.removeCallback(networkCallbackId);
     for (auto a : outputs) {
         delete a;
     }
-    curl_multi_cleanup(m_curlm);
-    m_curlm = nullptr;
-
     while (numWorkThreads) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -299,9 +285,10 @@ int UDPOutput::Init(Json::Value config) {
             break;
         }
     }
-
     if (config.isMember("threaded")) {
-        useThreadedOutput = config["threaded"].asInt() ? true : false;
+        int style = config["threaded"].asInt();
+        useThreadedOutput = style == 1 || style == 3;
+        blockingOutput = style == 0 || style == 1;
     }
     if (config.isMember("interface")) {
         outInterface = config["interface"].asString();
@@ -362,12 +349,10 @@ int UDPOutput::Init(Json::Value config) {
         if (s == interface && i == NetworkMonitor::NetEventType::NEW_ADDR && up) {
             if (!interfaceUp) {
                 LogInfo(VB_CHANNELOUT, "UDP Interface %s now up\n", s.c_str());
-                PingControllers();
+                PingControllers(false);
                 std::this_thread::sleep_for(std::chrono::milliseconds(200));
                 InitNetwork();
                 interfaceUp = true;
-            } else {
-                pingThreadCondition.notify_all();
             }
         } else if (s == interface && i == NetworkMonitor::NetEventType::DEL_ADDR) {
             LogInfo(VB_CHANNELOUT, "UDP Interface %s now down\n", s.c_str());
@@ -381,21 +366,37 @@ int UDPOutput::Init(Json::Value config) {
     // so we'll assume the interface is Up.
     interfaceUp = true;
     InitNetwork();
+    failedCount = 0;
     // need to do three pings to detect down hosts
-    PingControllers();
+    for (auto& o : outputs) {
+        if (o->active) {
+            o->failCount = -1;
+            ++failedCount;
+        }
+    }
+    PingControllers(false);
+    int sleepCount = 0;
+    while (failedCount > 0 && sleepCount < (UDP_PING_TIMEOUT + 10)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        ++sleepCount;
+    }
     PingControllers(true);
+    sleepCount = 0;
+    while (failedCount > 0 && sleepCount < (UDP_PING_TIMEOUT * 2)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        CurlManager::INSTANCE.processCurls();
+        ++sleepCount;
+    }
     PingControllers(true);
-    pingThread = new std::thread(DoPingThread, this);
+    sleepCount = 0;
+    while (failedCount > 0 && sleepCount < (UDP_PING_TIMEOUT * 2)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        CurlManager::INSTANCE.processCurls();
+        ++sleepCount;
+    }
     return ChannelOutput::Init(config);
 }
 int UDPOutput::Close() {
-    runPingThread = false;
-    pingThreadCondition.notify_all();
-    if (pingThread) {
-        pingThread->join();
-        delete pingThread;
-        pingThread = nullptr;
-    }
     NetworkMonitor::INSTANCE.removeCallback(networkCallbackId);
     messages.clearMessages();
     messages.clearSockets();
@@ -433,7 +434,6 @@ void UDPOutput::GetRequiredChannelRanges(const std::function<void(int, int)>& ad
 void UDPOutput::addOutput(UDPOutputData* out) {
     outputs.push_back(out);
 }
-
 int UDPOutput::SendMessages(unsigned int socketKey, SendSocketInfo* socketInfo, std::vector<struct mmsghdr>& sendmsgs) {
     errno = 0;
     struct mmsghdr* msgs = &sendmsgs[0];
@@ -444,37 +444,64 @@ int UDPOutput::SendMessages(unsigned int socketKey, SendSocketInfo* socketInfo, 
 
     int newSockKey = socketKey;
     int sendSocket = socketInfo->sockets[socketInfo->curSocket];
-    ++socketInfo->curSocket;
-    if (socketInfo->curSocket == socketInfo->sockets.size()) {
-        socketInfo->curSocket = 0;
-    }
-
     errno = 0;
-    int oc = sendmmsg(sendSocket, msgs, msgCount, MSG_DONTWAIT);
+    // uint64_t st = GetTimeMicros();
+
     int outputCount = 0;
-    if (oc > 0) {
-        outputCount = oc;
+    if (blockingOutput) {
+        int errorCount = 0;
+        for (int x = 0; x < msgCount; x++) {
+            ssize_t s = sendmsg(sendSocket, &msgs[x].msg_hdr, 0);
+            if (s != -1) {
+                errorCount = 0;
+                ++outputCount;
+            } else if (errorCount) {
+                return outputCount;
+            } else {
+                // didn't send, we'll yield once and re-send
+                --x;
+                ++errorCount;
+                std::this_thread::yield();
+            }
+        }
+    } else {
+        int oc = sendmmsg(sendSocket, msgs, msgCount, MSG_DONTWAIT);
+        if (oc > 0) {
+            outputCount += oc;
+        }
+        if (outputCount != msgCount) {
+            // in many cases, a simple thread yield will allow the network stack
+            // to flush some data and free up space, give that a chance first
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+            oc = sendmmsg(sendSocket, &msgs[outputCount], msgCount - outputCount, MSG_DONTWAIT);
+            while (oc > 0) {
+                outputCount += oc;
+                std::this_thread::sleep_for(std::chrono::microseconds(100));
+                oc = sendmmsg(sendSocket, &msgs[outputCount], msgCount - outputCount, MSG_DONTWAIT);
+            }
+        }
     }
+    // uint64_t ed = GetTimeMicros();
+    // uint64_t tm = ed - st;
+    // printf("MSG: %d/%d    %d     \n", outputCount, msgCount, (int)tm);
 
     int errCount = 0;
     while (outputCount != msgCount) {
-        LogErr(VB_CHANNELOUT, "sendmmsg() failed for UDP output (key: %X   Socket: %d   output count: %d/%d) with error: %d   %s\n",
-               socketKey, sendSocket,
-               outputCount, msgCount,
-               errno,
-               strerror(errno));
-
-        int newSock = sendSocket;
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             if (socketKey != BROADCAST_MESSAGES_KEY) {
                 ++socketInfo->curSocket;
                 if (socketInfo->curSocket == socketInfo->sockets.size()) {
-                    socketInfo->curSocket = 0;
+                    if (socketInfo->sockets.size() < 5) {
+                        // this will trigger a create socket
+                        socketInfo->sockets.push_back(-1);
+                    } else {
+                        socketInfo->curSocket = 0;
+                    }
                 }
-                newSock = socketInfo->sockets[socketInfo->curSocket];
-                if (newSock == -1) {
+                sendSocket = socketInfo->sockets[socketInfo->curSocket];
+                if (sendSocket == -1) {
                     socketInfo->sockets[socketInfo->curSocket] = createSocket();
-                    newSock = socketInfo->sockets[socketInfo->curSocket];
+                    sendSocket = socketInfo->sockets[socketInfo->curSocket];
                 }
             } else {
                 return outputCount;
@@ -482,12 +509,19 @@ int UDPOutput::SendMessages(unsigned int socketKey, SendSocketInfo* socketInfo, 
         }
         ++errCount;
         if (errCount >= 10) {
+            LogErr(VB_CHANNELOUT, "sendmmsg() failed for UDP output (IP: %s   Socket: %d   output count: %d/%d) with error: %d   %s\n",
+                   HexToIP(socketKey).c_str(), sendSocket,
+                   outputCount, msgCount,
+                   errno,
+                   strerror(errno));
             return outputCount;
         }
         errno = 0;
-        int oc = sendmmsg(newSock, &msgs[outputCount], msgCount - outputCount, MSG_DONTWAIT);
-        if (oc > 0) {
+        int oc = sendmmsg(sendSocket, &msgs[outputCount], msgCount - outputCount, MSG_DONTWAIT);
+        while (oc > 0) {
             outputCount += oc;
+            std::this_thread::sleep_for(std::chrono::microseconds(100));
+            oc = sendmmsg(sendSocket, &msgs[outputCount], msgCount - outputCount, MSG_DONTWAIT);
         }
     }
     return outputCount;
@@ -519,8 +553,8 @@ void UDPOutput::BackgroundOutputWork() {
                 i.socketInfo->errCount++;
 
                 // failed to send all messages or it took more than 100ms to send them
-                LogErr(VB_CHANNELOUT, "sendmmsg() failed for UDP output (key: %X   output count: %d/%d   time: %u ms    errCount: %d) with error: %d   %s\n",
-                       i.id,
+                LogErr(VB_CHANNELOUT, "%s() failed for UDP output (IP: %s   output count: %d/%d   time: %u ms    errCount: %d) with error: %d   %s\n",
+                       blockingOutput ? "sendmsg" : "sendmmsg", HexToIP(i.id).c_str(),
                        outputCount, i.msgs.size(), diff, i.socketInfo->errCount,
                        errno,
                        strerror(errno));
@@ -547,7 +581,7 @@ int UDPOutput::SendData(unsigned char* channelData) {
         auto t1 = clock.now();
         for (auto& msgs : messages.messages) {
             if (!msgs.second.empty() && msgs.first < LATE_MULTICAST_MESSAGES_KEY) {
-                SendSocketInfo* socketInfo = findOrCreateSocket(msgs.first, 5);
+                SendSocketInfo* socketInfo = findOrCreateSocket(msgs.first);
 
                 std::unique_lock<std::mutex> lock(workMutex);
                 workQueue.push_back(WorkItem(msgs.first, socketInfo, msgs.second));
@@ -574,7 +608,7 @@ int UDPOutput::SendData(unsigned char* channelData) {
             // now output the LATE/Broadcast packets (likely sync packets)
             for (auto& msgs : messages.messages) {
                 if (!msgs.second.empty()) {
-                    SendSocketInfo* socketInfo = findOrCreateSocket(msgs.first, 5);
+                    SendSocketInfo* socketInfo = findOrCreateSocket(msgs.first);
                     if (msgs.first >= LATE_MULTICAST_MESSAGES_KEY) {
                         t1 = clock.now();
                         int outputCount = SendMessages(msgs.first, socketInfo, msgs.second);
@@ -584,8 +618,8 @@ int UDPOutput::SendData(unsigned char* channelData) {
                             socketInfo->errCount++;
 
                             // failed to send all messages or it took more than 100ms to send them
-                            LogErr(VB_CHANNELOUT, "sendmmsg() failed for UDP output (key: %X   output count: %d/%d   time: %u ms    errCount: %d) with error: %d   %s\n",
-                                   msgs.first,
+                            LogErr(VB_CHANNELOUT, "sendmmsg() failed for UDP output (IP: %s   output count: %d/%d   time: %u ms    errCount: %d) with error: %d   %s\n",
+                                   HexToIP(msgs.first).c_str(),
                                    outputCount, msgs.second.size(), diff, socketInfo->errCount,
                                    errno,
                                    strerror(errno));
@@ -595,7 +629,7 @@ int UDPOutput::SendData(unsigned char* channelData) {
                     }
                     if (socketInfo->errCount >= 3) {
                         // we'll ping the controllers and rebuild the valid message list, this could take time
-                        pingThreadCondition.notify_all();
+                        PingControllers(false);
                         socketInfo->errCount = 0;
                     }
                 }
@@ -605,7 +639,7 @@ int UDPOutput::SendData(unsigned char* channelData) {
     }
     for (auto& msgs : messages.messages) {
         if (!msgs.second.empty()) {
-            SendSocketInfo* socketInfo = findOrCreateSocket(msgs.first, 5);
+            SendSocketInfo* socketInfo = findOrCreateSocket(msgs.first);
             auto t1 = clock.now();
             int outputCount = SendMessages(msgs.first, socketInfo, msgs.second);
             auto t2 = clock.now();
@@ -614,15 +648,15 @@ int UDPOutput::SendData(unsigned char* channelData) {
                 socketInfo->errCount++;
 
                 // failed to send all messages or it took more than 100ms to send them
-                LogErr(VB_CHANNELOUT, "sendmmsg() failed for UDP output (key: %X   output count: %d/%d   time: %u ms    errCount: %d) with error: %d   %s\n",
-                       msgs.first,
+                LogErr(VB_CHANNELOUT, "sendmmsg() failed for UDP output (IP: %s   output count: %d/%d   time: %u ms    errCount: %d) with error: %d   %s\n",
+                       HexToIP(msgs.first).c_str(),
                        outputCount, msgs.second.size(), diff, socketInfo->errCount,
                        errno,
                        strerror(errno));
 
                 if (socketInfo->errCount >= 3) {
                     // we'll ping the controllers and rebuild the valid message list, this could take time
-                    pingThreadCondition.notify_all();
+                    PingControllers(false);
                     socketInfo->errCount = 0;
                 }
             } else {
@@ -633,122 +667,71 @@ int UDPOutput::SendData(unsigned char* channelData) {
     return 1;
 }
 
-void UDPOutput::BackgroundThreadPing() {
-    std::unique_lock<std::mutex> lk(pingThreadMutex);
-    pingThreadCondition.wait_for(lk, std::chrono::seconds(10));
-    while (runPingThread) {
-        PingControllers();
-        pingThreadCondition.wait_for(lk, std::chrono::seconds(15));
-    }
-}
-bool UDPOutput::PingControllers(bool failedOnly) {
+void UDPOutput::PingControllers(bool failedOnly) {
     LogExcess(VB_CHANNELOUT, "Pinging controllers to see what is online\n");
-
-    std::map<std::string, int> done;
-    std::map<std::string, CURL*> curls;
-    bool newOutputs = false;
     for (auto o : outputs) {
         if (o->IsPingable() && o->Monitor() && o->active) {
             if (failedOnly && o->failCount == 0) {
                 continue;
             }
-            std::string host = o->ipAddress;
-            int p = done[host];
-            if (p == 0) {
-                int timeout = 250;
-                if (o->failCount == 1) {
-                    timeout = 500;
-                } else if (o->failCount == 2) {
-                    timeout = 1000;
-                }
-                p = ping(host, timeout);
-                if (p <= 0) {
-                    p = -1;
-                }
-                done[host] = p;
-            }
-            if (p > 0 && !o->valid) {
-                WarningHolder::RemoveWarning(createWarning(host, o->GetOutputTypeString(), o->description));
-                LogWarn(VB_CHANNELOUT, "Could ping host %s, re-adding to outputs\n",
-                        host.c_str());
-                newOutputs = true;
-                o->failCount = 0;
-                o->valid = true;
-            } else if (p <= 0) {
-                o->failCount++;
-                LogDebug(VB_CHANNELOUT, "Could not ping host %s   Fail count: %d   Currently Valid: %d\n", host.c_str(), o->failCount, o->valid);
-                if (o->failCount == 2) {
-                    // two pings failed, lets try an HTTP HEAD request
-                    if (curls[host] == nullptr) {
-                        std::string url = "http://" + host;
-                        CURL* curl = curl_easy_init();
-                        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-                        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 2000);
-                        curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 5000);
-                        curl_easy_setopt(curl, CURLOPT_NOBODY, 1L);
-                        curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
-                        curl_multi_add_handle(m_curlm, curl);
-                        curls[host] = curl;
+            PingManager::INSTANCE.addPeriodicPing(o->ipAddress, UDP_PING_TIMEOUT, 15000, [o, this](int i) {
+                if (o->failCount == -1) {
+                    // first pass through, we got a response of some sort
+                    // so decrement the failed count so the main thread may
+                    // be able to continue
+                    if (i > 0 && o->valid) {
+                        --failedCount;
                     }
-                } else if (o->valid && (o->failCount == 3)) {
-                    // two shorter pings, a HEAD request, and one long ping failed
-                    // must not be valid anymore
-                    WarningHolder::AddWarning(createWarning(host, o->GetOutputTypeString(), o->description));
-                    LogWarn(VB_CHANNELOUT, "Could not ping host %s, removing from output\n",
-                            host.c_str());
-                    newOutputs = true;
-                    o->valid = false;
-                } else if (o->failCount > 4) {
-                    // make sure we wrap around so another HEAD request later may pick it up
                     o->failCount = 0;
                 }
-            }
-        }
-    }
-
-    int numCurls = curls.size();
-    if (numCurls) {
-        while (numCurls) {
-            int handleCount;
-            curl_multi_perform(m_curlm, &handleCount);
-            if (handleCount != numCurls) {
-                // progress
-                int msgs;
-                CURLMsg* curlm = curl_multi_info_read(m_curlm, &msgs);
-                while (curlm) {
-                    if (curlm->msg == CURLMSG_DONE && curlm->data.result == CURLE_OK) {
-                        for (auto& c : curls) {
-                            if (c.second == curlm->easy_handle) {
-                                // the HEAD request worked, mark as OK
-                                for (auto o : outputs) {
-                                    if (o->IsPingable() && o->Monitor() && o->active && (o->ipAddress == c.first)) {
-                                        o->failCount = 0;
-                                        if (!o->valid) {
-                                            o->valid = true;
-                                            newOutputs = true;
-                                            WarningHolder::RemoveWarning(createWarning(o->ipAddress, o->GetOutputTypeString(), o->description));
-                                            LogWarn(VB_CHANNELOUT, "Could ping host %s, re-adding to outputs\n",
-                                                    o->ipAddress.c_str());
-                                        }
-                                    }
+                if (i > 0 && !o->valid) {
+                    WarningHolder::RemoveWarning(createWarning(o->ipAddress, o->GetOutputTypeString(), o->description));
+                    LogWarn(VB_CHANNELOUT, "Could ping host %s, re-adding to outputs\n", o->ipAddress.c_str());
+                    o->failCount = 0;
+                    o->valid = true;
+                    --failedCount;
+                } else if (i <= 0) {
+                    LogDebug(VB_CHANNELOUT, "Could not ping host %s   Fail count: %d   Currently Valid: %d\n", o->ipAddress.c_str(), o->failCount, o->valid);
+                    o->failCount++;
+                    if (o->failCount == 1) {
+                        // ignore a single ping failure, could be transient
+                    } else if (o->failCount == 2) {
+                        // if two pings fail, we'll try a HEAD request via HTTP
+                        CurlManager::INSTANCE.add("http://" + o->ipAddress + "/", "HEAD", "", {}, [o, this](int rc, const std::string& resp) {
+                            if (rc) {
+                                o->failCount = 0;
+                                if (!o->valid) {
+                                    --failedCount;
+                                    o->valid = true;
+                                    WarningHolder::RemoveWarning(createWarning(o->ipAddress, o->GetOutputTypeString(), o->description));
+                                    LogWarn(VB_CHANNELOUT, "Could ping host %s, re-adding to outputs\n",
+                                            o->ipAddress.c_str());
                                 }
                             }
+                        });
+                    } else if (o->failCount >= 3) {
+                        // three pings an HEAD request failed, mark invalid
+                        if (o->valid) {
+                            WarningHolder::AddWarning(createWarning(o->ipAddress, o->GetOutputTypeString(), o->description));
+                            LogWarn(VB_CHANNELOUT, "Could not ping host %s, removing from output\n", o->ipAddress.c_str());
+                            o->valid = false;
+                        }
+                        ++failedCount;
+                        if (o->failCount > 5) {
+                            // make sure we wrap around so another HEAD request later may pick it up
+                            o->failCount = 0;
                         }
                     }
-                    curlm = curl_multi_info_read(m_curlm, &msgs);
                 }
-            }
-            numCurls = handleCount;
-        }
-        for (auto& c : curls) {
-            curl_multi_remove_handle(m_curlm, c.second);
-            curl_easy_cleanup(c.second);
+            });
         }
     }
-    return newOutputs;
 }
 void UDPOutput::DumpConfig() {
     ChannelOutput::DumpConfig();
+    LogDebug(VB_CHANNELOUT, "    Interface        : %s\n", outInterface.c_str());
+    LogDebug(VB_CHANNELOUT, "    Threaded         : %d\n", useThreadedOutput);
+    LogDebug(VB_CHANNELOUT, "    Blocking         : %d\n", blockingOutput);
     for (auto u : outputs) {
         u->DumpConfig();
     }
@@ -758,7 +741,7 @@ void UDPOutput::CloseNetwork() {
     std::unique_lock<std::mutex> lk(socketMutex);
     messages.clearSockets();
     lk.unlock();
-    PingControllers();
+    PingControllers(false);
 }
 SendSocketInfo* UDPOutput::findOrCreateSocket(unsigned int socketKey, int sc) {
     auto it = messages.sendSockets.find(socketKey);
@@ -795,13 +778,28 @@ int UDPOutput::createSocket(int port, bool broadCast) {
     address.sin_port = ntohs(port);
 
     errno = 0;
-    /* Disable loopback so I do not receive my own datagrams. */
+    // Disable loopback so I do not receive my own datagrams.
     char loopch = 0;
     if (setsockopt(sendSocket, IPPROTO_IP, IP_MULTICAST_LOOP, (char*)&loopch, sizeof(loopch)) < 0) {
         LogErr(VB_CHANNELOUT, "Error setting IP_MULTICAST_LOOP error\n");
         close(sendSocket);
         return -1;
     }
+    // make sure the send buffer is actually set to a reasonable size for non-blocking mode
+    int bufSize = 1024 * (blockingOutput ? 4 : 512);
+    setsockopt(sendSocket, SOL_SOCKET, SO_SNDBUF, &bufSize, sizeof(bufSize));
+    // these sockets are for sending only, don't need a large receive buffer so
+    // free some memory by setting to just a single page
+    bufSize = 4096;
+    setsockopt(sendSocket, SOL_SOCKET, SO_RCVBUF, &bufSize, sizeof(bufSize));
+
+    if (blockingOutput) {
+        struct timeval timeout;
+        timeout.tv_sec = 0;
+        timeout.tv_usec = 1000; // 1ms timeout
+        setsockopt(sendSocket, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof timeout);
+    }
+
     if (broadCast) {
         int broadcast = 1;
         if (setsockopt(sendSocket, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast)) < 0) {
@@ -861,4 +859,17 @@ void UDPOutput::StoppingOutput() {
             a->StoppingOutput();
         }
     }
+}
+
+std::string UDPOutput::HexToIP(unsigned int hex) {
+    // Extract each byte in LSB order
+    uint8_t octet1 = hex & 0xFF;         // Least significant byte
+    uint8_t octet2 = (hex >> 8) & 0xFF;
+    uint8_t octet3 = (hex >> 16) & 0xFF;
+    uint8_t octet4 = (hex >> 24) & 0xFF; // Most significant byte
+
+    return std::to_string(octet1) + "." +
+           std::to_string(octet2) + "." +
+           std::to_string(octet3) + "." +
+           std::to_string(octet4);
 }

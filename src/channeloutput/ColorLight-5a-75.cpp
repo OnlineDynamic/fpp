@@ -24,7 +24,7 @@
  *   	- Data Length:     63
  *   	- Destination MAC: 11:22:33:44:55:66
  *   	- Source MAC:      22:22:33:44:55:66
- *   	- Ether Type:      0x0AFF 
+ *   	- Ether Type:      0x0AFF
  *   	- Data[0]:         0xFF
  *   	- Data[1]:         0xFF
  *   	- Data[2]:         0xFF
@@ -70,6 +70,8 @@
 #include <sys/socket.h>
 #include <cmath>
 #include <errno.h>
+#include <fstream>
+#include <iostream>
 
 #include "../Warnings.h"
 #include "../common.h"
@@ -271,6 +273,44 @@ int ColorLight5a75Output::Init(Json::Value config) {
     m_rowSize = m_longestChain * m_panelWidth * 3;
 
 #ifndef PLATFORM_OSX
+
+    // Check if interface is up
+    std::ifstream ifstate_src("/sys/class/net/" + m_ifName + "/operstate");
+    std::string ifstate;
+
+    if (ifstate_src.is_open()) {
+        ifstate_src >> ifstate; // pipe file's content into stream
+        ifstate_src.close();
+    }
+
+    m_colorlightDisable = true;
+    m_colorlightDisable = getSettingInt("ColorlightLinkDownDisable") == 1;
+
+    if (ifstate != "up") {
+        LogErr(VB_CHANNELOUT, "Error ColorLight: Configured interface %s does not have link %s\n", m_ifName.c_str(), strerror(errno));
+        WarningHolder::AddWarning("ColorLight: Configured interface " + m_ifName + " does not have link");
+
+        if (m_colorlightDisable) {
+           return 0;
+        }
+    }
+
+    // Check interface is 1000Mbps capable and display error if not
+    std::ifstream ifspeed_src("/sys/class/net/" + m_ifName + "/speed");
+
+    if (ifspeed_src.is_open()) { // always check whether the file is open
+        ifspeed_src >> ifspeed;  // pipe file's content into stream
+        ifspeed_src.close();
+    }
+
+    if (ifspeed < 1000) {
+        LogErr(VB_CHANNELOUT, "Error ColorLight: Configured interface %s is not 1000Mbps Capable: %s\n", m_ifName.c_str(), strerror(errno));
+        WarningHolder::AddWarning("ColorLight: Configured interface " + m_ifName + " is not 1000Mbps Capable");
+        if (m_colorlightDisable) {
+           return 0;
+        }
+    }
+
     // Open our raw socket
     if ((m_fd = socket(AF_PACKET, SOCK_RAW, IPPROTO_RAW)) == -1) {
         LogErr(VB_CHANNELOUT, "Error creating raw socket: %s\n", strerror(errno));
@@ -459,7 +499,7 @@ void ColorLight5a75Output::GetRequiredChannelRanges(const std::function<void(int
     addRange(m_startChannel, m_startChannel + m_channelCount - 1);
 }
 
-void ColorLight5a75Output::OverlayTestData(unsigned char* channelData, int cycleNum, float percentOfCycle, int testType) {
+void ColorLight5a75Output::OverlayTestData(unsigned char* channelData, int cycleNum, float percentOfCycle, int testType, const Json::Value& config) {
     for (int output = 0; output < m_outputs; output++) {
         int panelsOnOutput = m_panelMatrix->m_outputPanels[output].size();
         for (int i = 0; i < panelsOnOutput; i++) {

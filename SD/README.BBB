@@ -1,8 +1,8 @@
 # FPP BBB Images creation notes (work in progress)
 #
 # FPP images are currently based on the following Debian BeagleBone images:
-# am335x-debian-12.5-minimal-armhf-2024-06-12-2gb.img.xz
-# from https://rcn-ee.net/rootfs/debian-armhf-12-bookworm-minimal-mainline/2024-06-12/
+# am335x-debian-12.6-minimal-armhf-2024-08-28-2gb.img.xz
+# from https://rcn-ee.net/rootfs/debian-armhf-12-bookworm-minimal-mainline/2024-08-28/
 #
 # The below steps (much can be run via copy/paste into a terminal) will
 # prepare the "clean image" from above to have the appropriate 
@@ -22,7 +22,7 @@
 # Burn the above image onto an SD card and insert into the BBB and boot
 # Login with default debian:temppwd then "sudo bash" to become root
 cd /tmp
-wget https://raw.githubusercontent.com/FalconChristmas/fpp/master/SD/BBB-FlashMMC.sh
+wget -4 https://raw.githubusercontent.com/FalconChristmas/fpp/master/SD/BBB-FlashMMC.sh
 chmod +x BBB-FlashMMC.sh
 ./BBB-FlashMMC.sh -noreboot ext4 /dev/mmcblk1
 
@@ -42,18 +42,17 @@ apt-get -y upgrade
 localectl set-locale LANG="en_US.UTF-8"
 
 
-# This MAY cause the beagle to change IP addresses, reboot to get things to settle and continue
-rm -f /etc/systemd/network/50-default.network
-wget -O /etc/systemd/network/50-default.network https://raw.githubusercontent.com/FalconChristmas/fpp/master/etc/systemd/network/50-default.network
-sed -i -e 's/LinkLocalAddressing=fallback/LinkLocalAddressing=yes/' /etc/systemd/network/50-default.network
-
 #install resolved service
 apt-get install systemd-resolved
+
+# This MAY cause the beagle to change IP addresses, reboot to get things to settle and continue
+rm -f /etc/systemd/network/50-default.network
+wget -4 -O /etc/systemd/network/50-default.network https://raw.githubusercontent.com/FalconChristmas/fpp/master/etc/systemd/network/50-default.network
+sed -i -e 's/LinkLocalAddressing=fallback/LinkLocalAddressing=yes/' /etc/systemd/network/50-default.network
 
 #this may "hang" as it may grab a different IP address.  You may need to log back in
 systemctl reload systemd-networkd
 
- 
 systemctl unmask systemd-networkd
 systemctl unmask systemd-resolved
 
@@ -67,20 +66,23 @@ systemctl enable systemd-resolved
 
 #check
 cd /root
-export BASE_NEW_KERNEL_VERSION=6.6.36-fpp15
-export NEW_KERNEL_VERSION=6.6.36-fpp15_1
-wget https://github.com/FalconChristmas/fpp-linux-kernel/raw/master/debs/linux-image-${NEW_KERNEL_VERSION}_armhf.deb
-# wget https://github.com/FalconChristmas/fpp-linux-kernel/raw/master/debs/linux-headers-${NEW_KERNEL_VERSION}_armhf.deb
+export BASE_NEW_KERNEL_VERSION=6.11.0-fpp7
+export NEW_KERNEL_VERSION=6.11.0-fpp7_1
+wget -4 https://github.com/FalconChristmas/fpp-linux-kernel/raw/master/debs/linux-image-${NEW_KERNEL_VERSION}_armhf.deb
+# wget -4 https://github.com/FalconChristmas/fpp-linux-kernel/raw/master/debs/linux-headers-${NEW_KERNEL_VERSION}_armhf.deb
 dpkg -i *.deb
 rm -f *.deb
 apt-get remove -y --purge --autoremove linux-image-$(uname -r) linux-headers-$(uname -r) bbb.io-kernel-tasks
 
-wget https://github.com/FalconChristmas/fpp-linux-kernel/raw/master/debs/wireless-${BASE_NEW_KERNEL_VERSION}.tgz
+wget -4 https://github.com/FalconChristmas/fpp-linux-kernel/raw/master/debs/wireless-${BASE_NEW_KERNEL_VERSION}.tgz
 tar -xzf wireless-${BASE_NEW_KERNEL_VERSION}.tgz
 cp -a wireless/* /lib/modules/${BASE_NEW_KERNEL_VERSION}/kernel/drivers/net/wireless
 depmod -a ${BASE_NEW_KERNEL_VERSION}
 rm -rf wireless
 rm -f wireless-${BASE_NEW_KERNEL_VERSION}.tgz
+# need to copy these or the older bootloader on freshly shipped Beagles will not be able to see
+# the IIO sensor or the eMMC
+cp -a /boot/dtbs/${BASE_NEW_KERNEL_VERSION}/BB-* /lib/firmware
 
 # delete old kernels and modules in /boot and /lib/modules
 # and in /boot/dtbs and any initrd's
@@ -134,13 +136,14 @@ echo "options 8821cu.ko rtw_power_mgnt=0 rtw_enusbss=0" >> /etc/modprobe.d/wifi-
 echo "options 8852au.ko rtw_power_mgnt=0 rtw_enusbss=0" >> /etc/modprobe.d/wifi-disable-power-management.conf
 echo "options 8852bu.ko rtw_power_mgnt=0 rtw_enusbss=0" >> /etc/modprobe.d/wifi-disable-power-management.conf
 echo "options 88x2bu.ko rtw_power_mgnt=0 rtw_enusbss=0" >> /etc/modprobe.d/wifi-disable-power-management.conf
+echo "options 8192cu.ko rtw_power_mgnt=0 rtw_enusbss=0" >> /etc/modprobe.d/wifi-disable-power-management.conf
 echo "options rtl8188fu.ko rtw_power_mgnt=0 rtw_enusbss=0" >> /etc/modprobe.d/wifi-disable-power-management.conf
 echo "options rtl8192cu.ko rtw_power_mgnt=0 rtw_enusbss=0" >> /etc/modprobe.d/wifi-disable-power-management.conf
 
 rm -f /etc/modprobe.d/blacklist-native-wifi.conf
 touch /etc/modprobe.d/blacklist-native-wifi.conf
-#echo "blacklist rtl8192cu" >> /etc/modprobe.d/blacklist-native-wifi.conf
-#echo "blacklist rtl8192c_common" >> /etc/modprobe.d/blacklist-native-wifi.conf
+echo "blacklist rtl8192cu" >> /etc/modprobe.d/blacklist-native-wifi.conf
+echo "blacklist rtl8192c_common" >> /etc/modprobe.d/blacklist-native-wifi.conf
 echo "blacklist rtl8xxxu" >> /etc/modprobe.d/blacklist-native-wifi.conf
 echo "blacklist r8188eu" >> /etc/modprobe.d/blacklist-native-wifi.conf
 echo "blacklist rtl8188fu" >> /etc/modprobe.d/blacklist-native-wifi.conf
@@ -161,6 +164,7 @@ cp -f /etc/modprobe.d/blacklist-native-wifi.conf /etc/fpp/wifi
 
 echo "blacklist 8188eu" > /etc/fpp/wifi/blacklist-external-wifi.conf
 echo "blacklist 8192eu" >> /etc/fpp/wifi/blacklist-external-wifi.conf
+echo "blacklist 8192cu" >> /etc/fpp/wifi/blacklist-external-wifi.conf
 echo "blacklist 8723au" >> /etc/fpp/wifi/blacklist-external-wifi.conf
 echo "blacklist 8723bu" >> /etc/fpp/wifi/blacklist-external-wifi.conf
 echo "blacklist 8812au" >> /etc/fpp/wifi/blacklist-external-wifi.conf
@@ -181,7 +185,7 @@ reboot
 
 
 cd /root
-wget -O ./FPP_Install.sh  http://raw.githubusercontent.com/FalconChristmas/fpp/master/SD/FPP_Install.sh
+wget -4 -O ./FPP_Install.sh  http://raw.githubusercontent.com/FalconChristmas/fpp/master/SD/FPP_Install.sh
 chmod 700 ./FPP_Install.sh
 ./FPP_Install.sh --img
 
@@ -202,8 +206,8 @@ rmdir /tmp/rootfs
 
 # Put the SD card back in a Linux system and run the following (substitute
 # the proper device name for your SD card in place of '/dev/sdc'):
-VERSION=8.0-beta1
-OSVERSION=2024-07
+VERSION=8.3
+OSVERSION=2024-11
 DEVICE=/dev/sdc
 dd if=${DEVICE} of=FPP-v${VERSION}-BBB.img bs=1M count=3572
 

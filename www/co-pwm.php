@@ -88,14 +88,9 @@ if (is_dir($mediaDirectory . "/tmp/pwm/")) {
 
 <script type="text/javascript">
     var PWM_CAPE = <?= json_encode($pwmCape, JSON_PRETTY_PRINT); ?>;
-
-    function servoMinMaxChanged(idx) {
-        var min = $("#pwmMin" + idx).val();
-        var max = $("#pwmMax" + idx).val();
-        $("#pwmServoSlider-" + idx).slider({
-            values: [min, max]
-        });
-    }
+    var lastPort = -1;
+    var lastValue = -1;
+    var lastValueMin = true;
 
     function pwmPortTypeChanged(idx) {
         var type = $("#PWM-PORT-TYPE-" + idx).val();
@@ -113,25 +108,25 @@ if (is_dir($mediaDirectory . "/tmp/pwm/")) {
             $("#PWM-SETTINGS-" + idx).html(html);
         } else if (type == "Servo") {
             html = "<div style=' white-space: nowrap; display:flex; overflow:auto; align-items:center;'>Range:&nbsp;";
-            html += "<input type='number' min='500' max='2500' id='pwmMin" + idx + "' value='1000' onChange='servoMinMaxChanged(" + idx + ");'/>&nbsp;"
-            html += "<div id='pwmServoSlider-" + idx + "' class='fppMinMaxSliderRange servo-range-slider' style='max-width: 350px;'></div>";
-            html += "&nbsp;<input type='number' min='500' max='2500' id='pwmMax" + idx + "' value='2000' onChange='servoMinMaxChanged(" + idx + ");'/>";
+            html += "<input type='number' min='500' max='2500' id='pwmMin" + idx + "' value='1000' onChange='servoMinChanged(" + idx + ");'/>&nbsp;"
+            html += "<div id='pwmServoSlider-" + idx + "' class='fppMinMaxSliderRange servo-range-slider' style='max-width: 100%;'></div>";
+            html += "&nbsp;<input type='number' min='500' max='2500' id='pwmMax" + idx + "' value='2000' onChange='servoMaxChanged(" + idx + ");'/>";
             html += "&nbsp;Reverse:&nbsp;<input type='checkbox' id='pwmReverse" + idx + "'></div>";
             html += "<span style=' white-space: nowrap; display:inline; overflow:auto; align-items:center;'>";
             html += "Zero Behavior:&nbsp;<select id='pwmZero" + idx + "'>";
-            html += "<option value='Hold' selected>Hold</optoin>";
-            html += "<option value='Min'>Min</optoin>";
-            html += "<option value='Max'>Max</optoin>";
-            html += "<option value='Center'>Center</optoin>";
-            html += "<option value='Stop PWM'>Stop PWM</optoin>";
+            html += "<option value='Hold' selected>Hold</option>";
+            html += "<option value='Min'>Min</option>";
+            html += "<option value='Max'>Max</option>";
+            html += "<option value='Center'>Center</option>";
+            html += "<option value='Stop PWM'>Stop PWM</option>";
             html += "</select>";
             html += "</span>";
             html += "<span style=' white-space: nowrap; display:inline; overflow:auto; align-items:center;'>";
             html += " &nbsp;Data Type:&nbsp;<select id='pwmDataType" + idx + "'>";
-            html += "<option value='Scaled' selected>Scaled</optoin>";
-            html += "<option value='Absolute'>Absolute</optoin>";
-            html += "<option value='1/2 Absolute'>1/2 Absolute</optoin>";
-            html += "<option value='2x Absolute'>2x Absolute</optoin>";
+            html += "<option value='Scaled' selected>Scaled</option>";
+            html += "<option value='Absolute'>Absolute</option>";
+            html += "<option value='1/2 Absolute'>1/2 Absolute</option>";
+            html += "<option value='2x Absolute'>2x Absolute</option>";
             html += "</select>";
             html += "</span>";
 
@@ -145,8 +140,20 @@ if (is_dir($mediaDirectory . "/tmp/pwm/")) {
                     if (ui.values[0] == ui.values[1]) {
                         return false;
                     }
+                    lastPort = idx;
+                    if (ui.values[1] != $("#pwmMax" + idx).val()) {
+                        lastValueMin = false;
+                        lastValue = ui.values[1];
+                    }
+                    if (ui.values[0] != $("#pwmMin" + idx).val()) {
+                        lastValueMin = true;
+                        lastValue = ui.values[0];
+                    }
                     $("#pwmMax" + idx).val(ui.values[1]);
                     $("#pwmMin" + idx).val(ui.values[0]);
+                    if ($("#PWMTestPatternType").val() != "0") {
+                        SetPWMTestPattern();
+                    }
                 }
             });
         } else {
@@ -181,10 +188,7 @@ if (is_dir($mediaDirectory . "/tmp/pwm/")) {
             idx = idx + 1;
         });
     }
-    function savePWMOutputs() {
-
-        var postData = {};
-        postData.channelOutputs = [];
+    function generateJSONConfig() {
         var channelOutputs = {};
         channelOutputs['type'] = PWM_CAPE['driver'];
         channelOutputs['subType'] = PWM_CAPE['name'];
@@ -213,11 +217,15 @@ if (is_dir($mediaDirectory . "/tmp/pwm/")) {
             }
             channelOutputs['outputs'].push(output);
         }
-
-        postData.channelOutputs.push(channelOutputs);
+        return channelOutputs;
+    }
+    function savePWMOutputs() {
+        var postData = {};
+        postData.channelOutputs.push(generateJSONConfig());
         $.post("api/channel/output/co-pwm", JSON.stringify(postData)).done(function (data) {
             $.jGrowl("PWM/Servo Output Configuration Saved", { themeState: 'success' });
             SetRestartFlag(1);
+            common_ViewPortChange();
         }).fail(function () {
             DialogError("Save PWM/Servo Outputs", "Save Failed");
         });
@@ -229,6 +237,75 @@ if (is_dir($mediaDirectory . "/tmp/pwm/")) {
         });
     }
 
+    function SetPWMTestPattern() {
+        var val = $("#PWMTestPatternType").val();
+        if (val != "0") {
+            var config = generateJSONConfig();
+            if (lastValue != -1) {
+                config["manipulation"] = {};
+                config["manipulation"]["port"] = parseInt(lastPort) - 1; //0 based
+                config["manipulation"]["value"] = parseInt(lastValue);
+                config["manipulation"]["isMin"] = lastValueMin;
+            }
+            config = JSON.stringify(config);
+            var data = {};
+            data["command"] = "Test Start";
+            data["multisyncCommand"] = false;
+            data["multisyncHosts"] = "";
+            data["args"] = ["2000", "Output Specific", "PCA9685 PWM", val, config];
+            $.ajax({
+                type: "POST",
+                url: 'api/command',
+                contentType: 'application/json',
+                async: false,
+                //json object to sent to the authentication url
+                data: JSON.stringify(data),
+                success: function () {
+                }
+            });
+
+        } else {
+            var data = '{"command":"Test Stop","multisyncCommand":false,"multisyncHosts":"","args":[]}';
+            $.post("api/command", data
+            ).done(function (data) {
+            }).fail(function () {
+            });
+        }
+    }
+    function StopServoTesting() {
+        var val = $("#PWMTestPatternType").val();
+        if (val != "0") {
+            var data = '{"command":"Test Stop","multisyncCommand":false,"multisyncHosts":"","args":[]}';
+            $.post("api/command", data
+            ).done(function (data) {
+            }).fail(function () {
+            });
+        }
+    }
+    function servoMinMaxChanged(idx) {
+        var min = $("#pwmMin" + idx).val();
+        var max = $("#pwmMax" + idx).val();
+        $("#pwmServoSlider-" + idx).slider({
+            values: [min, max]
+        });
+        lastPort = idx;
+    }
+    function servoMaxChanged(idx) {
+        servoMinMaxChanged(idx);
+        lastValueMin = false;
+        lastValue = $("#pwmMax" + idx).val();
+        if ($("#PWMTestPatternType").val() != "0") {
+            SetPWMTestPattern();
+        }
+    }
+    function servoMinChanged(idx) {
+        servoMinMaxChanged(idx);
+        lastValueMin = true;
+        lastValue = $("#pwmMin" + idx).val();
+        if ($("#PWMTestPatternType").val() != "0") {
+            SetPWMTestPattern();
+        }
+    }
 
     $(document).ready(function () {
         <?
@@ -239,6 +316,7 @@ if (is_dir($mediaDirectory . "/tmp/pwm/")) {
         }
         ?>
         loadPWMOutputs();
+        window.addEventListener('beforeunload', StopServoTesting, false);
     });
 </script>
 
@@ -265,18 +343,29 @@ if (is_dir($mediaDirectory . "/tmp/pwm/")) {
                         <div><input id='PWM_enable' type='checkbox'></div>
                     </div>
                 </div>
-                <div class="col-md-auto form-inline">
-                    <span style=' white-space: nowrap; display:inline; overflow:auto; align-items:center;'>&nbsp;<b>Frequency:</b>&nbsp;<select id='PWMFrequency'>
-                        <option value='50hz'>50hz</optoin>
-                        <option value='80hz'>80hz</optoin>
-                        <option value='100hz'>100hz</optoin>
-                        <option value='120hz'>120hz</optoin>
-                        <option value='150hz'>150hz</optoin>
-                        <option value='200hz'>200hz</optoin>
-                        <option value='240hz'>240hz</optoin>
-                        <option value='250hz'>250hz</optoin>
+                <div class="col-md-auto form-inline mr-auto">
+                    <span
+                        style=' white-space: nowrap; display:inline; overflow:auto; align-items:center;'>&nbsp;<b>Frequency:</b>&nbsp;<select
+                            id='PWMFrequency'>
+                            <option value='50hz'>50hz</option>
+                            <option value='80hz'>80hz</option>
+                            <option value='100hz'>100hz</option>
+                            <option value='120hz'>120hz</option>
+                            <option value='150hz'>150hz</option>
+                            <option value='200hz'>200hz</option>
+                            <option value='240hz'>240hz</option>
+                            <option value='250hz'>250hz</option>
                         </select>
                     </span>
+                </div>
+                <div class="col-md-auto form-inline">
+                    <div id="PWMTestPatternDiv">
+                        <b>Testing:</b>
+                        <select id='PWMTestPatternType' onchange='SetPWMTestPattern();'>
+                            <option value='0'>Off</option>
+                            <option value='1'>Range Limits</option>
+                        </select>
+                    </div>
                 </div>
             </div>
         </div>
