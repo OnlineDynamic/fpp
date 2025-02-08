@@ -346,6 +346,10 @@ if ($settings["hideExternalURLs"]) {
           <hr class="dropdown-divider">
           <a class="dropdown-item" href="healthCheck.php"><i class="fas fa-thermometer-half"></i> System Health Check</a>
           <a class="dropdown-item" href="troubleshooting.php"><i class="fas fa-code"></i> Troubleshooting Commands</a>
+          <? if ( ($uiLevel >= 1)) { ?>
+          <a class="dropdown-item" href="interface-map.php"><i class="fas fa-heart-pulse"></i> Hardware Interface</a>
+<? } ?>
+       
           <?
           $baseLink = $_SERVER['HTTP_HOST'];
           if (isset($_SERVER['HTTP_X_FORWARDED_HOST'])) {

@@ -556,7 +556,7 @@
 
 
 
-                <small>Copyright &copy; 2013-2024</small>
+                <small>Copyright &copy; 2013-2025</small>
               </div>
             </div>
 
