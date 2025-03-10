@@ -40,10 +40,10 @@
     $maxLEDPanels = $LEDPanelOutputs * $LEDPanelPanelsPerOutput;
     $maxLEDPanels = 96; // Override to allow different panel configs using ColorLight cards
     
-    echo $settings;
-
+    //echo $settings;
+    
     if (isset(($settings["LEDPanelMatrices"]))) {
-        $matricesArray = json_decode($settings["LEDPanelMatrices"], true);
+        $matricesArray = $settings["LEDPanelMatrices"];
         for ($z = 1; $z <= count($matricesArray["panelMatrices"]); $z++) {
             $panelMatrixID = $matricesArray["panelMatrices"]["panelMatrix$z"]["panelMatrixID"];
             $parts = explode('x', $matricesArray["panelMatrices"]["panelMatrix$z"]["Configuration"]["LEDPanelsLayout"]);
@@ -314,11 +314,11 @@
 
         var PanelLayoutUpdateJSONObj = {};
         PanelLayoutUpdateJSONObj.panelMatrices = {};
-        PanelLayoutUpdateJSONObj.panelMatrices.panelMatrix1 = {};
-        PanelLayoutUpdateJSONObj.panelMatrices.panelMatrix1.Configuration = {};
-        PanelLayoutUpdateJSONObj.panelMatrices.panelMatrix1.Configuration.LEDPanelsLayout = {};
+        PanelLayoutUpdateJSONObj.panelMatrices[`panelMatrix${panelMatrixID}`] = {};
+        PanelLayoutUpdateJSONObj.panelMatrices[`panelMatrix${panelMatrixID}`].Configuration = {};
+        PanelLayoutUpdateJSONObj.panelMatrices[`panelMatrix${panelMatrixID}`].Configuration.LEDPanelsLayout = {};
 
-        PanelLayoutUpdateJSONObj.panelMatrices.panelMatrix1.Configuration.LEDPanelsLayout = PanelLayoutValue;
+        PanelLayoutUpdateJSONObj.panelMatrices[`panelMatrix${panelMatrixID}`].Configuration.LEDPanelsLayout = PanelLayoutValue;
 
         var PanelLayoutValueJSON = JSON.stringify(PanelLayoutUpdateJSONObj);
 
@@ -1413,7 +1413,8 @@
     function LEDPanelsSizeChanged(panelMatrixID) {
         var value = $(`#panelMatrix${panelMatrixID} .LEDPanelsSize`).val();
         SetSetting("LEDPanelsSize", value, 1, 0, false, null, function () {
-            settings['LEDPanelsSize'] = value;
+            //settings['LEDPanelsSize'] = value;
+            settings["LEDPanelMatrices"]["panelMatrices"]["panelMatrix" + panelMatrixID]["Configuration"]['LEDPanelsSize'] = value;
             LEDPanelLayoutChanged();
         });
     }
@@ -1423,31 +1424,49 @@
         document.querySelector(`#panelMatrix${panelMatrixID}`).innerHTML = document.querySelector('#divLEDPanelsTemplate').innerHTML;
         //Set the PanelMatrixID
         document.querySelector(`#panelMatrix${panelMatrixID}  .divPanelMatrixID`).innerHTML = panelMatrixID;
+        $(`#panelMatrix${panelMatrixID}  .matrixPanelID`).html(panelMatrixID);
         //Rename the Canvas id
-        $(`#panelMatrix${panelMatrixID} canvas.ledPanelCanvas`).attr("id", "ledPanelCanvas" + panelMatrixID)
+        $(`#panelMatrix${panelMatrixID} canvas.ledPanelCanvas`).attr("id", "ledPanelCanvas" + panelMatrixID);
     }
 
     $(document).ready(function () {
 
-        populatePanelMatrixTab(1);
-        // populatePanelMatrixTab(2);
-        //  populatePanelMatrixTab(3);
+        <?
+        //Discover currently configured panel matrices and populate a tab and initialize each
+        
+        foreach ($settings["LEDPanelMatrices"]["panelMatrices"] as $panelMatrix) {
+            $panelMatrixID = $panelMatrix["panelMatrixID"];
+            //set whether the tabs are displayed
+            echo "$('#matrixPanelTab$panelMatrixID').show();";
+            //populate the tab
+            echo "populatePanelMatrixTab($panelMatrixID);";
+            echo "InitializeLEDPanelMatrix($panelMatrixID);";
+            echo "LEDPanelsConnectionChanged($panelMatrixID);";
+            echo "SetupAdvancedUISelects($panelMatrixID);";
+
+        }
 
 
-        InitializeLEDPanelMatrix(1);
+        //testing stuff to remove
+        //echo "populatePanelMatrixTab(1);";
+        //  InitializeLEDPanelMatrix(1);
         //  InitializeLEDPanelMatrix(2);
-        LEDPanelsConnectionChanged(1);
+        //LEDPanelsConnectionChanged(1);
+        //SetupAdvancedUISelects(1);
+        
 
-        SetupAdvancedUISelects(1);
+
+        ?>
+
         panelMatrixID = GetCurrentActiveMatrixPanelID();
 
-        if ($(`#panelMatrix${panelMatrixID} .LEDPanelUIAdvancedLayout`).is(":checked")) {
+        if ($(`#panelMatrix${panelMatrixID}.LEDPanelUIAdvancedLayout`).is(":checked")) {
             InitializeCanvas(panelMatrixID, 0);
             //InitializeCanvas(1, 0);
-            $(`#panelMatrix${panelMatrixID} .ledPanelSimpleUI`).hide();
-            $(`#panelMatrix${panelMatrixID} .ledPanelCanvasUI`).show();
+            $(`#panelMatrix${panelMatrixID}.ledPanelSimpleUI`).hide();
+            $(`#panelMatrix${panelMatrixID}.ledPanelCanvasUI`).show();
         } else {
-            $(`#panelMatrix${panelMatrixID} .ledPanelCanvasUI`).hide();
+            $(`#panelMatrix${panelMatrixID}.ledPanelCanvasUI`).hide();
         }
 
         <?
@@ -1486,16 +1505,16 @@
     </div>
     <!-- LED Panel Matrix Tabs --->
     <ul class="nav nav-tabs" id="panelTabs" role="tablist">
-        <li class="nav-item"><a class="nav-link" href="#panelMatrix1" data-bs-toggle="tab"
-                data-bs-target="#panelMatrix1">Panel Matrix 1</a></li>
-        <li class="nav-item"><a class="nav-link" href="#panelMatrix2" data-bs-toggle="tab"
-                data-bs-target="#panelMatrix2">Panel Matrix 2</a></li>
-        <li class="nav-item"><a class="nav-link" href="#panelMatrix3" data-bs-toggle="tab"
-                data-bs-target="#panelMatrix3">Panel Matrix 3</a></li>
-        <li class="nav-item"><a class="nav-link" href="#panelMatrix4" data-bs-toggle="tab"
-                data-bs-target="#panelMatrix4">Panel Matrix 4</a></li>
-        <li class="nav-item"><a class="nav-link" href="#panelMatrix5" data-bs-toggle="tab"
-                data-bs-target="#panelMatrix5">Panel Matrix 5</a></li>
+        <li class="nav-item" style="display: none;" id="matrixPanelTab1"><a class="nav-link" href="#panelMatrix1"
+                data-bs-toggle="tab" data-bs-target="#panelMatrix1">Panel Matrix 1</a></li>
+        <li class="nav-item" style="display: none;" id="matrixPanelTab2"><a class="nav-link" href="#panelMatrix2"
+                data-bs-toggle="tab" data-bs-target="#panelMatrix2">Panel Matrix 2</a></li>
+        <li class="nav-item" style="display: none;" id="matrixPanelTab3"><a class="nav-link" href="#panelMatrix3"
+                data-bs-toggle="tab" data-bs-target="#panelMatrix3">Panel Matrix 3</a></li>
+        <li class="nav-item" style="display: none;" id="matrixPanelTab4"><a class="nav-link" href="#panelMatrix4"
+                data-bs-toggle="tab" data-bs-target="#panelMatrix4">Panel Matrix 4</a></li>
+        <li class="nav-item" style="display: none;" id="matrixPanelTab5"><a class="nav-link" href="#panelMatrix5"
+                data-bs-toggle="tab" data-bs-target="#panelMatrix5">Panel Matrix 5</a></li>
     </ul>
 
     <!-- LED Panel Matrix Tab-Content --->
@@ -1555,36 +1574,36 @@
             <div class="backdrop row">
                 <div class="col-md-auto">
                     <div class="backdrop-dark form-inline enableCheckboxWrapper">
-                        <div><b>Enable <span class='capeNamePanels'>Led Panel Matrix</span>:&nbsp;</b></div>
+                        <div><b>Enable Led Panel Matrix:&nbsp; <span class='matrixPanelID'></span></b></div>
                         <div><input class='LEDPanelsEnabled' type='checkbox' onChange="WarnIfSlowNIC();"></div>
                     </div>
                 </div>
                 <div class="col-md-auto form-inline">
-                    <div class='LEDPanelsConnectionLabel'><b>Connection Type:&nbsp;</b>
-                        <div>
-                            <select class='LEDPanelsConnectionSelect' onChange='LEDPanelsConnectionChanged();'>
-                                <?
-                                if (
-                                    in_array('all', $currentCapeInfo["provides"])
-                                    || in_array('panels', $currentCapeInfo["provides"])
-                                ) {
-                                    if ($settings['Platform'] == "Raspberry Pi") {
-                                        ?>
-                                        <option value='RGBMatrix'>Hat/Cap/Cape</option>
-                                        <?
-                                    } else if ($settings['Platform'] == "BeagleBone Black") { ?>
-                                            <option value='LEDscapeMatrix'>Hat/Cap/Cape</option>
-                                    <? } ?>
+                    <div class='LEDPanelsConnectionLabel col-md-auto form-inline'><b>Connection Type:</b>
+
+                        <select class='LEDPanelsConnectionSelect' onChange='LEDPanelsConnectionChanged();'>
+                            <?
+                            if (
+                                in_array('all', $currentCapeInfo["provides"])
+                                || in_array('panels', $currentCapeInfo["provides"])
+                            ) {
+                                if ($settings['Platform'] == "Raspberry Pi") {
+                                    ?>
+                                    <option value='RGBMatrix'>Hat/Cap/Cape</option>
                                     <?
-                                } ?>
-                                <option value='ColorLight5a75'>ColorLight</option>
+                                } else if ($settings['Platform'] == "BeagleBone Black") { ?>
+                                        <option value='LEDscapeMatrix'>Hat/Cap/Cape</option>
+                                <? } ?>
                                 <?
-                                if ((file_exists('/usr/include/X11/Xlib.h')) && ($settings['Platform'] == "Linux")) {
-                                    echo "<option value='X11PanelMatrix'>X11 Panel Matrix</option>\n";
-                                }
-                                ?>
-                            </select>
-                        </div>
+                            } ?>
+                            <option value='ColorLight5a75'>ColorLight</option>
+                            <?
+                            if ((file_exists('/usr/include/X11/Xlib.h')) && ($settings['Platform'] == "Linux")) {
+                                echo "<option value='X11PanelMatrix'>X11 Panel Matrix</option>\n";
+                            }
+                            ?>
+                        </select>
+
                     </div>
                     <div class="LEDPanelsConnectionInterface col-md-auto form-inline">
                         <b>Interface:</b>
