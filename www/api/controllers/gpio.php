@@ -193,84 +193,87 @@ function GPIOConfig()
     }
 
     //Cape - PWM Outputs
-    $pwm_files = preg_grep('~\.(json)$~', scandir("$mediaDirectory/tmp/pwm"));
+    if (file_exists("$mediaDirectory/tmp/pwm")) {
+        $pwm_files = preg_grep('~\.(json)$~', scandir("$mediaDirectory/tmp/pwm"));
 
-    foreach ($pwm_files as $file) {
-        if (file_exists("$mediaDirectory/tmp/strings/$file")) {
-            $cape_pwm_config_json = file_get_contents("$mediaDirectory/tmp/pwm/$file");
-            $cape_pwm_config = json_decode($cape_pwm_config_json, true);
+        foreach ($pwm_files as $file) {
+            if (file_exists("$mediaDirectory/tmp/strings/$file")) {
+                $cape_pwm_config_json = file_get_contents("$mediaDirectory/tmp/pwm/$file");
+                $cape_pwm_config = json_decode($cape_pwm_config_json, true);
 
-            foreach ($cape_pwm_config['outputs'] as $z => $x) {
-                foreach ($all_gpios as $k => $gp) {
-                    if ($gp['pin'] == $x['pin']) {
-                        if ($gp['InUse'] == true) {
-                            $all_gpios[$k]['ConfigError'] = true;
-                            if (is_null($all_gpios[$k]['ConfigConflict'])) {
-                                $all_gpios[$k]['ConfigConflict'] = '{' . $all_gpios[$k]['Function'] . ' : ' . $all_gpios[$k]['Description'] . '}' . '{' . $capeName . ' - PWM Output : ' . 'PWM #' . ($z + 1) . '}';
-                            } else {
-                                $all_gpios[$k]['ConfigConflict'] = $all_gpios[$k]['ConfigConflict'] . '{' . $capeName . ' - PWM Output : ' . 'PWM #' . ($z + 1) . '}';
+                foreach ($cape_pwm_config['outputs'] as $z => $x) {
+                    foreach ($all_gpios as $k => $gp) {
+                        if ($gp['pin'] == $x['pin']) {
+                            if ($gp['InUse'] == true) {
+                                $all_gpios[$k]['ConfigError'] = true;
+                                if (is_null($all_gpios[$k]['ConfigConflict'])) {
+                                    $all_gpios[$k]['ConfigConflict'] = '{' . $all_gpios[$k]['Function'] . ' : ' . $all_gpios[$k]['Description'] . '}' . '{' . $capeName . ' - PWM Output : ' . 'PWM #' . ($z + 1) . '}';
+                                } else {
+                                    $all_gpios[$k]['ConfigConflict'] = $all_gpios[$k]['ConfigConflict'] . '{' . $capeName . ' - PWM Output : ' . 'PWM #' . ($z + 1) . '}';
+                                }
                             }
+                            $all_gpios[$k]['Output'] = true;
+                            $all_gpios[$k]['Function'] = $capeName . ' - PWM Output';
+                            $all_gpios[$k]['InUse'] = true;
+                            $all_gpios[$k]['Description'] = 'PWM #' . ($z + 1);
                         }
-                        $all_gpios[$k]['Output'] = true;
-                        $all_gpios[$k]['Function'] = $capeName . ' - PWM Output';
-                        $all_gpios[$k]['InUse'] = true;
-                        $all_gpios[$k]['Description'] = 'PWM #' . ($z + 1);
                     }
                 }
             }
         }
     }
-
     //Cape - String Outputs (inc fuses and other cape gpio usage)
-    $str_files = preg_grep('~\.(json)$~', scandir("$mediaDirectory/tmp/strings"));
+    if (file_exists("$mediaDirectory/tmp/strings")) {
+        $str_files = preg_grep('~\.(json)$~', scandir("$mediaDirectory/tmp/strings"));
 
-    foreach ($str_files as $file) {
-        if (file_exists("$mediaDirectory/tmp/strings/$file")) {
-            $cape_strings_config_json = file_get_contents("$mediaDirectory/tmp/strings/$file");
-            $cape_strings_config = json_decode($cape_strings_config_json, true);
+        foreach ($str_files as $file) {
+            if (file_exists("$mediaDirectory/tmp/strings/$file")) {
+                $cape_strings_config_json = file_get_contents("$mediaDirectory/tmp/strings/$file");
+                $cape_strings_config = json_decode($cape_strings_config_json, true);
 
-            //work through each 'output'
-            foreach ($cape_strings_config['outputs'] as $k => $x) {
-                //capture pins assigned to data output
-                foreach ($all_gpios as $z => $gp) {
-                    //simple pin mapping (no latches)
-                    if ($gp['pin'] == $x['pin']) {
-                        if ($gp['InUse'] == true) {
-                            $all_gpios[$z]['ConfigError'] = true;
-                            if (is_null($all_gpios[$z]['ConfigConflict'])) {
-                                $all_gpios[$z]['ConfigConflict'] = '{' . $all_gpios[$z]['Function'] . ' : ' . $all_gpios[$z]['Description'] . '}' . '{' . $capeName . ' - String Output : ' . 'Pixel Port #' . ($k + 1) . '}';
-                            } else {
-                                $all_gpios[$z]['ConfigConflict'] = $all_gpios[$z]['ConfigConflict'] . '{' . $capeName . ' - String Output : ' . 'Pixel Port #' . ($k + 1) . '}';
+                //work through each 'output'
+                foreach ($cape_strings_config['outputs'] as $k => $x) {
+                    //capture pins assigned to data output
+                    foreach ($all_gpios as $z => $gp) {
+                        //simple pin mapping (no latches)
+                        if ($gp['pin'] == $x['pin']) {
+                            if ($gp['InUse'] == true) {
+                                $all_gpios[$z]['ConfigError'] = true;
+                                if (is_null($all_gpios[$z]['ConfigConflict'])) {
+                                    $all_gpios[$z]['ConfigConflict'] = '{' . $all_gpios[$z]['Function'] . ' : ' . $all_gpios[$z]['Description'] . '}' . '{' . $capeName . ' - String Output : ' . 'Pixel Port #' . ($k + 1) . '}';
+                                } else {
+                                    $all_gpios[$z]['ConfigConflict'] = $all_gpios[$z]['ConfigConflict'] . '{' . $capeName . ' - String Output : ' . 'Pixel Port #' . ($k + 1) . '}';
+                                }
                             }
-                        }
-                        $all_gpios[$z]['Output'] = true;
-                        $all_gpios[$z]['Function'] = $capeName . ' - String Output';
-                        $all_gpios[$z]['InUse'] = true;
-                        $all_gpios[$z]['Description'] = 'Pixel Port #' . ($k + 1);
-                    }
-                    //latched gpio (1 gpio controlling multiple strings
-                    if ($gp['pru'] == $x['pru'] && $gp['pruPin'] == $x['pin']) {
-                        $firstUsage = true;
-                        if ($gp['InUse'] == true && $firstUsage == true) {
-                            $firstUsage = false;
-                            $all_gpios[$z]['ConfigError'] = true;
-                            if (is_null($all_gpios[$z]['ConfigConflict'])) {
-                                $all_gpios[$z]['ConfigConflict'] = '{' . $all_gpios[$z]['Function'] . ' : ' . $all_gpios[$z]['Description'] . '}' . '{' . $capeName . ' - String Output : ' . 'Pixel Port #' . ($k + 1) . '}';
-                            } else {
-                                $all_gpios[$z]['ConfigConflict'] = $all_gpios[$z]['ConfigConflict'] . '{' . $capeName . ' - String Output}';
-                            }
-                        }
-                        $all_gpios[$z]['Output'] = true;
-                        $all_gpios[$z]['Function'] = $capeName . ' - Latched String Output';
-                        $all_gpios[$z]['InUse'] = true;
-                        if ($firstUsage) {
+                            $all_gpios[$z]['Output'] = true;
+                            $all_gpios[$z]['Function'] = $capeName . ' - String Output';
+                            $all_gpios[$z]['InUse'] = true;
                             $all_gpios[$z]['Description'] = 'Pixel Port #' . ($k + 1);
                         }
-                        if (!$firstUsage) {
-                            $all_gpios[$z]['Description'] += ', ' . ($k + 1);
+                        //latched gpio (1 gpio controlling multiple strings
+                        if ($gp['pru'] == $x['pru'] && $gp['pruPin'] == $x['pin']) {
+                            $firstUsage = true;
+                            if ($gp['InUse'] == true && $firstUsage == true) {
+                                $firstUsage = false;
+                                $all_gpios[$z]['ConfigError'] = true;
+                                if (is_null($all_gpios[$z]['ConfigConflict'])) {
+                                    $all_gpios[$z]['ConfigConflict'] = '{' . $all_gpios[$z]['Function'] . ' : ' . $all_gpios[$z]['Description'] . '}' . '{' . $capeName . ' - String Output : ' . 'Pixel Port #' . ($k + 1) . '}';
+                                } else {
+                                    $all_gpios[$z]['ConfigConflict'] = $all_gpios[$z]['ConfigConflict'] . '{' . $capeName . ' - String Output}';
+                                }
+                            }
+                            $all_gpios[$z]['Output'] = true;
+                            $all_gpios[$z]['Function'] = $capeName . ' - Latched String Output';
+                            $all_gpios[$z]['InUse'] = true;
+                            if ($firstUsage) {
+                                $all_gpios[$z]['Description'] = 'Pixel Port #' . ($k + 1);
+                            }
+                            if (!$firstUsage) {
+                                $all_gpios[$z]['Description'] += ', ' . ($k + 1);
+                            }
                         }
-                    }
 
+                    }
                 }
             }
         }
