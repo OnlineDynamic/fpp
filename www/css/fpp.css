@@ -3615,3 +3615,38 @@ a.api-anchor {
 #divLEDPanelMatrices a.nav-link.active {
 	color: blue;
 }
+
+.panelMatrix-tab-content .backdrop {
+	margin: 0.2pc;
+}
+
+.panelMatrix-tab-content .divLEDPanelWarnings {
+	margin: 0.2pc;
+}
+
+.panelMatrix-tab-content .divLEDPanelsData {
+	border: 2px solid black; /* Black border */
+	border-radius: 10px; /* Rounded corners */
+	padding: 10px; /* Space inside the div */
+	margin-top: 5px;
+}
+
+.panelMatrix-tab-content .divLEDPanelsLayoutData {
+	border: 2px solid black; /* Black border */
+	border-radius: 10px; /* Rounded corners */
+	padding: 10px; /* Space inside the div */
+	margin-top: 5px;
+}
+
+.LEDPanelTable table {
+	border: 1px solid grey; /* Black border */
+	border-radius: 5px; /* Rounded corners */
+
+	margin: 0.3pc;
+}
+
+.LEDPanelTable table {
+	border-spacing: 5px;
+	border-collapse: separate; /* Ensure spacing works */
+	background-color: lightgray;
+}
