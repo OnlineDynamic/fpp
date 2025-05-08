@@ -520,9 +520,6 @@ if ($fd) {
             case "emailtoemail":
                 $emailtoemail = $value;
                 break;
-            case "LEDPanelMatrices":
-                $settings['LEDPanelMatrices'] = json_decode($value, true);
-                break;
         }
     } while ($data != null);
     flock($fd, LOCK_UN);
