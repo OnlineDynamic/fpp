@@ -1,4 +1,4 @@
-<script src='js/fabric.min.js'></script>
+<script src='js/fabric/fabric.min.js'></script>
 <script>
 
     <?
@@ -34,7 +34,8 @@
     $LEDPanelDefaults["brightness"] = 100;
     $LEDPanelDefaults["LEDPanelsOutputCPUPWM"] = 0;
     $LEDPanelDefaults['LEDPanelType'] = 0;
-
+    $LEDPanelDefaults['invertedData'] = 0; // Default to no inversion - Top Left
+    
     if ($settings['BeaglePlatform']) {
         $LEDPanelDefaults["LEDPanelPanelsPerOutput"] = 16;
         if (strpos($settings['SubPlatform'], 'Green Wireless') !== false) {
@@ -1218,11 +1219,11 @@
             $(`#panelMatrix${panelMatrixID} .LEDPanelUIPixelsHigh`).val(matrixHeight);
         }
         if (resized)
-            SetCanvasSize();
+            SetCanvasSize(panelMatrixID);
     }
 
-    function SetCanvasSize() {
-        const panelMatrixID = GetCurrentActiveMatrixPanelID();
+    function SetCanvasSize(panelMatrixID = GetCurrentActiveMatrixPanelID()) {
+
         let AdvancedUIcanvas = eval("AdvancedUIcanvas" + panelMatrixID);
 
         let canvasWidth = parseInt($(`#panelMatrix${panelMatrixID} .LEDPanelUIPixelsWide`).val()) * AdvancedUIcanvas.uiScale;
@@ -1252,7 +1253,7 @@
                 });
         }
 
-        SetCanvasSize();
+        SetCanvasSize(panelMatrixID);
 
         if (channelOutputsLookup["LEDPanelMatrices"]["panelMatrix" + panelMatrixID].type === "LEDPanelMatrix") {
             for (var i = 0; i < channelOutputsLookup["LEDPanelMatrices"]["panelMatrix" + panelMatrixID].panels.length; i++) {
@@ -1505,7 +1506,7 @@
                             panelMatrixID: NewPanelMatrixID,
                             panels: [],
                             enabled: true,
-                            invertedData: 0,
+                            invertedData: LEDPanelDefaults['invertedData'],
                             LEDPanelsSize: LEDPanelDefaults['LEDPanelsSize'],
                             LEDPanelsOutputByRow: LEDPanelDefaults['LEDPanelsOutputByRow'],
                             LEDPanelsOutputBlankRow: LEDPanelDefaults['LEDPanelsOutputBlankRow'],
@@ -1543,7 +1544,24 @@
                                 LEDPanelAddressing: LEDPanelDefaults['LEDPanelAddressing']
                             });
                         };
-                        //think we need to add in logic for BBBMatrix and LEDscapeMatrix
+                        if ($(`#AddPanelMatrixDialog #LEDPanelsConnectionSelect`).val() == "BBBMatrix") {
+                            Object.assign(channelOutputsLookup["LEDPanelMatrices"]["panelMatrix" + NewPanelMatrixID], {
+                                subType: "BBBMatrix",
+                                wiringPinout: LEDPanelDefaults['LEDPanelsWiringPinout'],
+                                gpioSlowdown: LEDPanelDefaults['gpioSlowdown'],
+                                cpuPWM: LEDPanelDefaults["LEDPanelsOutputCPUPWM"],
+                                LEDPanelAddressing: LEDPanelDefaults['LEDPanelAddressing']
+                            });
+                        };
+                        if ($(`#AddPanelMatrixDialog #LEDPanelsConnectionSelect`).val() == "LEDscapeMatrix") {
+                            Object.assign(channelOutputsLookup["LEDPanelMatrices"]["panelMatrix" + NewPanelMatrixID], {
+                                subType: "LEDscapeMatrix",
+                                wiringPinout: LEDPanelDefaults['LEDPanelsWiringPinout'],
+                                gpioSlowdown: LEDPanelDefaults['gpioSlowdown'],
+                                cpuPWM: LEDPanelDefaults["LEDPanelsOutputCPUPWM"],
+                                LEDPanelAddressing: LEDPanelDefaults['LEDPanelAddressing']
+                            });
+                        };
 
 
                         CloseModalDialog('AddPanelMatrixDialog');
