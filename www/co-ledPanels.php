@@ -543,7 +543,8 @@
             ["LEDPanelsGPIOSlowdown", "gpioSlowdown"],
             ["LEDPanelsEnabled", "enabled"],
             ["LEDPanelsOutputCPUPWM", "cpuPWM"],
-            ["LEDPanelsColorOrder", "colorOrder"]
+            ["LEDPanelsColorOrder", "colorOrder"],
+            ["LEDPanelMatrixName", "LEDPanelMatrixName"]
         ];
 
         selectors.forEach(([selector, key, transform = val => val]) => {
@@ -575,6 +576,10 @@
         $(`#panelMatrix${panelMatrixID} .LEDPanelsColorDepth`).val(colordepth);
         $(`#panelMatrix${panelMatrixID} .LEDPanelsStartCorner`).val(invertedData);
 
+        if (mp.LEDPanelMatrixName != "") {
+            $(`#matrixPanelTab${panelMatrixID} a`).html(mp.LEDPanelMatrixName);
+        }
+
         PanelSubtypeChanged(panelMatrixID);
         UpdateLegacyLEDPanelLayout(panelMatrixID);
         if (mp?.LEDPanelUIAdvancedLayout) {
@@ -595,6 +600,7 @@
         var matrixDivName = 'panelMatrix' + panelMatrixID;
         var matrixDiv = $(`.tab-content [id=${matrixDivName}]`);
 
+        config.cfgVersion = 2;
         config.type = "LEDPanelMatrix";
         if ((matrixDiv.find(`#panelMatrix${panelMatrixID} .LEDPanelUIAdvancedLayout`).is(":checked")) &&
             (typeof mp !== 'undefined')) {
@@ -617,7 +623,6 @@
 
         config.panelMatrixID = panelMatrixID;
         config.enabled = Number(matrixDiv.find('.LEDPanelsEnabled').is(":checked"));
-        config.cfgVersion = 2;
         config.startChannel = parseInt(matrixDiv.find('.LEDPanelsStartChannel').val());
         config.channelCount = parseInt(matrixDiv.find('.LEDPanelsChannelCount').html());
         config.colorOrder = matrixDiv.find('.LEDPanelsColorOrder').val();
@@ -643,6 +648,7 @@
         }
         ?>
 
+        config.LEDPanelMatrixName = matrixDiv.find('.LEDPanelMatrixName').val();
         config.ledPanelsLayout = matrixDiv.find('.LEDPanelsLayoutCols').val() + "x" + matrixDiv.find('.LEDPanelsLayoutRows').val();
         config.ledPanelsOutputs = parseInt(matrixDiv.find('.LEDPanelsLayoutCols').val());
         config.ledPanelsPanelsPerOutput = parseInt(matrixDiv.find('.LEDPanelsLayoutRows').val());
@@ -1596,6 +1602,16 @@
 
     }
 
+    function MatrixNameChange() {
+        const panelMatrixID = GetCurrentActiveMatrixPanelID();
+        let newName = $(`#panelMatrix${panelMatrixID} .LEDPanelMatrixName`).val();
+        if (newName !== "") {
+            $(`#matrixPanelTab${panelMatrixID} a`).html(newName);
+        } else {
+            $(`#matrixPanelTab${panelMatrixID} a`).html("Panel Matrix " + panelMatrixID);
+        }
+    }
+
     function WarnIfSlowNIC(panelMatrixID = GetCurrentActiveMatrixPanelID()) {
         var NicSpeed = parseInt($(`#panelMatrix${panelMatrixID} .LEDPanelsInterface`).find(":selected").text().split('(')[1].split('M')[0]);
         if (NicSpeed < 1000 && $(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionSelect`).find(":selected").text() == "ColorLight" && $(`#panelMatrix${panelMatrixID} .LEDPanelsEnabled`).is(":checked") == true) {
@@ -1787,8 +1803,9 @@
             <div class="backdrop row">
                 <div class="col-md-auto">
                     <div class="backdrop-dark form-inline enableCheckboxWrapper">
-                        <div><b>Enable Led Panel Matrix:&nbsp; <span class='matrixPanelID'></span></b></div>
+                        <div><b>Enable LED Panel Matrix:&nbsp; <span class='matrixPanelID'></span></b></div>
                         <div><input class='LEDPanelsEnabled' type='checkbox' onChange="WarnIfSlowNIC();"></div>
+
                     </div>
                 </div>
                 <div class="col-md-auto form-inline">
@@ -1856,6 +1873,12 @@
                     </div>
 
 
+
+
+                </div>
+                <div class="col-md-auto form-inline">
+                    <b>Matrix Name:</b>
+                    <input class='LEDPanelMatrixName' type='text' onchange="MatrixNameChange()">
                 </div>
             </div>
             <div class='divLEDPanelsData'>
