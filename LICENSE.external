@@ -69,7 +69,7 @@ www/js/bootstrap.bundle.min.js
     - MIT license
       https://github.com/twbs/bootstrap/blob/main/LICENSE
 
-www/js/fabric.min.js
+www/js/fabric/fabric.min.js
 www/js/fabric_snap.js
     - Fabric.js is a powerful and simple JavaScript HTML5 canvas library
       http://fabricjs.com/
