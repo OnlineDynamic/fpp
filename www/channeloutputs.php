@@ -171,7 +171,10 @@
                             channelOutputsLookup["LEDPanelMatrices"]["panelMatrix" + channelOutputs.channelOutputs[i].panelMatrixID]["LEDPanelUIFrontView"] = false;
                         }
 
-                        SetDefaultsInChannelOutputsLookup()
+                        if (typeof SetDefaultsInChannelOutputsLookup === 'function') {
+                            SetDefaultsInChannelOutputsLookup();
+                        }
+
 
                         var p = 0;
                         for (p = 0; p < channelOutputs.channelOutputs[i].panels.length; p++) {
