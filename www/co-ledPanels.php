@@ -1437,10 +1437,11 @@
                 $(`#panelMatrix${panelMatrixID} .LEDPanelOutputNumber_${y}_${panel}`).val(y);
                 $(`#panelMatrix${panelMatrixID} .LEDPanelOrientation_${y}_${panel}`).attr('src', 'images/arrow_N.png');
                 $(`#panelMatrix${panelMatrixID} .LEDPanelColorOrder_${y}_${panel}`).val('');
-                //Update channelOutputsLookup
-                mp.panels[y * panelsWide + x].outputNumber = y;
-                mp.panels[y * panelsWide + x].panelNumber = x;
-                mp.panels[y * panelsWide + x].orientation = 'N';
+                //Update channelOutputsLookup - this needs work
+                /*                 mp["LEDPanelPanelNumber_" + y + "_" + panel].panelNumber = x;
+                                mp["LEDPanelOutputNumber_" + y + "_" + panel].outputNumber = y;
+                                mp["LEDPanelOrientation_" + y + "_" + panel].orientation = 'N'; */
+
             }
         }
         //SaveChannelOutputsJSON();
@@ -1486,6 +1487,14 @@
 
 
     function AddPanelMatrixDialog() {
+
+        //get next panel matrix ID
+        var NewPanelMatrixID = findNextAvailableId(channelOutputsLookup["LEDPanelMatrices"]);
+        if (NewPanelMatrixID > 5) {
+            alert("Maximum number of panel matrices reached.  Please remove a panel matrix before adding a new one.");
+            return;
+        }
+
         var options = {
             id: 'AddPanelMatrixDialog',
             title: 'Add a new LED Panel Matrix Output',
@@ -1499,12 +1508,6 @@
                     id: 'AddPanelButton',
                     class: 'btn-danger',
                     click: function () {
-                        //get next panel matrix ID
-                        var NewPanelMatrixID = findNextAvailableId(channelOutputsLookup["LEDPanelMatrices"]);
-                        if (NewPanelMatrixID > 5) {
-                            alert("Maximum number of panel matrices reached.  Please remove a panel matrix before adding a new one.");
-                            return;
-                        }
                         //add new matrix to channelOutputsLookup
                         //set the default values for the new panel matrix based on system defaults
                         channelOutputsLookup["LEDPanelMatrices"]["panelMatrix" + NewPanelMatrixID] = {
@@ -1714,6 +1717,7 @@
         }
         ?>
         WarnIfSlowNIC(1);
+        SetupToolTips();
     });
 
 </script>
@@ -1724,8 +1728,9 @@
         </div>
         <div class="col-md-auto ms-lg-auto">
             <div class="form-actions">
-                <input id="AddPanelMatrixButton" type='button' class="buttons ms-1" onClick='AddPanelMatrixDialog();'
-                    value='Add Panel Matrix'>
+                <button id="AddPanelMatrixButton" class="buttons btn-outline-success btn-rounded  btn-icon-add"
+                    onClick='AddPanelMatrixDialog();'><i class="fas fa-plus"></i> Add Panel Matrix
+                </button>
                 <input id="PanelTestPatternButton" type='button' class="buttons ms-1"
                     onClick='TogglePanelTestPattern();' value='Test Pattern'>
                 <input type='button' class="buttons btn-success ms-1" onClick='SaveChannelOutputsJSON();' value='Save'>
@@ -1879,6 +1884,10 @@
                 <div class="col-md-auto form-inline">
                     <b>Matrix Name:</b>
                     <input class='LEDPanelMatrixName' type='text' onchange="MatrixNameChange()">
+                    <span id="panelMatrixName_tip" data-bs-toggle="tooltip" data-bs-html="true" data-bs-placement="auto"
+                        data-bs-title="This setting is purely cosmetic to allow you to give each Matrix a distinctive name"><img
+                            id="panelMatrixName_img" src="images/redesign/help-icon.svg" class="icon-help"
+                            alt="panelMatrixNameHelp icon"></span>
                 </div>
             </div>
             <div class='divLEDPanelsData'>
@@ -2134,7 +2143,6 @@
                                             <td><span class='cpYOffset'></span></td>
                                         </tr>
                                         <tr>
-
                                             <style>
                                                 .rotate-btn {
                                                     display: flex;
@@ -2144,31 +2152,26 @@
                                                     padding: 10px 20px;
                                                     font-size: 16px;
                                                     border: none;
-                                                    background-color: #007bff;
+                                                    background-color: rgb(94, 97, 100);
                                                     color: white;
                                                     cursor: pointer;
                                                     border-radius: 5px;
                                                 }
 
                                                 .rotate-btn:hover {
-                                                    background-color: #0056b3;
+                                                    background-color: rgb(133, 134, 134);
                                                 }
 
                                                 .icon {
-                                                    font-size: 18px;
+                                                    font-size: 20px;
                                                 }
                                             </style>
 
-
-
-
-
-
-                                            <td colspan=2><label class="rotate-btn">
+                                            <td colspan=2>
+                                                <button class="rotate-btn" onclick="RotateCanvasPanel();">
                                                     <i class="fas fa-rotate icon"></i>
-                                                    <input type='button' class="buttons ms-1 btn-light"
-                                                        onclick='RotateCanvasPanel();' value='Rotate'>
-                                                </label>
+                                                    Rotate
+                                                </button>
                                             </td>
                                         </tr>
                                         <!--
