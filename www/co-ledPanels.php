@@ -1574,8 +1574,12 @@
 
 
                         CloseModalDialog('AddPanelMatrixDialog');
-                        populatePanelMatrixTab(NewPanelMatrixID);
-                        InitializeLEDPanelMatrix(NewPanelMatrixID);
+                        populatePanelMatrixTab(NewPanelMatrixID).then(() => {
+                            InitializeLEDPanelMatrix(NewPanelMatrixID);
+                        });
+
+                        //populatePanelMatrixTab(NewPanelMatrixID);
+                        //InitializeLEDPanelMatrix(NewPanelMatrixID);
                         LEDPanelsConnectionChanged(NewPanelMatrixID);
                         SetupAdvancedUISelects(NewPanelMatrixID);
                         SetSinglePanelSize(NewPanelMatrixID);
@@ -1634,23 +1638,27 @@
     }
 
     function populatePanelMatrixTab(panelMatrixID) {
-        //copy from template
-        document.querySelector(`#panelMatrix${panelMatrixID}`).innerHTML = document.querySelector('#divLEDPanelsTemplate').innerHTML;
-        //set the tab to be visible
-        document.querySelector(`#matrixPanelTab${panelMatrixID}`).style.display = "block";
-        //Set the PanelMatrixID
-        document.querySelector(`#panelMatrix${panelMatrixID}  .divPanelMatrixID`).innerHTML = panelMatrixID;
-        $(`#panelMatrix${panelMatrixID}  .matrixPanelID`).html(panelMatrixID);
-        //Rename the Canvas id
-        $(`#panelMatrix${panelMatrixID} canvas.ledPanelCanvas`).attr("id", "ledPanelCanvas" + panelMatrixID);
-        //Set which elements are visible on first render
-        if (channelOutputsLookup["LEDPanelMatrices"]["panelMatrix" + panelMatrixID].LEDPanelUIAdvancedLayout) {
-            $(`#panelMatrix${panelMatrixID} .ledPanelCanvasUI`).show();
-            $(`#panelMatrix${panelMatrixID} .ledPanelSimpleUI`).hide();
-        } else {
-            $(`#panelMatrix${panelMatrixID} .ledPanelCanvasUI`).hide();
-            $(`#panelMatrix${panelMatrixID} .ledPanelSimpleUI`).show();
-        }
+        return new Promise((resolve) => {
+            //copy from template
+            document.querySelector(`#panelMatrix${panelMatrixID}`).innerHTML = document.querySelector('#divLEDPanelsTemplate').innerHTML;
+            //set the tab to be visible
+            document.querySelector(`#matrixPanelTab${panelMatrixID}`).style.display = "block";
+            //Set the PanelMatrixID
+            document.querySelector(`#panelMatrix${panelMatrixID}  .divPanelMatrixID`).innerHTML = panelMatrixID;
+            $(`#panelMatrix${panelMatrixID}  .matrixPanelID`).html(panelMatrixID);
+            //Rename the Canvas id
+            $(`#panelMatrix${panelMatrixID} canvas.ledPanelCanvas`).attr("id", "ledPanelCanvas" + panelMatrixID);
+            //Set which elements are visible on first render
+            if (channelOutputsLookup["LEDPanelMatrices"]["panelMatrix" + panelMatrixID].LEDPanelUIAdvancedLayout) {
+                $(`#panelMatrix${panelMatrixID} .ledPanelCanvasUI`).show();
+                $(`#panelMatrix${panelMatrixID} .ledPanelSimpleUI`).hide();
+            } else {
+                $(`#panelMatrix${panelMatrixID} .ledPanelCanvasUI`).hide();
+                $(`#panelMatrix${panelMatrixID} .ledPanelSimpleUI`).show();
+            }
+            //resolve the promise after the DOM is updated
+            resolve();
+        });
 
     }
 
@@ -1681,8 +1689,9 @@
             //set whether the tabs are displayed
             echo "$('#matrixPanelTab$panelMatrixID').show();";
             //populate the tab
-            echo "populatePanelMatrixTab($panelMatrixID);";
-            echo "InitializeLEDPanelMatrix($panelMatrixID);";
+            echo "populatePanelMatrixTab($panelMatrixID).then(() => {InitializeLEDPanelMatrix($panelMatrixID);});";
+            //   echo "populatePanelMatrixTab($panelMatrixID);";
+            //    echo "InitializeLEDPanelMatrix($panelMatrixID);";
             echo "LEDPanelsConnectionChanged($panelMatrixID);";
             echo "SetupAdvancedUISelects($panelMatrixID);";
 
