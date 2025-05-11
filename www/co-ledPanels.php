@@ -511,80 +511,83 @@
     }
 
     function InitializeLEDPanelMatrix(panelMatrixID) {
-        let mp = channelOutputsLookup?.LEDPanelMatrices?.["panelMatrix" + panelMatrixID];
-        if (!mp || typeof mp !== "object") return;
+        return new Promise((resolve) => {
+            let mp = channelOutputsLookup?.LEDPanelMatrices?.["panelMatrix" + panelMatrixID];
+            if (!mp || typeof mp !== "object") return;
 
-        if (mp.enabled === 1 && Object.values(mp).includes("LEDPanelMatrix")) {
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsEnabled`).prop("checked", true);
-            $(`#panelMatrix${panelMatrixID} .tab-LEDPanels-LI`).show();
-        }
-
-        const selectors = [
-            ["LEDPanelsStartChannel", "startChannel"],
-            ["LEDPanelsPixelCount", "channelCount", val => val / 3],
-            ["LEDPanelsChannelCount", "channelCount"],
-            ["LEDPanelsColorOrder", "colorOrder"],
-            ["LEDPanelsBrightness", "brightness"],
-            ["LEDPanelsGamma", "gamma"],
-            ["LEDPanelsConnectionSelect", "subType"],
-            ["LEDPanelsInterface", "interface"],
-            ["LEDPanelsLayoutCols", "LEDPanelCols"],
-            ["LEDPanelsLayoutRows", "LEDPanelRows"],
-            ["LEDPanelsColorDepth", "panelColorDepth"],
-            ["LEDPanelsStartCorner", "invertedData"],
-            ["LEDPanelsRowAddressType", "panelRowAddressType"],
-            ["LEDPanelsType", "panelType"],
-            ["LEDPanelInterleave", "panelInterleave"],
-            ["LEDPanelsOutputByRow", "panelOutputOrder", val => val ? 1 : 0],
-            ["LEDPanelsOutputBlankRow", "panelOutputBlankRow", val => val ? 1 : 0],
-            ["LEDPanelUIFrontView", "LEDPanelUIFrontView"],
-            ["LEDPanelUIAdvancedLayout", "LEDPanelUIAdvancedLayout"],
-            ["LEDPanelsWiringPinout", "wiringPinout"],
-            ["LEDPanelsGPIOSlowdown", "gpioSlowdown"],
-            ["LEDPanelsEnabled", "enabled"],
-            ["LEDPanelsOutputCPUPWM", "cpuPWM"],
-            ["LEDPanelsColorOrder", "colorOrder"],
-            ["LEDPanelMatrixName", "LEDPanelMatrixName"]
-        ];
-
-        selectors.forEach(([selector, key, transform = val => val]) => {
-            if (mp[key] != null) {
-                const $element = $(`#panelMatrix${panelMatrixID} .${selector}`);
-
-                if ($element.is(":checkbox")) {
-                    $element.prop("checked", Boolean(transform(mp[key])));
-                } else {
-                    $element.val(transform(mp[key]));
-                }
-
+            if (mp.enabled === 1 && Object.values(mp).includes("LEDPanelMatrix")) {
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsEnabled`).prop("checked", true);
+                $(`#panelMatrix${panelMatrixID} .tab-LEDPanels-LI`).show();
             }
+
+            const selectors = [
+                ["LEDPanelsStartChannel", "startChannel"],
+                ["LEDPanelsPixelCount", "channelCount", val => val / 3],
+                ["LEDPanelsChannelCount", "channelCount"],
+                ["LEDPanelsColorOrder", "colorOrder"],
+                ["LEDPanelsBrightness", "brightness"],
+                ["LEDPanelsGamma", "gamma"],
+                ["LEDPanelsConnectionSelect", "subType"],
+                ["LEDPanelsInterface", "interface"],
+                ["LEDPanelsLayoutCols", "LEDPanelCols"],
+                ["LEDPanelsLayoutRows", "LEDPanelRows"],
+                ["LEDPanelsColorDepth", "panelColorDepth"],
+                ["LEDPanelsStartCorner", "invertedData"],
+                ["LEDPanelsRowAddressType", "panelRowAddressType"],
+                ["LEDPanelsType", "panelType"],
+                ["LEDPanelInterleave", "panelInterleave"],
+                ["LEDPanelsOutputByRow", "panelOutputOrder", val => val ? 1 : 0],
+                ["LEDPanelsOutputBlankRow", "panelOutputBlankRow", val => val ? 1 : 0],
+                ["LEDPanelUIFrontView", "LEDPanelUIFrontView"],
+                ["LEDPanelUIAdvancedLayout", "LEDPanelUIAdvancedLayout"],
+                ["LEDPanelsWiringPinout", "wiringPinout"],
+                ["LEDPanelsGPIOSlowdown", "gpioSlowdown"],
+                ["LEDPanelsEnabled", "enabled"],
+                ["LEDPanelsOutputCPUPWM", "cpuPWM"],
+                ["LEDPanelsColorOrder", "colorOrder"],
+                ["LEDPanelMatrixName", "LEDPanelMatrixName"]
+            ];
+
+            selectors.forEach(([selector, key, transform = val => val]) => {
+                if (mp[key] != null) {
+                    const $element = $(`#panelMatrix${panelMatrixID} .${selector}`);
+
+                    if ($element.is(":checkbox")) {
+                        $element.prop("checked", Boolean(transform(mp[key])));
+                    } else {
+                        $element.val(transform(mp[key]));
+                    }
+
+                }
+            });
+
+            <?php if ($settings['Platform'] == "Raspberry Pi" || $settings['BeaglePlatform']) { ?>
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinout`).val(mp?.wiringPinout);
+            <?php } ?>
+
+            <?php if ($settings['Platform'] == "Raspberry Pi") { ?>
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsGPIOSlowdown`).val(mp?.gpioSlowdown);
+            <?php } ?>
+
+            const colordepth = mp?.panelColorDepth ?? 8;
+            const outputByRow = mp?.panelOutputOrder ?? false;
+            const outputBlank = mp?.panelOutputBlankRow ?? false;
+            const invertedData = mp?.invertedData ?? 0;
+
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsColorDepth`).val(colordepth);
+            $(`#panelMatrix${panelMatrixID} .LEDPanelsStartCorner`).val(invertedData);
+
+            if (mp.LEDPanelMatrixName != "") {
+                $(`#matrixPanelTab${panelMatrixID} a`).html(mp.LEDPanelMatrixName);
+            }
+
+            PanelSubtypeChanged(panelMatrixID);
+            UpdateLegacyLEDPanelLayout(panelMatrixID);
+            if (mp?.LEDPanelUIAdvancedLayout) {
+                ToggleAdvancedLayout(panelMatrixID);
+            }
+            resolve();
         });
-
-        <?php if ($settings['Platform'] == "Raspberry Pi" || $settings['BeaglePlatform']) { ?>
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinout`).val(mp?.wiringPinout);
-        <?php } ?>
-
-        <?php if ($settings['Platform'] == "Raspberry Pi") { ?>
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsGPIOSlowdown`).val(mp?.gpioSlowdown);
-        <?php } ?>
-
-        const colordepth = mp?.panelColorDepth ?? 8;
-        const outputByRow = mp?.panelOutputOrder ?? false;
-        const outputBlank = mp?.panelOutputBlankRow ?? false;
-        const invertedData = mp?.invertedData ?? 0;
-
-        $(`#panelMatrix${panelMatrixID} .LEDPanelsColorDepth`).val(colordepth);
-        $(`#panelMatrix${panelMatrixID} .LEDPanelsStartCorner`).val(invertedData);
-
-        if (mp.LEDPanelMatrixName != "") {
-            $(`#matrixPanelTab${panelMatrixID} a`).html(mp.LEDPanelMatrixName);
-        }
-
-        PanelSubtypeChanged(panelMatrixID);
-        UpdateLegacyLEDPanelLayout(panelMatrixID);
-        if (mp?.LEDPanelUIAdvancedLayout) {
-            ToggleAdvancedLayout(panelMatrixID);
-        }
     }
 
 
@@ -767,130 +770,134 @@
     ?>
 
     function LEDPanelsConnectionChanged(panelMatrixID = GetCurrentActiveMatrixPanelID()) {
-        const mp = channelOutputsLookup.LEDPanelMatrices?.["panelMatrix" + panelMatrixID];
+        return new Promise((resolve) => {
 
-        WarnIfSlowNIC(panelMatrixID);
+            const mp = channelOutputsLookup.LEDPanelMatrices?.["panelMatrix" + panelMatrixID];
 
-        if (($(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionSelect`)[0].value === "ColorLight5a75") || ($(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionSelect`)[0].value === "X11PanelMatrix")) {
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsGPIOSlowdownLabel`).hide();
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsGPIOSlowdown`).hide();
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsBrightness`).hide();
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsColorDepth`).hide();
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsBrightnessLabel`).hide();
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsColorDepthLabel`).hide();
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinoutLabel`).hide();
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinout`).hide();
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsRowAddressTypeLabel`).hide();
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsRowAddressType`).hide();
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsTypeLabel`).hide();
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsType`).hide();
+            WarnIfSlowNIC(panelMatrixID);
 
-            if ($(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionSelect`)[0].value === "X11PanelMatrix") {
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionInterface`).hide();
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsInterface`).hide();
-            } else {
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionInterface`).show();
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsInterface`).show();
-            }
-
-            <?
-            //NEEDS FIXING FOR MULTI MATRIX
-            if ($settings['BeaglePlatform']) { ?>
+            if (($(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionSelect`)[0].value === "ColorLight5a75") || ($(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionSelect`)[0].value === "X11PanelMatrix")) {
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsGPIOSlowdownLabel`).hide();
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsGPIOSlowdown`).hide();
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsBrightness`).hide();
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsColorDepth`).hide();
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsBrightnessLabel`).hide();
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsColorDepthLabel`).hide();
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinoutLabel`).hide();
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinout`).hide();
                 $(`#panelMatrix${panelMatrixID} .LEDPanelsRowAddressTypeLabel`).hide();
                 $(`#panelMatrix${panelMatrixID} .LEDPanelsRowAddressType`).hide();
                 $(`#panelMatrix${panelMatrixID} .LEDPanelsTypeLabel`).hide();
                 $(`#panelMatrix${panelMatrixID} .LEDPanelsType`).hide();
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsInterleaveLabel`).hide();
-                $(`#panelMatrix${panelMatrixID} .LEDPanelInterleave`).hide();
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputByRowLabel`).hide();
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputByRow`).hide();
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRowLabel`).hide();
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRow`).hide();
-            <? } ?>
 
-
-            <? if ($settings['Platform'] == "Raspberry Pi") { ?>
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsInterleaveLabel`).hide();
-                $(`#panelMatrix${panelMatrixID} .LEDPanelInterleave`).hide();
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputCPUPWMLabel`).hide();
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputCPUPWM`).hide();
-            <? } ?>
-
-            mp.LEDPanelOutputs = 24;
-        }
-        else {
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionInterface`).hide();
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsInterface`).hide();
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsBrightness`).show();
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsColorDepth`).show();
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsBrightnessLabel`).show();
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsColorDepthLabel`).show();
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinoutLabel`).show();
-            $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinout`).show();
-
-            <? //NEEDS FIX
-            if ($settings['BeaglePlatform']) { ?>
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsInterleaveLabel`).show();
-                $(`#panelMatrix${panelMatrixID} .LEDPanelInterleave`).show();
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputByRowLabel`).show();
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputByRow`).show();
-                var checked = $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputByRow`).is(':checked');
-                if (checked != false) {
-                    $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRowLabel`).show();
-                    $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRow`).show();
+                if ($(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionSelect`)[0].value === "X11PanelMatrix") {
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionInterface`).hide();
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsInterface`).hide();
                 } else {
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionInterface`).show();
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsInterface`).show();
+                }
+
+                <?
+                //NEEDS FIXING FOR MULTI MATRIX
+                if ($settings['BeaglePlatform']) { ?>
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsRowAddressTypeLabel`).hide();
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsRowAddressType`).hide();
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsTypeLabel`).hide();
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsType`).hide();
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsInterleaveLabel`).hide();
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelInterleave`).hide();
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputByRowLabel`).hide();
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputByRow`).hide();
                     $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRowLabel`).hide();
                     $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRow`).hide();
-                }
+                <? } ?>
 
-                <?
-                if (strpos($settings['SubPlatform'], 'Green Wireless') !== false) {
-                    echo "        mp.LEDPanelOutputs = 5;\n";
-                } else if (strpos($settings['SubPlatform'], 'PocketBeagle') !== false) {
-                    echo "        mp.LEDPanelOutputs = 6;\n";
-                } else {
-                    echo "        mp.LEDPanelOutputs = 8;\n";
-                }
-                ?> //////
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsGPIOSlowdownLabel`).hide();
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsGPIOSlowdown`).hide();
-            <? //NEEDS FIX
-            } else {
-                if ($settings['Platform'] == "Raspberry Pi") { ?>
-                    $(`#panelMatrix${panelMatrixID} .LEDPanelsRowAddressTypeLabel`).show();
-                    $(`#panelMatrix${panelMatrixID} .LEDPanelsRowAddressType`).show();
-                    $(`#panelMatrix${panelMatrixID} .LEDPanelsTypeLabel`).show();
-                    $(`#panelMatrix${panelMatrixID} .LEDPanelsType`).show();
+
+                <? if ($settings['Platform'] == "Raspberry Pi") { ?>
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsInterleaveLabel`).hide();
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelInterleave`).hide();
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputCPUPWMLabel`).hide();
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputCPUPWM`).hide();
+                <? } ?>
+
+                mp.LEDPanelOutputs = 24;
+            }
+            else {
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionInterface`).hide();
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsInterface`).hide();
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsBrightness`).show();
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsColorDepth`).show();
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsBrightnessLabel`).show();
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsColorDepthLabel`).show();
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinoutLabel`).show();
+                $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinout`).show();
+
+                <? //NEEDS FIX
+                if ($settings['BeaglePlatform']) { ?>
                     $(`#panelMatrix${panelMatrixID} .LEDPanelsInterleaveLabel`).show();
                     $(`#panelMatrix${panelMatrixID} .LEDPanelInterleave`).show();
-                    $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputCPUPWMLabel`).show();
-                    $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputCPUPWM`).show();
-                <? }
-                ?> /////
-                mp.LEDPanelOutputs = 3;
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsGPIOSlowdownLabel`).show();
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsGPIOSlowdown`).show();
-                <?
-            }
-            ?>
-        }
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputByRowLabel`).show();
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputByRow`).show();
+                    var checked = $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputByRow`).is(':checked');
+                    if (checked != false) {
+                        $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRowLabel`).show();
+                        $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRow`).show();
+                    } else {
+                        $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRowLabel`).hide();
+                        $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputBlankRow`).hide();
+                    }
 
-        if (typeof KNOWN_PANEL_CAPE !== 'undefined') {
-            if (KNOWN_PANEL_CAPE["defaults"]["LEDPanelsWiringPinout"] !== 'undefined') {
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinout`).val(KNOWN_PANEL_CAPE["defaults"]["LEDPanelsWiringPinout"]);
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinout`).hide();
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinoutLabel`).hide();
+                    <?
+                    if (strpos($settings['SubPlatform'], 'Green Wireless') !== false) {
+                        echo "        mp.LEDPanelOutputs = 5;\n";
+                    } else if (strpos($settings['SubPlatform'], 'PocketBeagle') !== false) {
+                        echo "        mp.LEDPanelOutputs = 6;\n";
+                    } else {
+                        echo "        mp.LEDPanelOutputs = 8;\n";
+                    }
+                    ?> //////
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsGPIOSlowdownLabel`).hide();
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsGPIOSlowdown`).hide();
+                <? //NEEDS FIX
+                } else {
+                    if ($settings['Platform'] == "Raspberry Pi") { ?>
+                        $(`#panelMatrix${panelMatrixID} .LEDPanelsRowAddressTypeLabel`).show();
+                        $(`#panelMatrix${panelMatrixID} .LEDPanelsRowAddressType`).show();
+                        $(`#panelMatrix${panelMatrixID} .LEDPanelsTypeLabel`).show();
+                        $(`#panelMatrix${panelMatrixID} .LEDPanelsType`).show();
+                        $(`#panelMatrix${panelMatrixID} .LEDPanelsInterleaveLabel`).show();
+                        $(`#panelMatrix${panelMatrixID} .LEDPanelInterleave`).show();
+                        $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputCPUPWMLabel`).show();
+                        $(`#panelMatrix${panelMatrixID} .LEDPanelsOutputCPUPWM`).show();
+                    <? }
+                    ?> /////
+                    mp.LEDPanelOutputs = 3;
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsGPIOSlowdownLabel`).show();
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsGPIOSlowdown`).show();
+                    <?
+                }
+                ?>
             }
-            if (KNOWN_PANEL_CAPE["defaults"]["LEDPanelsConnection"] !== 'undefined') {
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionSelect`).text(KNOWN_PANEL_CAPE["defaults"]["LEDPanelsConnection"]);
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionType`).hide();
-                $(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionLabel`).hide();
-            }
-            mp.LEDPanelOutputs = KNOWN_PANEL_CAPE["outputs"].length;
-        }
 
-        PanelSubtypeChanged(panelMatrixID);
-        DrawLEDPanelTable(panelMatrixID);
+            if (typeof KNOWN_PANEL_CAPE !== 'undefined') {
+                if (KNOWN_PANEL_CAPE["defaults"]["LEDPanelsWiringPinout"] !== 'undefined') {
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinout`).val(KNOWN_PANEL_CAPE["defaults"]["LEDPanelsWiringPinout"]);
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinout`).hide();
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsWiringPinoutLabel`).hide();
+                }
+                if (KNOWN_PANEL_CAPE["defaults"]["LEDPanelsConnection"] !== 'undefined') {
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionSelect`).text(KNOWN_PANEL_CAPE["defaults"]["LEDPanelsConnection"]);
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionType`).hide();
+                    $(`#panelMatrix${panelMatrixID} .LEDPanelsConnectionLabel`).hide();
+                }
+                mp.LEDPanelOutputs = KNOWN_PANEL_CAPE["outputs"].length;
+            }
+
+            PanelSubtypeChanged(panelMatrixID);
+            DrawLEDPanelTable(panelMatrixID);
+            resolve();
+        });
     }
 
     <? if ($settings['BeaglePlatform']) { ?>
@@ -1575,15 +1582,16 @@
 
                         CloseModalDialog('AddPanelMatrixDialog');
                         populatePanelMatrixTab(NewPanelMatrixID).then(() => {
-                            InitializeLEDPanelMatrix(NewPanelMatrixID);
-                        });
+                            return InitializeLEDPanelMatrix(NewPanelMatrixID);
+                        }).then(() => { return LEDPanelsConnectionChanged(NewPanelMatrixID); });
 
                         //populatePanelMatrixTab(NewPanelMatrixID);
                         //InitializeLEDPanelMatrix(NewPanelMatrixID);
-                        LEDPanelsConnectionChanged(NewPanelMatrixID);
+                        //LEDPanelsConnectionChanged(NewPanelMatrixID);
                         SetupAdvancedUISelects(NewPanelMatrixID);
                         SetSinglePanelSize(NewPanelMatrixID);
                         AutoLayoutPanels(NewPanelMatrixID, 1);
+                        SetupToolTips();
                         //location.reload();
                         //show tab of new panel matrix
                         //set the new tab to be active 
@@ -1689,10 +1697,13 @@
             //set whether the tabs are displayed
             echo "$('#matrixPanelTab$panelMatrixID').show();";
             //populate the tab
-            echo "populatePanelMatrixTab($panelMatrixID).then(() => {InitializeLEDPanelMatrix($panelMatrixID);});";
+            echo "populatePanelMatrixTab($panelMatrixID).then(() => {
+            return InitializeLEDPanelMatrix($panelMatrixID);
+            }).then(() => {
+            return LEDPanelsConnectionChanged($panelMatrixID);});";
             //   echo "populatePanelMatrixTab($panelMatrixID);";
             //    echo "InitializeLEDPanelMatrix($panelMatrixID);";
-            echo "LEDPanelsConnectionChanged($panelMatrixID);";
+            //echo "LEDPanelsConnectionChanged($panelMatrixID);";
             echo "SetupAdvancedUISelects($panelMatrixID);";
 
         }
