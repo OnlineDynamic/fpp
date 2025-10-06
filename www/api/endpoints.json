@@ -1002,6 +1002,11 @@
                         "current_song": "",
                         "dateStr": "Sat Feb 26",
                         "fppd": "running",
+                        "global_pause": {
+                            "active": false,
+                            "configured": true,
+                            "duration_ms": 5000
+                        },
                         "mode": 2,
                         "mode_name": "player",
                         "multisync": false,
@@ -1884,6 +1889,7 @@
                     "desc": "Insert a new playlist",
                     "input": {
                         "name": "UploadTest",
+                        "globalPauseBetweenSequencesMS": 5000,
                         "mainPlaylist": [
                             {
                                 "type": "pause",
@@ -2047,6 +2053,7 @@
                     "desc": "Get Playlist named :PlaylistName in FPP JSON format. If ?mergeSubs=1 is specified, then any sub playlist will be recursively merged into the parent playlist.",
                     "output": {
                         "name": "UploadTest",
+                        "globalPauseBetweenSequencesMS": 5000,
                         "mainPlaylist": [
                             {
                                 "type": "pause",
@@ -2065,6 +2072,7 @@
                     "desc": "Update/Insert the Playlist named :PlaylistName.",
                     "input": {
                         "name": "UploadTest",
+                        "globalPauseBetweenSequencesMS": 5000,
                         "mainPlaylist": [
                             {
                                 "type": "pause",
