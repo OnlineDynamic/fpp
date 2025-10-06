@@ -173,18 +173,21 @@ int Playlist::Load(Json::Value& config) {
     int maxEntries = 999999;
     int origEntryCount = 0;
 
+    // Store the requested start position for later use, but load full playlist
+    int requestedStartPos = m_loadStartPos;
+    
     if (m_loadEndPos >= 0) {
-        maxEntries = m_loadEndPos + 1 - ((m_loadStartPos >= 0) ? m_loadStartPos : 0);
+        // Since we're loading the full playlist, maxEntries should be the absolute end position + 1
+        // This ensures we load from 0 to endPosition (inclusive)
+        maxEntries = m_loadEndPos + 1;
     }
 
     if (config.isMember("leadIn") && config["leadIn"].size()) {
         LogDebug(VB_PLAYLIST, "Loading LeadIn:\n");
         const Json::Value leadIn = config["leadIn"];
 
-        if (m_loadStartPos >= 0)
-            startPos = m_loadStartPos;
-        else
-            startPos = 0;
+        // Always load from position 0 to preserve full playlist structure
+        startPos = 0;
 
         if (startPos < leadIn.size())
             LoadJSONIntoPlaylist(m_leadIn, leadIn, startPos, maxEntries);
@@ -196,16 +199,17 @@ int Playlist::Load(Json::Value& config) {
         LogDebug(VB_PLAYLIST, "Loading MainPlaylist:\n");
         const Json::Value playlist = config["mainPlaylist"];
 
-        if ((m_loadStartPos >= 0) && (m_loadStartPos > origEntryCount)) {
-            startPos = m_loadStartPos - origEntryCount;
-        } else if (m_loadStartPos == -2 && m_loadEndPos == 0) {
-            // random single item
+        if (m_loadStartPos == -2 && m_loadEndPos == 0) {
+            // random single item - special case, only load one item
             int l = playlist.size();
             if (l > 1) {
                 startPos = std::rand() % l;
                 maxEntries = 1;
+            } else {
+                startPos = 0;
             }
         } else {
+            // Always load from position 0 to preserve full playlist structure
             startPos = 0;
         }
 
@@ -220,10 +224,8 @@ int Playlist::Load(Json::Value& config) {
         LogDebug(VB_PLAYLIST, "Loading LeadOut:\n");
         const Json::Value leadOut = config["leadOut"];
 
-        if ((m_loadStartPos >= 0) && (m_loadStartPos > origEntryCount))
-            startPos = m_loadStartPos - origEntryCount;
-        else
-            startPos = 0;
+        // Always load from position 0 to preserve full playlist structure
+        startPos = 0;
 
         if (startPos < leadOut.size())
             LoadJSONIntoPlaylist(m_leadOut, leadOut, startPos, maxEntries);
@@ -1180,13 +1182,8 @@ int Playlist::Play(const std::string& filename, const int position, const int re
 
     Load(filename);
 
-    if (tmpStartPos >= 0) {
-        // Load() would have trimmed our internal copy of the playlist, so adjust our values
-        if (tmpEndPos >= 0)
-            tmpEndPos -= tmpStartPos;
-
-        tmpStartPos = 0;
-    }
+    // Since we now load the full playlist, we don't need to adjust positions
+    // The original tmpStartPos is the correct position to use
 
     if ((tmpStartPos == 0 || tmpStartPos == -1) && (m_random > 0)) {
         RandomizeMainPlaylist();
