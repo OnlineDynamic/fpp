@@ -51,7 +51,7 @@
     <script type="text/javascript" src="jquery/jquery.tablesorter/parsers/parser-date-two-digit-year.min.js"></script>
     <script type="text/javascript" src="jquery/jquery.tablesorter/widgets/widget-cssStickyHeaders.min.js"></script>
     <script type="text/javascript" src="jquery/jquery.tablesorter/extras/jquery.metadata.min.js"></script>
-    <script type="text/javascript" src="js/fpp-filemanager.js"></script>
+    <script type="text/javascript" src="js/fpp-filemanager.js?ref=<?= filemtime('js/fpp-filemanager.js'); ?>"></script>
 
     <script>
         const pluginFileExtensions = [ <? echo implode(", ", array_map(fn($arg) => "'$arg'", $fileExtensions)); ?>];
@@ -603,6 +603,9 @@
                                         <input onclick="ButtonHandler('Logs', 'tailFile');"
                                             class="disableButtons noDirButton singleLogsButton" type="button"
                                             value="Tail" />
+                                        <input onclick="ButtonHandler('Logs', 'tailFollow');"
+                                            class="disableButtons noDirButton singleLogsButton" type="button"
+                                            value="Tail Follow" />
                                         <input onclick="ButtonHandler('Logs', 'download');"
                                             class="disableButtons noDirButton singleLogsButton multiLogsButton"
                                             type="button" value="Download" />

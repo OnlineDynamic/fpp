@@ -30,6 +30,24 @@ $maxDepth = 0;
 $json = file_get_contents('http://localhost:32322/fppd/schedule');
 $data = json_decode($json, true);
 
+// Load user-defined holidays and merge with locale holidays
+$userHolidaysFile = $settings['configDirectory'] . '/user-holidays.json';
+if (file_exists($userHolidaysFile)) {
+    $userHolidaysJson = file_get_contents($userHolidaysFile);
+    $userHolidays = json_decode($userHolidaysJson, true);
+    if (is_array($userHolidays)) {
+        // Ensure settings has locale array
+        if (!isset($settings['locale'])) {
+            $settings['locale'] = array();
+        }
+        if (!isset($settings['locale']['holidays'])) {
+            $settings['locale']['holidays'] = array();
+        }
+        // Merge user holidays with locale holidays
+        $settings['locale']['holidays'] = array_merge($settings['locale']['holidays'], $userHolidays);
+    }
+}
+
 function checkIfHoliday($item, $wrap = false)
 {
     global $data;
@@ -39,7 +57,7 @@ function checkIfHoliday($item, $wrap = false)
     $holiday = '';
     if (
         (($schEntry['startDateInt'] < 10000 && $schEntry['startDateInt'] == ($item['startDateInt'] % 10000)) ||
-         ($schEntry['startDateInt'] == $item['startDateInt'])) &&
+            ($schEntry['startDateInt'] == $item['startDateInt'])) &&
         (!preg_match('/^[0-9]/', $data['schedule']['entries'][$item['id']]['startDate']))
     ) {
         $holiday = $data['schedule']['entries'][$item['id']]['startDate'];
@@ -47,7 +65,7 @@ function checkIfHoliday($item, $wrap = false)
 
     if (
         (($schEntry['endDateInt'] < 10000 && $schEntry['endDateInt'] == ($item['endDateInt'] % 10000)) ||
-         ($schEntry['endDateInt'] == $item['endDateInt'])) &&
+            ($schEntry['endDateInt'] == $item['endDateInt'])) &&
         (!preg_match('/^[0-9]/', $data['schedule']['entries'][$item['id']]['endDate']))
     ) {
         $holiday = $data['schedule']['entries'][$item['id']]['endDate'];
@@ -246,11 +264,27 @@ if ($data["schedule"]["enabled"] == 0) {
     echo "<center><font color='red'><b>Scheduler is currently disabled.</b></font></center>\n";
 }
 
+// Check if schedules extend beyond the configured distance
+if (
+    isset($data["schedule"]["schedulesExtendBeyondDistance"]) &&
+    $data["schedule"]["schedulesExtendBeyondDistance"] === true
+) {
+    $scheduleDistance = isset($data["schedule"]["scheduleDistance"]) ? $data["schedule"]["scheduleDistance"] : 28;
+    $distanceText = $scheduleDistance . " day" . ($scheduleDistance != 1 ? "s" : "");
+    echo "<center><div class='alert alert-warning' style='max-width: 95%; margin: 10px auto; color: #000; background-color: #fff3cd; border-color: #ffc107;'>";
+    echo "<i class='fas fa-exclamation-triangle'></i> <b>Note:</b> Some schedule entries have end dates that extend beyond the current ";
+    echo "<b>Scheduler max timeframe to schedule out</b> setting (<b>" . $distanceText . "</b>). ";
+    echo "These future dates will not show in the preview below but will be automatically scheduled as time progresses. ";
+    echo "You can increase the timeframe setting in <a href='settings.php' style='color: #000; text-decoration: underline;'>Settings</a> if you want to preview further into the future.";
+    echo "</div></center>\n";
+}
+
 if (count($data["schedule"]["items"]) == 0) {
     echo "<center><font color='red'><b>Nothing Scheduled.</b></font></center>\n";
     exit;
 }
 
+echo "<div style='max-height: 60vh; overflow-y: auto; position: relative;'>\n";
 echo "<table class='fppSelectableRowTable schedulePreviewTable fppStickyModalTheadTable' border=0 cellpadding=0 cellspacing=0 style='color: #000000;'>\n";
 echo "<thead><tr>";
 for ($j = -1; $j < $maxDepth; $j++) {
@@ -356,6 +390,7 @@ showPlaylistEnds();
 ?>
 </tbody>
 </table>
+</div>
 <script>
     SetupToolTips();
 

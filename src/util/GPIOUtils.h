@@ -18,6 +18,9 @@
 #if __has_include(<gpiod.hpp>)
 #include <gpiod.hpp>
 #define HASGPIOD
+#if __has_include(<gpiodcxx/chip.hpp>)
+#define IS_GPIOD_CXX_V2
+#endif
 #endif
 
 class PinCapabilitiesProvider;
@@ -79,6 +82,9 @@ public:
     virtual int mappedGPIO() const { return gpio; }
 
     virtual int requestEventFile(bool risingEdge, bool fallingEdge) const {
+        return -1;
+    }
+    virtual int readEventFromFile() const {
         return -1;
     }
 
@@ -150,11 +156,17 @@ public:
     virtual void releaseGPIOD() const override;
 
     virtual int requestEventFile(bool risingEdge, bool fallingEdge) const override;
+    virtual int readEventFromFile() const;
 
     std::string gpioName;
 #ifdef HASGPIOD
+#ifdef IS_GPIOD_CXX_V2
+    mutable std::shared_ptr<gpiod::chip> chip = nullptr;
+    mutable std::shared_ptr<gpiod::line_request> request = nullptr;
+#else
     mutable gpiod::chip* chip = nullptr;
     mutable gpiod::line line;
+#endif
     mutable int lastRequestType = 0;
     mutable bool lastValue = false;
     mutable std::string lastDesc;

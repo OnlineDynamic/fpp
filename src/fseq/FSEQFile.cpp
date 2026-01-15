@@ -554,7 +554,7 @@ void FSEQFile::parseVariableHeaders(const std::vector<uint8_t>& header, int read
             vheader.resizeData(dataLength);
             memcpy(&vheader.getData()[0], &header[readIndex], dataLength);
 
-            LogDebug(VB_SEQUENCE, "Read VariableHeader: %c%c, length: %d bytes\n", vheader.code[0], vheader.code[1], dataLength);
+            LogDebug(VB_SEQUENCE, "Variable Header: Code %c%c, Length: %d, Extended: %s, ExtDataOffset: %" PRIu64 "\n", vheader.code[0], vheader.code[1], vheader.getDataLength(), vheader.extendedData ? "Yes" : "No", vheader.getExtDataOffset());
 
             // advance the length of the data
             // readIndex now points at the next VariableHeader's length (if any)
@@ -778,13 +778,13 @@ uint32_t V1FSEQFile::getMaxChannel() const {
     return m_seqChannelCount;
 }
 
-static const int V2FSEQ_HEADER_SIZE = 32;
-static const int V2FSEQ_SPARSE_RANGE_SIZE = 6;
-static const int V2FSEQ_COMPRESSION_BLOCK_SIZE = 8;
+static constexpr int V2FSEQ_HEADER_SIZE = 32;
+static constexpr int V2FSEQ_SPARSE_RANGE_SIZE = 6;
+static constexpr int V2FSEQ_COMPRESSION_BLOCK_SIZE = 8;
 #if !defined(NO_ZLIB) || !defined(NO_ZSTD)
-static const int V2FSEQ_OUT_BUFFER_SIZE = 8 * 1024 * 1024;       // 8MB output buffer
-static const int V2FSEQ_OUT_BUFFER_FLUSH_SIZE = 4 * 1024 * 1024; // 50% full, flush it
-static const int V2FSEQ_OUT_COMPRESSION_BLOCK_SIZE = 64 * 1024;  // 64KB blocks
+static int V2FSEQ_OUT_BUFFER_SIZE = 0;                               // will be computed based on memory available
+static constexpr int V2FSEQ_OUT_BUFFER_FLUSH_SIZE = 4 * 1024 * 1024; // 50% full, flush it
+static constexpr int V2FSEQ_OUT_COMPRESSION_BLOCK_SIZE = 64 * 1024;  // 64KB blocks
 #endif
 
 class V2Handler {
@@ -1043,14 +1043,14 @@ public:
                             // this is a serious problem, I need to figure out why this is occuring
                             LogWarn(VB_SEQUENCE, "Serious problem reading sequence data\n");
                             LogWarn(VB_SEQUENCE, "    Block: %d / %d\n", block, m_file->m_frameOffsets.size());
-                            LogWarn(VB_SEQUENCE, "    Offset: %d\n", m_file->m_frameOffsets[block].second);
-                            LogWarn(VB_SEQUENCE, "    Offset+1: %d\n", m_file->m_frameOffsets[block + 1].second);
+                            LogWarn(VB_SEQUENCE, "    Offset: %" PRIu64 "\n", m_file->m_frameOffsets[block].second);
+                            LogWarn(VB_SEQUENCE, "    Offset+1: %" PRIu64 "\n", m_file->m_frameOffsets[block + 1].second);
                             int sz = m_file->m_frameOffsets[block + 1].second - offset;
                             LogWarn(VB_SEQUENCE, "    Size: %d\n", (int)sz);
                             LogWarn(VB_SEQUENCE, "    Max: %d\n", (int)max);
                             for (int x = 0; x < m_file->m_frameOffsets.size(); x++) {
-                                LogWarn(VB_SEQUENCE, "        Block %d:    Offset: %d    Size: %d\n", x, m_file->m_frameOffsets[block].first,
-                                        m_file->m_frameOffsets[block].second);
+                                LogWarn(VB_SEQUENCE, "        Block %d:    Frame Index: %d    Offset: %" PRIu64 "\n", x, m_file->m_frameOffsets[x].first,
+                                        m_file->m_frameOffsets[x].second);
                             }
                         }
                         seek(offset, SEEK_SET);
@@ -1131,6 +1131,17 @@ public:
         m_cctx(nullptr),
         m_dctx(nullptr) {
         m_outBuffer.pos = 0;
+
+        if (V2FSEQ_OUT_BUFFER_SIZE == 0) {
+            V2FSEQ_OUT_BUFFER_SIZE = 8 * 1024 * 1024; // 8MB output buffer
+            uint64_t pages = sysconf(_SC_PHYS_PAGES);
+            uint64_t page_size = sysconf(_SC_PAGESIZE);
+            uint64_t total_mem = pages * page_size;
+            if (total_mem > (1024 * 1024 * 1024)) {
+                // more than 1GB of RAM, use a bit larger buffer
+                V2FSEQ_OUT_BUFFER_SIZE = 32 * 1024 * 1024;
+            }
+        }
         m_outBuffer.size = V2FSEQ_OUT_BUFFER_SIZE;
         m_outBuffer.dst = malloc(m_outBuffer.size);
         m_inBuffer.src = nullptr;
@@ -1177,16 +1188,16 @@ public:
                 // let the kernel know that we'll likely need the next block in the near future
                 preloadBlock(m_curBlock + 1);
             }
-
-            free(m_outBuffer.dst);
             m_framesPerBlock = (m_file->m_frameOffsets[m_curBlock + 1].first > m_file->getNumFrames() ? m_file->getNumFrames() : m_file->m_frameOffsets[m_curBlock + 1].first) - m_file->m_frameOffsets[m_curBlock].first;
             m_outBuffer.size = m_framesPerBlock * m_file->getChannelCount();
-            m_outBuffer.dst = malloc(m_outBuffer.size);
+            if (m_outBuffer.size > V2FSEQ_OUT_BUFFER_SIZE) {
+                free(m_outBuffer.dst);
+                m_outBuffer.dst = malloc(m_outBuffer.size);
+            }
             m_outBuffer.pos = 0;
             m_curFrameInBlock = 0;
         }
         uint32_t fidx = frame - m_file->m_frameOffsets[m_curBlock].first;
-
         if (fidx >= m_curFrameInBlock) {
             m_outBuffer.size = (fidx + 1) * m_file->getChannelCount();
             ZSTD_decompressStream(m_dctx, &m_outBuffer, &m_inBuffer);
@@ -1817,6 +1828,14 @@ V2FSEQFile::V2FSEQFile(const std::string& fn, FILE* file, const std::vector<uint
         // This will loop and continue reading until it hits padding or m_seqChanDataOffset
         // As long as readPos == headerSize prior to this call, the read is a success
         parseVariableHeaders(header, readPos);
+
+        // The last m_frameOffsets entry may need to be adjusted if there is extended data as the extended data is
+        // placed after the channel data, but the frame offsets and sizes need to be within the channel data area
+        for (auto& a : m_variableHeaders) {
+            if (a.extendedData && a.getExtDataOffset() < m_frameOffsets.back().second) {
+                m_frameOffsets.back().second = a.getExtDataOffset();
+            }
+        }
     }
 
     createHandler();
@@ -1893,7 +1912,7 @@ void V2FSEQFile::prepareRead(const std::vector<std::pair<uint32_t, uint32_t>>& r
     }
     for (auto const& [st, cnt] : ranges) {
         if (!isWithinRange(m_rangesToRead, st, cnt)) {
-            LogErr(VB_SEQUENCE, "Requested ouput range outside read ranges. Requested %d channels starting at %d\n", cnt, st);
+            LogErr(VB_SEQUENCE, "Requested output range outside read ranges. Requested %d channels starting at %d\n", cnt, st);
         }
     }
     m_handler->prepareRead(startFrame);

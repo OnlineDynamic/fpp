@@ -328,11 +328,20 @@ function ButtonHandler (table, button) {
 		}
 	} else if (button == 'tailFile') {
 		if (selectedCount == 1) {
-			TailFile(table, filename, 50);
+			TailFile(table, filename, 250);
 		} else {
 			DialogError(
 				'Error',
 				'Error, unable to view multiple files at the same time.'
+			);
+		}
+	} else if (button == 'tailFollow') {
+		if (selectedCount == 1) {
+			TailFollowFile(table, filename);
+		} else {
+			DialogError(
+				'Error',
+				'Error, unable to tail follow multiple files at the same time.'
 			);
 		}
 	} else if (button == 'viewImage') {
@@ -712,6 +721,9 @@ function BulkAddPlaylist () {
 			pl.playlistInfo.total_duration += duration;
 			pl.playlistInfo.total_items += 1;
 		});
+
+	// Mark playlist as non-empty since we're adding items to it
+	pl.empty = false;
 
 	var result = Post('api/playlist/' + playlistName, false, JSON.stringify(pl));
 	if (result.hasOwnProperty('Status') && result.Status == 'Error') {

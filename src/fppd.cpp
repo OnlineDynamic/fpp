@@ -57,6 +57,7 @@
 #include "EPollManager.h"
 #include "Events.h"
 #include "FileMonitor.h"
+#include "FPPLocale.h"
 #include "MultiSync.h"
 #include "NetworkMonitor.h"
 #include "OutputMonitor.h"
@@ -144,6 +145,8 @@ static bool dumpstack_gdb(void) {
     char name_buf[512];
     name_buf[readlink("/proc/self/exe", name_buf, 511)] = 0;
 
+    constexpr static int kTimeoutSec = 30;
+
     if (IsDebuggerPresent()) {
         return false;
     }
@@ -165,8 +168,7 @@ static bool dumpstack_gdb(void) {
             _Exit(1);
         }
         if (timeout_pid1 == 0) {
-            int timeout = 10;
-            sleep(timeout);
+            sleep(kTimeoutSec);
             _Exit(1);
         }
 
@@ -177,8 +179,7 @@ static bool dumpstack_gdb(void) {
             _Exit(1);
         }
         if (timeout_pid2 == 0) {
-            int timeout = 20;
-            sleep(timeout);
+            sleep(kTimeoutSec + 10);
             _Exit(1);
         }
 
@@ -257,6 +258,10 @@ static bool dumpstack_gdb(void) {
     return false;
 }
 
+static const char* safe(const char* in) {
+    return in ? in : "<NULL>";
+}
+
 static void handleCrash(int s) {
     static volatile bool inCrashHandler = false;
     if (inCrashHandler) {
@@ -265,7 +270,13 @@ static void handleCrash(int s) {
     }
     inCrashHandler = true;
     int crashLog = getSettingInt("ShareCrashData", 3);
-    LogErr(VB_ALL, "Crash handler called:  %d\n", s);
+#ifndef PLATFORM_OSX
+    LogErr(VB_ALL, "Crash handler called in thread %u:  signal=%d (SIG%s: %s)\n", gettid(), s, safe(sigabbrev_np(s)), safe(sigdescr_np(s)));
+#else
+    uint64_t tid;
+    pthread_threadid_np(NULL, &tid);
+    LogErr(VB_ALL, "Crash handler called in thread %u:  signal=%d\n", tid, s);
+#endif
 
     if (!sequence->m_seqFilename.empty()) {
         LogErr(VB_ALL, "   while playing  %s  at  %d ms\n", sequence->m_seqFilename.c_str(), sequence->m_seqMSElapsed);
@@ -582,9 +593,65 @@ int parseArguments(int argc, char** argv) {
     return 0;
 }
 
+// Workaround ASan bug 27790 (https://bugs.llvm.org//show_bug.cgi?id=27790)
+// by logging if LD_LIBRARY_PATH doesn't include the path to argv[0] (our binary).
+// This is because ASan intercepts dlopen and causes calls to dlopen to use ASan's
+// rpath instead of the rpath of the calling DSO. We cannot change the
+// LD_LIBRARY_PATH env var because the loader has already processed it by the time
+// that main() is called. We could fork()/execvpe(), but this has implications for
+// things like debugging that may be monitoring our pid.
+bool checkASan(int argc, char** argv) {
+#if __SANITIZE_ADDRESS__
+    {
+        struct FreeString {
+            void operator()(char* p) {
+                free(p);
+            }
+        };
+        if (argc < 1 || !argv[0])
+            abort(); // shouldn't happen
+        std::unique_ptr<char[], FreeString> self(realpath(argv[0], NULL));
+        if (!self)
+            abort(); // shouldn't happen
+        size_t sep = std::string_view(self.get()).rfind('/');
+        if (sep == std::string_view::npos)
+            abort(); // shouldn't happen
+        self[sep] = '\0';
+
+        auto libraryPath = getenv("LD_LIBRARY_PATH");
+        std::string_view libraryPathSv(libraryPath ? libraryPath : "");
+        bool found = false;
+        for (size_t start = 0, index = libraryPathSv.find(':');; start = index + 1, index = libraryPathSv.find(':', index + 1)) {
+            if (auto pathSV = libraryPathSv.substr(start, index - start); !pathSV.empty()) {
+                std::unique_ptr<char[], FreeString> resolved(realpath(std::string(pathSV).c_str(), NULL));
+                if (resolved && strcmp(self.get(), resolved.get()) == 0) {
+                    found = true;
+                    break;
+                }
+            }
+            if (index == libraryPathSv.npos)
+                break;
+        }
+
+        if (!found) {
+            constexpr static char str[] = "When built with ASan, LD_LIBRARY_PATH must be set to include the path to fppd. Exiting.\n";
+            LogErr(VB_GENERAL, str);
+            fprintf(stderr, str);
+            return false;
+        }
+    }
+#endif
+
+    return true;
+}
+
 int main(int argc, char* argv[]) {
     setupExceptionHandlers();
     FPPLogger::INSTANCE.Init();
+
+    if (!checkASan(argc, argv))
+        return 1;
+
     LoadSettings(argv[0]);
 
     curl_global_init(CURL_GLOBAL_ALL);
@@ -674,6 +741,32 @@ int main(int argc, char* argv[]) {
 
     WarningHolder::StartNotifyThread();
 
+    // Check if boot delay is in progress and add warning
+    if (FileExists(getFPPMediaDir("/tmp/boot_delay"))) {
+        std::string delayInfo = GetFileContents(getFPPMediaDir("/tmp/boot_delay"));
+        TrimWhiteSpace(delayInfo);
+        std::string msg;
+
+        // Parse the delay info - format is "startTime,duration" or "startTime,auto"
+        size_t commaPos = delayInfo.find(',');
+        if (commaPos != std::string::npos && commaPos + 1 < delayInfo.length()) {
+            std::string delayValue = delayInfo.substr(commaPos + 1);
+            if (delayValue == "auto") {
+                msg = "Boot delay in progress: Waiting for valid system time (NTP/RTC) - up to 5 minutes";
+            } else {
+                msg = "Boot delay in progress: Waiting " + delayValue + " seconds before starting FPPD";
+            }
+        } else {
+            // Fallback for old format or malformed data
+            if (delayInfo == "auto") {
+                msg = "Boot delay in progress: Waiting for valid system time (NTP/RTC) - up to 5 minutes";
+            } else {
+                msg = "Boot delay in progress: Waiting " + delayInfo + " seconds before starting FPPD";
+            }
+        }
+        WarningHolder::AddWarning(12, msg);
+    }
+
     LogInfo(VB_GENERAL, "Creating Scheduler, Playlist, and Sequence\n");
     scheduler = new Scheduler();
     sequence = new Sequence();
@@ -704,6 +797,7 @@ int main(int argc, char* argv[]) {
 
     InitEffects();
     ChannelTester::INSTANCE.RegisterCommands();
+    LocaleHolder::RegisterCommands();
 
     multiSync->WriteRuntimeInfoFile();
 
@@ -712,7 +806,9 @@ int main(int argc, char* argv[]) {
     // incomplete and cause problems with summary
     // PublishStatsForce("Shutdown"); // not background
 
-    CommandManager::INSTANCE.TriggerPreset("FPPD_STOPPED");
+    if (CommandManager::INSTANCE.HasPreset("FPPD_STOPPED")) {
+        CommandManager::INSTANCE.TriggerPreset("FPPD_STOPPED");
+    }
 
     // turn off processing of events so we don't get
     // events while we are shutting down
@@ -746,7 +842,7 @@ int main(int argc, char* argv[]) {
     std::string logLevelString = FPPLogger::INSTANCE.GetLogLevelString();
 
     CloseCommand();
-    CloseOpenFiles();
+    CloseOpenFiles(getSettingInt("daemonize"));
 
     WarningHolder::ClearWarningsFile();
 
@@ -814,15 +910,61 @@ void MainLoop(void) {
     Sensors::INSTANCE.Init(callbacks);
     FileMonitor::INSTANCE.Initialize(callbacks);
 
+    // Get the last release date from rpi-imager file to use as minimum valid date
+    // Systems without RTC boot with filesystem timestamps, which will be older than the release
+    // If clock shows a date before the last OS release, it's definitely wrong
+    std::tm minValidDate = {};
+    minValidDate.tm_year = 125;  // 2025 fallback
+    minValidDate.tm_mon = 0;
+    minValidDate.tm_mday = 1;
+    Json::Value imagerRoot;
+    if (LoadJsonFromFile(getFPPDDir("/rpi-imager/rpi-imager_falcon_player.json"), imagerRoot)) {
+        if (imagerRoot.isMember("os_list") && imagerRoot["os_list"].isArray()) {
+            std::time_t latestRelease = 0;
+            // Find the latest release date across all OS images
+            for (const auto& osEntry : imagerRoot["os_list"]) {
+                if (osEntry.isMember("release_date")) {
+                    std::string releaseDate = osEntry["release_date"].asString();
+                    if (releaseDate.length() >= 10) {
+                        // Parse "YYYY-MM-DD" format
+                        std::tm releaseTime = {};
+                        releaseTime.tm_year = std::stoi(releaseDate.substr(0, 4)) - 1900;
+                        releaseTime.tm_mon = std::stoi(releaseDate.substr(5, 2)) - 1;
+                        releaseTime.tm_mday = std::stoi(releaseDate.substr(8, 2));
+                        std::time_t releaseTimestamp = std::mktime(&releaseTime);
+                        if (releaseTimestamp > latestRelease) {
+                            latestRelease = releaseTimestamp;
+                            minValidDate = releaseTime;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    std::time_t minValidTime = std::mktime(&minValidDate);
+
     StartChannelOutputThread();
     if (!getSettingInt("restarted")) {
         sequence->SendBlankingData();
     }
     bool alwaysTransmit = (bool)getSettingInt("alwaysTransmit");
     if (getFPPmode() & PLAYER_MODE) {
-        scheduler->CheckIfShouldBePlayingNow();
+        // Don't start scheduler if clock is obviously wrong (date before last release)
+        // This prevents scheduling issues on systems without RTC that boot with incorrect time
+        // The scheduler will start when time is corrected via time jump detection
+        std::time_t now = time(nullptr);
+        
+        if (now >= minValidTime) {
+            scheduler->CheckIfShouldBePlayingNow();
+        } else {
+            struct tm* timeinfo = localtime(&now);
+            LogWarn(VB_SCHEDULE, "Clock appears incorrect (date %04d-%02d-%02d before release), delaying scheduler start until time sync\n", 
+                    timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday);
+        }
     }
-    CommandManager::INSTANCE.TriggerPreset("FPPD_STARTED");
+    if (CommandManager::INSTANCE.HasPreset("FPPD_STARTED")) {
+        CommandManager::INSTANCE.TriggerPreset("FPPD_STARTED");
+    }
 
     for (auto& a : callbacks) {
         EPollManager::INSTANCE.addFileDescriptor(a.first, a.second);
@@ -905,7 +1047,12 @@ void MainLoop(void) {
                 Player::INSTANCE.ProcessMedia();
             }
         }
-        scheduler->ScheduleProc();
+        
+        // Only run scheduler if clock appears valid (same check as initial scheduler start)
+        std::time_t now = time(nullptr);
+        if (now >= minValidTime) {
+            scheduler->ScheduleProc();
+        }
 
         if (pushBridgeData) {
             ForceChannelOutputNow();

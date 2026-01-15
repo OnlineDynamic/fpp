@@ -33,6 +33,8 @@
 #include "common_mini.h"
 #include <arpa/inet.h>
 #include <ifaddrs.h>
+#include <net/if.h>
+#include <systemd/sd-daemon.h>
 
 #if __has_include(<jsoncpp/json/json.h>)
 #include <jsoncpp/json/json.h>
@@ -152,6 +154,9 @@ std::string SaveJsonToString(const Json::Value& root) {
 inline bool isPi5() {
     return startsWith(GetFileContents("/proc/device-tree/model"), "Raspberry Pi 5") || startsWith(GetFileContents("/proc/device-tree/model"), "Raspberry Pi Compute Module 5");
 }
+inline bool isPiZero2W() {
+    return contains(GetFileContents("/proc/device-tree/model"), "Raspberry Pi Zero 2 W");
+}
 #endif
 
 static void modprobe(const char* mod) {
@@ -166,8 +171,10 @@ static void DetectCape() {
 #ifdef PLATFORM_PI
         modprobe("i2c-dev");
 #endif
-        while (!FileExists(I2C_DEV) && count < 500) {
-            printf("FPP - Waiting for %s to appear for Cape/Hat detection %d\n", I2C_DEV.c_str(), count);
+        if (!FileExists(I2C_DEV)) {
+            printf("FPP - Waiting up to 3s for %s to appear for Cape/Hat detection\n", I2C_DEV.c_str());
+        }
+        while (!FileExists(I2C_DEV) && count < 600) {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
             count++;
         }
@@ -574,9 +581,10 @@ static void setupNetwork(bool fullReload = false) {
     if (FileExists("/etc/hostapd/hostapd.conf")) {
         filesToConsider.emplace_back("/etc/hostapd/hostapd.conf");
     }
-    for (const auto& entry : std::filesystem::directory_iterator(FPP_MEDIA_DIR + "/config")) {
-        std::string dev = entry.path().filename();
-        if (startsWith(dev, "interface.")) {
+    if (std::filesystem::exists(FPP_MEDIA_DIR + "/config")) {
+        for (const auto& entry : std::filesystem::directory_iterator(FPP_MEDIA_DIR + "/config")) {
+            std::string dev = entry.path().filename();
+            if (startsWith(dev, "interface.")) {
             bool validConfig = true;
             auto interfaceSettings = loadSettingsFile(FPP_MEDIA_DIR + "/config/" + dev);
             std::string interface = dev.substr(10);
@@ -688,7 +696,14 @@ static void setupNetwork(bool fullReload = false) {
             }
             content.append(addressLines);
             // some of the FPP7 images don't support this setting.  They use older gcc
+            // Pi Zero 2 W has issues with IgnoreCarrierLoss causing network visibility problems (Issue #2487)
+#ifdef PLATFORM_PI
+            if (!isPiZero2W()) {
+                content.append("IgnoreCarrierLoss=5s\n");
+            }
+#else
             content.append("IgnoreCarrierLoss=5s\n");
+#endif
             content.append("\n");
 
             if (!interfaceSettings["GATEWAY"].empty()) {
@@ -700,6 +715,12 @@ static void setupNetwork(bool fullReload = false) {
             content.append("\n");
             if (interfaceSettings["PROTO"] == "dhcp") {
                 content.append("[DHCPv4]\nClientIdentifier=mac\nUseDomains=true\n");
+                // Only use NTP from DHCP if explicitly enabled
+                std::string useNTPFromDHCP;
+                getRawSetting("UseNTPFromDHCP", useNTPFromDHCP);
+                if (useNTPFromDHCP != "1") {
+                    content.append("UseNTP=no\n");
+                }
             } else if (ROUTEMETRIC != 0) {
                 content.append("[DHCPv4]\n");
             }
@@ -725,6 +746,26 @@ static void setupNetwork(bool fullReload = false) {
             }
         }
     }
+    }
+    
+    // If tethering is explicitly enabled (==1) but no interface configs set it up,
+    // configure it now (handles fresh installs with no /config directory)
+    if (tetherEnabled == 1 && !hostapd) {
+        filesNeeded["/etc/hostapd/hostapd.conf"] = CreateHostAPDConfig(tetherInterface);
+        std::string content = "[Match]\nName=";
+        content.append(tetherInterface).append("\nType=wlan\n\n"
+                                               "[Network]\n"
+                                               "DHCP=no\n"
+                                               "Address=192.168.8.1/24\n"
+                                               "DHCPServer=yes\n\n");
+        content.append("[DHCPServer]\n"
+                       "PoolOffset=10\n"
+                       "PoolSize=100\n"
+                       "EmitDNS=no\n\n");
+        filesNeeded["/etc/systemd/network/10-" + tetherInterface + ".network"] = content;
+        hostapd = true;
+    }
+    
     bool reloadApache = false;
     if (dhcpProxies.empty() && FileExists(dhcpProxyFile)) {
         unlink(dhcpProxyFile.c_str());
@@ -733,6 +774,56 @@ static void setupNetwork(bool fullReload = false) {
         PutFileContents(dhcpProxyFile, dhcpProxies);
         reloadApache = true;
     }
+    
+    // Configure ntpsec to ignore DHCP NTP servers unless explicitly enabled
+    std::string ntpsecDefaults = "/etc/default/ntpsec";
+    std::string useNTPFromDHCP;
+    getRawSetting("UseNTPFromDHCP", useNTPFromDHCP);
+    std::string ignoreDHCP = (useNTPFromDHCP == "1") ? "" : "yes";
+    
+    std::string ntpsecConfig = GetFileContents(ntpsecDefaults);
+    if (!ntpsecConfig.empty()) {
+        // Update the IGNORE_DHCP setting in /etc/default/ntpsec
+        std::string newConfig = ntpsecConfig;
+        bool needsRestart = false;
+        
+        size_t pos = newConfig.find("IGNORE_DHCP=");
+        if (pos != std::string::npos) {
+            size_t lineEnd = newConfig.find('\n', pos);
+            std::string oldLine = newConfig.substr(pos, lineEnd - pos);
+            std::string newLine = "IGNORE_DHCP=\"" + ignoreDHCP + "\"";
+            newConfig.replace(pos, oldLine.length(), newLine);
+            needsRestart = (newConfig != ntpsecConfig);
+        }
+        
+        // Ensure -g flag is set in NTPD_OPTS to allow large time corrections on boot
+        // This is critical for systems without RTC that may boot with wildly incorrect times
+        pos = newConfig.find("NTPD_OPTS=");
+        if (pos != std::string::npos) {
+            size_t lineEnd = newConfig.find('\n', pos);
+            std::string optsLine = newConfig.substr(pos, lineEnd - pos);
+            // Check if -g flag is already present
+            if (optsLine.find("-g") == std::string::npos) {
+                // Add -g flag after NTPD_OPTS="
+                size_t quotePos = optsLine.find('"');
+                if (quotePos != std::string::npos) {
+                    std::string newOptsLine = optsLine.substr(0, quotePos + 1) + "-g " + optsLine.substr(quotePos + 1);
+                    newConfig.replace(pos, optsLine.length(), newOptsLine);
+                    needsRestart = true;
+                }
+            }
+        }
+        
+        if (needsRestart) {
+            PutFileContents(ntpsecDefaults, newConfig);
+            // Remove any DHCP-generated NTP config to force reload
+            if (ignoreDHCP == "yes" && FileExists("/run/ntpsec/ntp.conf.dhcp")) {
+                unlink("/run/ntpsec/ntp.conf.dhcp");
+            }
+            execbg("/usr/bin/systemctl reload-or-restart ntpsec.service &");
+        }
+    }
+    
     bool changed = false;
     for (auto& ftc : filesToConsider) {
         if (filesNeeded.find(ftc) == filesNeeded.end()) {
@@ -876,45 +967,240 @@ static void setupTimezone() {
     }
 }
 
+// Check if there are any network interfaces that could potentially receive NTP time
+// Returns true if there's at least one interface with a "real" IP address that could reach NTP servers
+// Excludes loopback, USB gadget, and tethering interfaces
+static bool hasNetworkInterfaceForNTP() {
+    // If EnableTethering is explicitly set to 1, user expects to use tethering
+    // which means no external network - skip NTP wait
+    int tetheringEnabled = getRawSettingInt("EnableTethering", 0);
+    if (tetheringEnabled == 1) {
+        printf("FPP - Tethering is enabled, skipping NTP time wait\n");
+        return false;
+    }
+    
+    struct ifaddrs* ifAddrStruct = NULL;
+    struct ifaddrs* ifa = NULL;
+    void* tmpAddrPtr = NULL;
+    bool hasValidIP = false;
+    
+    if (getifaddrs(&ifAddrStruct) != 0) {
+        // If we can't get interface info, assume we might have network
+        return true;
+    }
+    
+    for (ifa = ifAddrStruct; ifa != NULL; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_addr) {
+            continue;
+        }
+        
+        std::string nm = ifa->ifa_name;
+        // Skip loopback and USB gadget interfaces (usb0, usb1, etc.)
+        if (nm == "lo" || startsWith(nm, "usb")) {
+            continue;
+        }
+        
+        // Only check IPv4 addresses
+        if (ifa->ifa_addr->sa_family == AF_INET) {
+            tmpAddrPtr = &((struct sockaddr_in*)ifa->ifa_addr)->sin_addr;
+            char addressBuffer[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
+            std::string addr = addressBuffer;
+            
+            // Skip tethering/USB gadget IP addresses
+            // 192.168.6.2/192.168.7.2 = BeagleBone USB gadget
+            // 192.168.8.1 = FPP tethering hotspot
+            if (contains(addr, "192.168.6.2") || 
+                contains(addr, "192.168.7.2") || 
+                contains(addr, "192.168.8.1")) {
+                continue;
+            }
+            
+            // Found a valid IP that could potentially reach NTP
+            hasValidIP = true;
+            break;
+        }
+    }
+    
+    if (ifAddrStruct != NULL) {
+        freeifaddrs(ifAddrStruct);
+    }
+    
+    // If no valid IP found, check if any "real" interfaces exist with link up
+    // An interface must have carrier (link) to potentially get DHCP
+    if (!hasValidIP) {
+        // Re-scan to check if interfaces exist with carrier
+        if (getifaddrs(&ifAddrStruct) == 0) {
+            std::string tetherInterface = FindTetherWIFIAdapater();
+            for (ifa = ifAddrStruct; ifa != NULL; ifa = ifa->ifa_next) {
+                std::string nm = ifa->ifa_name;
+                // Skip loopback and USB gadget interfaces
+                if (nm == "lo" || startsWith(nm, "usb")) {
+                    continue;
+                }
+                // Skip the interface designated for tethering
+                if (nm == tetherInterface) {
+                    continue;
+                }
+                // Check for "real" network interface names
+                if (startsWith(nm, "eth") || startsWith(nm, "wlan") || 
+                    startsWith(nm, "en") || startsWith(nm, "wl") ||
+                    startsWith(nm, "br") || startsWith(nm, "bond")) {
+                    // Check carrier state via sysfs - most reliable across all drivers
+                    // /sys/class/net/<iface>/carrier returns 1 if link, 0 if no link
+                    std::string carrierPath = "/sys/class/net/" + nm + "/carrier";
+                    std::string carrier = GetFileContents(carrierPath);
+                    TrimWhiteSpace(carrier);
+                    if (carrier == "1") {
+                        printf("FPP - Interface %s has carrier, will wait for NTP\n", nm.c_str());
+                        hasValidIP = true;
+                        break;
+                    }
+                }
+            }
+            if (ifAddrStruct != NULL) {
+                freeifaddrs(ifAddrStruct);
+            }
+        }
+    }
+    
+    if (!hasValidIP) {
+        printf("FPP - No network interfaces with link detected, skipping NTP time wait\n");
+    }
+    
+    return hasValidIP;
+}
+
 static void handleBootDelay() {
     int i = getRawSettingInt("bootDelay", -1);
+    const std::string delayFile = FPP_MEDIA_DIR + "/tmp/boot_delay";
+    const std::string skipFile = FPP_MEDIA_DIR + "/tmp/boot_delay_skip";
+    
+    // bootDelay=0 means no delay at all - clean up any flag file and return immediately
+    if (i == 0) {
+        unlink(delayFile.c_str());
+        unlink(skipFile.c_str());
+        return;
+    }
+    
     if (i > 0) {
         printf("FPP - Sleeping for %d seconds\n", i);
-        std::this_thread::sleep_for(std::chrono::seconds(i));
+        // Create flag file with start time and duration for UI countdown
+        time_t startTime = time(nullptr);
+        std::string flagContent = std::to_string(startTime) + "," + std::to_string(i);
+        PutFileContents(delayFile, flagContent);
+        // Notify systemd we're starting the delay and extend timeout
+        sd_notify(0, "STATUS=Boot delay in progress");
+        sd_notifyf(0, "EXTEND_TIMEOUT_USEC=%llu", (unsigned long long)(i + 30) * 1000000);
+        
+        // Sleep in 100ms increments to allow UI to show countdown and respond to skip
+        int remainingMs = i * 1000;
+        int watchdogCounter = 0;
+        while (remainingMs > 0) {
+            // Check for skip request from UI every iteration
+            if (FileExists(skipFile)) {
+                printf("FPP - Boot delay skip requested by user\n");
+                unlink(skipFile.c_str());
+                break;
+            }
+            
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            remainingMs -= 100;
+            watchdogCounter++;
+            
+            // Notify systemd watchdog every 10 seconds (100 iterations)
+            if (watchdogCounter >= 100) {
+                sd_notify(0, "WATCHDOG=1");
+                watchdogCounter = 0;
+            }
+        }
+        // Remove flag files when delay completes
+        unlink(delayFile.c_str());
+        unlink(skipFile.c_str());
     } else if (i == -1) {
+        // Auto mode: check if we have any network interfaces that could get NTP
+        // If not, skip the time wait entirely and clean up flag file now
+        if (!hasNetworkInterfaceForNTP()) {
+            printf("FPP - No network interface found, skipping boot delay\n");
+            unlink(delayFile.c_str());
+            unlink(skipFile.c_str());
+            return;
+        }
+        
         const auto processor_count = std::thread::hardware_concurrency();
         if (processor_count > 2) {
             // super fast Pi, we need a minimal delay for devices to be found
             std::this_thread::sleep_for(std::chrono::seconds(5));
         }
-
-        struct stat attr;
-        stat("/etc/fpp/rfs_version", &attr);
-        struct tm tmFile, tmNow;
-        localtime_r(&(attr.st_ctime), &tmFile);
-        time_t t = time(nullptr);
-        localtime_r(&(attr.st_ctime), &tmNow);
-
-        time_t t1 = mktime(&tmFile);
-        time_t t2 = mktime(&tmNow);
-        double diffSecs = difftime(t1, t2);
-        if (diffSecs > 0) {
-            char buffer[26];
-            strftime(buffer, 26, "%Y-%m-%d %H:%M:%S", &tmFile);
-            printf("FPP - FPP - Waiting until system date is at least %s or 15s\n", buffer);
-        }
-
-        int count = 0;
-        while (diffSecs > 0 && count < 150) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            t = time(nullptr);
-            localtime_r(&(attr.st_ctime), &tmNow);
-            t2 = mktime(&tmNow);
-            diffSecs = difftime(t1, t2);
-            count++;
-        }
     }
 }
+
+// Wait for time to sync via NTP/RTC - called AFTER waitForInterfacesUp
+// so we know if network is available
+static void handleTimeSyncWait() {
+    int i = getRawSettingInt("bootDelay", -1);
+    if (i != -1) {
+        // Only do time sync wait in auto mode
+        return;
+    }
+    
+    const std::string delayFile = FPP_MEDIA_DIR + "/tmp/boot_delay";
+    const std::string skipFile = FPP_MEDIA_DIR + "/tmp/boot_delay_skip";
+
+    // Check if there are any network interfaces that could get NTP time
+    // If not, skip the time wait - no point waiting for NTP on a device with no network
+    if (!hasNetworkInterfaceForNTP()) {
+        printf("FPP - No network interface found, skipping NTP time wait\n");
+        // Clean up flag files since we're skipping
+        unlink(delayFile.c_str());
+        unlink(skipFile.c_str());
+        return;
+    }
+
+    struct stat attr;
+    stat("/etc/fpp/rfs_version", &attr);
+    time_t fileTime = attr.st_ctime;
+    time_t currentTime = time(nullptr);
+    
+    double diffSecs = difftime(fileTime, currentTime);
+    if (diffSecs > 0) {
+        struct tm tmFile;
+        localtime_r(&fileTime, &tmFile);
+        char buffer[26];
+        strftime(buffer, 26, "%Y-%m-%d %H:%M:%S", &tmFile);
+        printf("FPP - Waiting until system date is at least %s or 5 minutes\n", buffer);
+        // Create flag file for UI to show warning with timestamp
+        time_t startTime = time(nullptr);
+        std::string flagContent = std::to_string(startTime) + ",auto";
+        PutFileContents(delayFile, flagContent);
+        sd_notify(0, "STATUS=Waiting for valid system time (NTP/RTC)");
+    }
+
+    int count = 0;
+    while (diffSecs > 0 && count < 3000) {
+        // Check for skip request from UI every 500ms (5 iterations)
+        if (count % 5 == 0 && FileExists(skipFile)) {
+            printf("FPP - Boot delay skip requested by user\n");
+            unlink(skipFile.c_str());
+            break;
+        }
+        
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        currentTime = time(nullptr);
+        diffSecs = difftime(fileTime, currentTime);
+        count++;
+        
+        // Notify systemd every 10 seconds (100 iterations)
+        if (count % 100 == 0) {
+            // Extend timeout by 30 seconds and send watchdog ping
+            sd_notifyf(0, "EXTEND_TIMEOUT_USEC=%llu\nWATCHDOG=1", (unsigned long long)30000000);
+        }
+    }
+    // Remove flag files when delay completes
+    unlink(delayFile.c_str());
+    unlink(skipFile.c_str());
+}
+
 void cleanupChromiumFiles() {
     exec("/usr/bin/rm -rf /home/fpp/.config/chromium/Singleton* 2>/dev/null > /dev/null");
 }
@@ -927,6 +1213,12 @@ static void checkWLANInterface() {
 }
 
 static bool waitForInterfacesUp(bool flite, int timeOut) {
+    // If no network interfaces have carrier/link, don't wait at all
+    if (!hasNetworkInterfaceForNTP()) {
+        printf("FPP - No network interfaces with link, skipping IP wait\n");
+        return false;
+    }
+    
     bool found = false;
     int count = 0;
     std::string announce;
@@ -1024,8 +1316,63 @@ static void maybeEnableTethering() {
             freeifaddrs(ifAddrStruct);
         }
         if (!found) {
-            // did not find an ip address
-            te = 1;
+            // Check if the tether interface has a wifi client configuration
+            std::string tetherInterface = FindTetherWIFIAdapater();
+            std::string interfaceConfigFile = FPP_MEDIA_DIR + "/config/interface." + tetherInterface;
+            if (FileExists(interfaceConfigFile)) {
+                auto interfaceSettings = loadSettingsFile(interfaceConfigFile);
+                if (!interfaceSettings["SSID"].empty()) {
+                    // WiFi client config exists - give it time to connect and get DHCP
+                    printf("FPP - %s has WiFi SSID configured, waiting up to 12s for connection and DHCP...\n", tetherInterface.c_str());
+                    int waitCount = 0;
+                    bool gotIP = false;
+                    bool connected = false;
+                    while (waitCount < 24 && !gotIP && !connected) { // 24 * 500ms = 12 seconds
+                        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                        // Check for IP address
+                        struct ifaddrs* ifAddrCheck = NULL;
+                        if (getifaddrs(&ifAddrCheck) == 0) {
+                            for (struct ifaddrs* ifa = ifAddrCheck; ifa != NULL; ifa = ifa->ifa_next) {
+                                if (ifa->ifa_addr && ifa->ifa_addr->sa_family == AF_INET) {
+                                    std::string ifname = ifa->ifa_name;
+                                    if (ifname == tetherInterface) {
+                                        void* tmpAddrPtr = &((struct sockaddr_in*)ifa->ifa_addr)->sin_addr;
+                                        char addressBuffer[INET_ADDRSTRLEN];
+                                        inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
+                                        std::string addr = addressBuffer;
+                                        if (!contains(addr, "169.254.")) { // Ignore link-local
+                                            printf("FPP - %s got IP address %s\n", tetherInterface.c_str(), addr.c_str());
+                                            gotIP = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            freeifaddrs(ifAddrCheck);
+                        }
+                        // Also check if connected to AP (even without IP yet)
+                        if (!gotIP && waitCount > 10) { // After 5 seconds, start checking connection status
+                            std::string iwOutput = execAndReturn("/usr/sbin/iw " + tetherInterface + " link");
+                            if (contains(iwOutput, "Connected to")) {
+                                printf("FPP - %s connected to WiFi, keeping WiFi config active\n", tetherInterface.c_str());
+                                connected = true;
+                            }
+                        }
+                        if (gotIP || connected) break;
+                        waitCount++;
+                    }
+                    if (!gotIP && !connected) {
+                        printf("FPP - %s no IP or connection after 12s, enabling tethering\n", tetherInterface.c_str());
+                        te = 1;
+                    }
+                } else {
+                    // Interface config exists but no SSID - enable tethering
+                    te = 1;
+                }
+            } else {
+                // did not find an ip address and no wifi client config exists
+                te = 1;
+            }
         }
     }
     std::string tetherInterface = FindTetherWIFIAdapater();
@@ -1038,6 +1385,16 @@ static void maybeEnableTethering() {
     if (te == 1) {
         std::string c = CreateHostAPDConfig(tetherInterface);
         PutFileContents("/etc/hostapd/hostapd.conf", c);
+        
+        // Remove wpa_supplicant config if it exists (switching from client to AP mode)
+        std::string wpaConfig = "/etc/wpa_supplicant/wpa_supplicant-" + tetherInterface + ".conf";
+        if (FileExists(wpaConfig)) {
+            printf("FPP - Removing wpa_supplicant config for %s to enable tethering\n", tetherInterface.c_str());
+            unlink(wpaConfig.c_str());
+            exec("/usr/bin/systemctl stop wpa_supplicant@" + tetherInterface + ".service");
+            exec("/usr/bin/systemctl disable wpa_supplicant@" + tetherInterface + ".service");
+        }
+        
         std::string content = "[Match]\nName=";
         content.append(tetherInterface).append("\nType=wlan\n\n"
                                                "[Network]\n"
@@ -1054,6 +1411,7 @@ static void maybeEnableTethering() {
         exec("/usr/bin/systemctl reload-or-restart systemd-networkd.service");
         unblockWifi();
         exec("/usr/bin/systemctl reload-or-restart hostapd.service");
+        exec("/usr/bin/systemctl enable hostapd.service");
     }
 }
 static void detectNetworkModules() {
@@ -1574,6 +1932,29 @@ int main(int argc, char* argv[]) {
         setFileOwnership();
         PutFileContents(FPP_MEDIA_DIR + "/tmp/cape_detect_done", "1");
         checkInstallKiosk();
+        
+        if (!FileExists("/.dockerenv")) {
+            // Create boot delay flag file early if boot delay is configured
+            // so UI can show warning immediately when Apache starts
+            int bootDelaySetting = getRawSettingInt("bootDelay", -1);
+            if (bootDelaySetting != 0) {
+                // Store start time and duration/mode for UI countdown
+                time_t startTime = time(nullptr);
+                if (bootDelaySetting > 0) {
+                    std::string flagContent = std::to_string(startTime) + "," + std::to_string(bootDelaySetting);
+                    PutFileContents(FPP_MEDIA_DIR + "/tmp/boot_delay", flagContent);
+                } else if (bootDelaySetting == -1) {
+                    std::string flagContent = std::to_string(startTime) + ",auto";
+                    PutFileContents(FPP_MEDIA_DIR + "/tmp/boot_delay", flagContent);
+                }
+            }
+        } else {
+            // Ensure no boot delay flag file exists. No delay in docker.
+            unlink((FPP_MEDIA_DIR + "/tmp/boot_delay").c_str());
+        }
+        
+        // Notify systemd that initialization is complete
+        sd_notify(0, "READY=1\nSTATUS=FPP initialization complete");
     } else if (action == "postNetwork") {
         removeDummyInterface();
         handleBootDelay();
@@ -1584,6 +1965,8 @@ int main(int argc, char* argv[]) {
         setupAudio();
         removeDummyInterface();
         waitForInterfacesUp(true, 100); // call to flite requires audio, so do audio before this
+        // Time sync wait happens AFTER interfaces are up so NTP has a chance to sync
+        handleTimeSyncWait();
         if (!FileExists("/etc/fpp/desktop")) {
             maybeEnableTethering();
             detectNetworkModules();
@@ -1593,6 +1976,8 @@ int main(int argc, char* argv[]) {
         setFileOwnership();
         checkInstallPackages();
         startZRAMSwap();
+        // Notify systemd that post-network setup is complete
+        sd_notify(0, "READY=1\nSTATUS=FPP post-network setup complete");
     } else if (action == "bootPre") {
         int restart = getRawSettingInt("restartFlag", 0);
         if (restart) {

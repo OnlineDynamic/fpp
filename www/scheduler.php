@@ -19,7 +19,7 @@ error_reporting(E_ALL);
     foreach ($data as $cmd) {
         // Disallow Start Playlist FPP command to be scheduled.  Instead schedule a playlist
         // It only half works, and provides less functionality than scheduling a playlist directly on the same screen.
-        if ($cmd['name'] !== 'Start Playlist') { 
+        if ($cmd['name'] !== 'Start Playlist') {
             $commandOptions .= "<option value='" . $cmd['name'] . "'>" . $cmd['name'] . "</option>";
         }
     }
@@ -183,6 +183,7 @@ error_reporting(E_ALL);
                 }
             }
 
+            ValidateScheduleRow(row);
             SetupDatePicker(row);
         }
         function formatDate(date) {
@@ -336,7 +337,16 @@ error_reporting(E_ALL);
         function SetupDatePicker(item) {
             if (hasTouch && window.innerWidth < 601) {
                 //use native date picker for small touchscreens (datepicker widget is bad experience on mobile)
-                $(item).attr('type', 'date');
+                //but skip if field contains a holiday name
+                $(item).each(function () {
+                    var val = $(this).val();
+                    if (val && !val.match(/^\d{4}[-\/]\d{2}[-\/]\d{2}$/)) {
+                        // value is a holiday, don't convert to native date picker
+                        // as it would clear the holiday value
+                        return true;
+                    }
+                    $(this).attr('type', 'date');
+                });
             } else {
                 $(item).datepicker({
                     'changeMonth': true,
@@ -380,6 +390,38 @@ error_reporting(E_ALL);
 
         }
 
+        function ValidateScheduleRow(row) {
+            var schType = $(row).find('.schType').val();
+            var isValid = true;
+
+            // Remove previous warnings
+            $(row).find('.schPlaylist').removeClass('inputWarning');
+            $(row).find('.schSequence').removeClass('inputWarning');
+            $(row).find('.cmdTmplCommand').removeClass('inputWarning');
+
+            if (schType == 'playlist') {
+                var playlistVal = $(row).find('.schPlaylist').val();
+                if (!playlistVal || playlistVal === '' || playlistVal === 'null') {
+                    $(row).find('.schPlaylist').addClass('inputWarning');
+                    isValid = false;
+                }
+            } else if (schType == 'sequence') {
+                var sequenceVal = $(row).find('.schSequence').val();
+                if (!sequenceVal || sequenceVal === '' || sequenceVal === 'null') {
+                    $(row).find('.schSequence').addClass('inputWarning');
+                    isValid = false;
+                }
+            } else if (schType == 'command') {
+                var commandVal = $(row).find('.cmdTmplCommand').val();
+                if (!commandVal || commandVal === '' || commandVal === 'null') {
+                    $(row).find('.cmdTmplCommand').addClass('inputWarning');
+                    isValid = false;
+                }
+            }
+
+            return isValid;
+        }
+
         function ScheduleEntryRepeatChanged(item) {
             var row = $(item).parent().parent();
 
@@ -398,6 +440,8 @@ error_reporting(E_ALL);
             } else {
                 $(row).removeClass('inputWarning');
             }
+
+            ValidateScheduleRow(row);
 
             if ($(item).val() == 'playlist') {
                 // Playlist
@@ -455,7 +499,19 @@ error_reporting(E_ALL);
             var val = $(item).val();
             var re = new RegExp(/^\d{4}[-/]\d{2}[-/]\d{2}$/i);
             if (!val.match(re)) {
-                $(item).val(MAXYEAR + "-12-31");
+                // check if value is a valid holiday name before replacing
+                var isHoliday = false;
+                if (settings['locale'] && settings['locale']['holidays']) {
+                    for (var i in settings['locale']['holidays']) {
+                        if (settings['locale']['holidays'][i]['shortName'] == val) {
+                            isHoliday = true;
+                            break;
+                        }
+                    }
+                }
+                if (!isHoliday) {
+                    $(item).val(MAXYEAR + "-12-31");
+                }
             }
         }
 
@@ -477,12 +533,47 @@ error_reporting(E_ALL);
             }
         }
 
+        var userHolidays = [];
+
+        function LoadUserHolidays(callback) {
+            $.get('api/configfile/user-holidays.json', function (data) {
+                if (data && Array.isArray(data)) {
+                    userHolidays = data;
+                } else {
+                    userHolidays = [];
+                }
+                if (callback) callback();
+            }).fail(function () {
+                userHolidays = [];
+                if (callback) callback();
+            });
+        }
+
+        function GetAllHolidays() {
+            var allHolidays = [];
+
+            // Add locale holidays
+            if (settings['locale'] && settings['locale']['holidays']) {
+                for (var i in settings['locale']['holidays']) {
+                    allHolidays.push(settings['locale']['holidays'][i]);
+                }
+            }
+
+            // Add user-defined holidays
+            for (var i = 0; i < userHolidays.length; i++) {
+                allHolidays.push(userHolidays[i]);
+            }
+
+            return allHolidays;
+        }
+
         function HolidaySelect(userKey, classToAdd) {
             var result = "<select class='holidays " + classToAdd + "' onChange='HolidaySelected(this);' style='display: none;'>";
             result += "<option value='SpecifyDate'>Specify Date</option>";
 
-            for (var i in settings['locale']['holidays']) {
-                var holiday = settings['locale']['holidays'][i];
+            var allHolidays = GetAllHolidays();
+            for (var i = 0; i < allHolidays.length; i++) {
+                var holiday = allHolidays[i];
 
                 result += "<option value='" + holiday['shortName'] + "'";
 
@@ -496,9 +587,230 @@ error_reporting(E_ALL);
             return result;
         }
 
+        function OpenHolidayEditor() {
+            LoadUserHolidays(function () {
+                $('#tblUserHolidaysBody').empty();
+
+                for (var i = 0; i < userHolidays.length; i++) {
+                    var h = userHolidays[i];
+                    AddHolidayRow(h.name, h.shortName, h.month, h.day);
+                }
+
+                var modal = new bootstrap.Modal(document.getElementById('holidayEditorModal'));
+                modal.show();
+            });
+        }
+
+        function AddHolidayRow(name, shortName, month, day) {
+            name = name || '';
+            shortName = shortName || '';
+            month = month || 1;
+            day = day || 1;
+
+            var monthOptions = '';
+            var months = ['January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'];
+            for (var i = 0; i < months.length; i++) {
+                var selected = (month == (i + 1)) ? ' selected' : '';
+                monthOptions += '<option value="' + (i + 1) + '"' + selected + '>' + months[i] + '</option>';
+            }
+
+            var dayOptions = '';
+            for (var i = 1; i <= 31; i++) {
+                var selected = (day == i) ? ' selected' : '';
+                dayOptions += '<option value="' + i + '"' + selected + '>' + i + '</option>';
+            }
+
+            var row = '<tr>' +
+                '<td><input type="text" class="form-control form-control-sm holName" value="' + name + '" placeholder="e.g., My Holiday"></td>' +
+                '<td><input type="text" class="form-control form-control-sm holShortName" value="' + shortName + '" placeholder="e.g., MyHoliday"></td>' +
+                '<td><select class="form-select form-select-sm holMonth">' + monthOptions + '</select></td>' +
+                '<td><select class="form-select form-select-sm holDay">' + dayOptions + '</select></td>' +
+                '<td><button type="button" class="btn btn-sm btn-danger" onclick="DeleteHolidayRow(this);"><i class="fas fa-trash"></i></button></td>' +
+                '</tr>';
+
+            var $row = $(row);
+            $('#tblUserHolidaysBody').append($row);
+
+            // Store original shortName to track changes
+            $row.data('originalShortName', shortName);
+            // Track if shortName was initially blank
+            $row.data('shortNameWasBlank', !shortName);
+
+            // Auto-generate shortName on blur when name loses focus
+            $row.find('.holName').on('blur', function () {
+                var $shortNameField = $(this).closest('tr').find('.holShortName');
+                var wasBlank = $(this).closest('tr').data('shortNameWasBlank');
+                // Only auto-generate if shortName was originally blank
+                if (wasBlank && !$shortNameField.val().trim()) {
+                    var generatedShortName = GenerateShortName($(this).val());
+                    $shortNameField.val(generatedShortName);
+                }
+            });
+
+            // Clear validation styling when user types in name field
+            $row.find('.holName').on('input', function () {
+                $(this).removeClass('is-invalid');
+            });
+
+            // Clear validation styling when user edits shortName
+            $row.find('.holShortName').on('input', function () {
+                $(this).removeClass('is-invalid');
+            });
+        }
+
+        function DeleteHolidayRow(btn) {
+            $(btn).closest('tr').remove();
+        }
+
+        function GenerateShortName(name) {
+            // Remove special characters and spaces, keep only alphanumeric
+            return name.replace(/[^a-zA-Z0-9]/g, '');
+        }
+
+        function ValidateUserHolidays() {
+            var isValid = true;
+
+            $('#tblUserHolidaysBody tr').each(function () {
+                var $nameField = $(this).find('.holName');
+                var $shortNameField = $(this).find('.holShortName');
+                var name = $nameField.val().trim();
+                var shortName = $shortNameField.val().trim();
+
+                // Remove previous validation classes
+                $nameField.removeClass('is-invalid');
+                $shortNameField.removeClass('is-invalid');
+
+                // Validate: if name is provided, shortName must also be provided
+                if (name && !shortName) {
+                    $shortNameField.addClass('is-invalid');
+                    isValid = false;
+                } else if (!name && shortName) {
+                    $nameField.addClass('is-invalid');
+                    isValid = false;
+                }
+            });
+
+            return isValid;
+        }
+
+        function SaveUserHolidays() {
+            // Validate all fields first
+            if (!ValidateUserHolidays()) {
+                $.jGrowl('Please correct the highlighted fields. Each holiday must have both a Display name and Config name.', { themeState: 'danger' });
+                return;
+            }
+
+            var holidays = [];
+            var shortNameChanges = {}; // Track old -> new shortName mappings
+
+            $('#tblUserHolidaysBody tr').each(function () {
+                var name = $(this).find('.holName').val().trim();
+                var shortName = $(this).find('.holShortName').val().trim();
+                var originalShortName = $(this).data('originalShortName') || '';
+                var month = parseInt($(this).find('.holMonth').val());
+                var day = parseInt($(this).find('.holDay').val());
+
+                if (name && shortName) {
+                    holidays.push({
+                        name: name,
+                        shortName: shortName,
+                        month: month,
+                        day: day
+                    });
+
+                    // Track if shortName was changed
+                    if (originalShortName && originalShortName !== shortName) {
+                        shortNameChanges[originalShortName] = shortName;
+                    }
+                }
+            });
+
+            // Function to update schedule entries with renamed holidays
+            function updateScheduleWithRenamedHolidays(callback) {
+                if (Object.keys(shortNameChanges).length === 0) {
+                    // No changes to process
+                    if (callback) callback();
+                    return;
+                }
+
+                // Load current schedule
+                $.get('api/schedule', function (scheduleData) {
+                    var scheduleUpdated = false;
+
+                    // Update each schedule entry
+                    for (var i = 0; i < scheduleData.length; i++) {
+                        var entry = scheduleData[i];
+
+                        // Check startDate
+                        if (entry.startDate && shortNameChanges.hasOwnProperty(entry.startDate)) {
+                            entry.startDate = shortNameChanges[entry.startDate];
+                            scheduleUpdated = true;
+                        }
+
+                        // Check endDate
+                        if (entry.endDate && shortNameChanges.hasOwnProperty(entry.endDate)) {
+                            entry.endDate = shortNameChanges[entry.endDate];
+                            scheduleUpdated = true;
+                        }
+                    }
+
+                    if (scheduleUpdated) {
+                        // Save updated schedule
+                        $.ajax({
+                            url: 'api/schedule',
+                            type: 'POST',
+                            dataType: 'json',
+                            contentType: 'application/json',
+                            data: JSON.stringify(scheduleData),
+                            success: function () {
+                                $.jGrowl('Schedule updated with renamed holidays', { themeState: 'success' });
+                                if (callback) callback();
+                            },
+                            error: function () {
+                                $.jGrowl('Warning: Could not update schedule entries', { themeState: 'error' });
+                                if (callback) callback();
+                            }
+                        });
+                    } else {
+                        if (callback) callback();
+                    }
+                }).fail(function () {
+                    if (callback) callback();
+                });
+            }
+
+            $.ajax({
+                url: 'api/configfile/user-holidays.json',
+                type: 'POST',
+                dataType: 'json',
+                contentType: 'application/json',
+                data: JSON.stringify(holidays),
+                success: function (response) {
+                    userHolidays = holidays;
+
+                    // Update schedule entries with renamed holidays
+                    updateScheduleWithRenamedHolidays(function () {
+                        $.jGrowl('User holidays saved', { themeState: 'success' });
+
+                        var modal = bootstrap.Modal.getInstance(document.getElementById('holidayEditorModal'));
+                        if (modal) {
+                            modal.hide();
+                        }
+
+                        // Refresh schedule display to show new holidays
+                        ReloadSchedule();
+                    });
+                },
+                error: function () {
+                    DialogError('Error saving', 'Error saving user holidays');
+                }
+            });
+        }
+
         function GetScheduleEntryRowData(item) {
             var schType = $(item).find('.schType').val();
-            e = {};
+            var e = {};
             e.enabled = $(item).find('.schEnable').is(':checked') ? 1 : 0;
             e.sequence = 0;
 
@@ -525,10 +837,10 @@ error_reporting(E_ALL);
 
                 if (json == '') {
                     var cmd = {};
-                    cmd.command = command;
+                    cmd.command = $(item).find('.cmdTmplCommand').val() || '';
                     cmd.args = [];
                     json = JSON.stringify(cmd);
-                    $(row).find('.cmdTmplJSON').html(json);
+                    $(item).find('.cmdTmplJSON').html(json);
                 }
 
                 // Just in case, FPP Commands can't immediately repeat so disable
@@ -540,7 +852,7 @@ error_reporting(E_ALL);
 
                 var jdata = JSON.parse(json);
                 e.playlist = '';
-                e.command = $(item).find('.cmdTmplCommand').val();
+                e.command = $(item).find('.cmdTmplCommand').val() || '';
                 e.args = jdata.args;
 
                 if (jdata.hasOwnProperty('multisyncCommand')) {
@@ -578,6 +890,10 @@ error_reporting(E_ALL);
 
             $('#tblScheduleBody > tr').each(function () {
                 var entry = GetScheduleEntryRowData($(this));
+
+                // Validate dropdowns for null/invalid values
+                ValidateScheduleRow($(this));
+
                 if ((settings['fppMode'] != 'player') && (entry.enabled) && (entry.playlist != '')) {
                     showTypeWarning = true;
                     $(this).addClass('inputWarning');
@@ -726,7 +1042,7 @@ error_reporting(E_ALL);
     </style>
 </head>
 
-<body onload="PopulateCommandListCache(); getSchedule();">
+<body onload="PopulateCommandListCache(); LoadUserHolidays(function() { getSchedule(); });">
     <div id="bodyWrapper">
         <?php
         $activeParentMenuItem = 'content';
@@ -750,6 +1066,9 @@ error_reporting(E_ALL);
                                             <button type='button' class='buttons' onClick='PreviewSchedule();'
                                                 value='View Schedule'><i
                                                     class="fas fa-fw fa-calendar-alt"></i>Preview</button>
+                                            <button type='button' class='buttons' onClick='OpenHolidayEditor();'
+                                                value='Edit Holidays'><i class="fas fa-fw fa-gift"></i>Edit
+                                                Holidays</button>
                                             <button class='buttons' type="button" value="Reload"
                                                 onClick="ReloadSchedule();"><i class="fas fa-redo"></i> Reload</button>
                                             <button class='buttons' type="button" value="Clear Selection"
@@ -766,6 +1085,9 @@ error_reporting(E_ALL);
                                 <div class='largeonly'><button type='button' class='buttons wideButton'
                                         onClick='PreviewSchedule();' value='View Schedule'><i
                                             class="fas fa-fw fa-calendar-alt"></i>Preview</button></div>
+                                <div class='largeonly'><button type='button' class='buttons wideButton'
+                                        onClick='OpenHolidayEditor();' value='Edit Holidays'><i
+                                            class="fas fa-fw fa-gift"></i>Edit Holidays</button></div>
                                 <div class='largeonly'><button class="buttons" type="button" value="Reload"
                                         onClick="ReloadSchedule();"><i class="fas fa-redo"></i> Reload</button></div>
                                 <div class='largeonly'><input class="buttons" type="button" value="Clear Selection"
@@ -792,7 +1114,8 @@ error_reporting(E_ALL);
                         </div>
                     </div>
                     <div class='fppTableWrapper'>
-                        <div class='fppTableContents' role="region" aria-labelledby="tblSchedule" tabindex="0">
+                        <div class='fppTableContents fppFThScrollContainer' role="region" aria-labelledby="tblSchedule"
+                            tabindex="0">
                             <div id='remoteEntryTypeWarning' style='display: none;' class='inputWarning'>
                                 <b>WARNING: Non-Command schedule entries found. Scheduled Playlist/Sequence entries are
                                     ignored on FPP systems running in Remote mode.</b>
@@ -865,11 +1188,13 @@ error_reporting(E_ALL);
                                         </select>
                                     </td>
                                     <td class='schOptionsPlaylist'>
-                                        <select class='schPlaylist' title=''>
+                                        <select class='schPlaylist' title=''
+                                            onChange='ValidateScheduleRow($(this).parent().parent());'>
                                         </select>
                                     </td>
                                     <td class='schOptionsSequence'>
-                                        <select class='schSequence' title=''>
+                                        <select class='schSequence' title=''
+                                            onChange='ValidateScheduleRow($(this).parent().parent());'>
                                         </select>
                                     </td>
                                     <td class='schOptionsPlaylist schOptionsSequence' class=''>
@@ -881,9 +1206,10 @@ error_reporting(E_ALL);
                                     </td>
                                     <td class='schOptionsCommand' colspan='2'>
                                         <select class='cmdTmplCommand'
-                                            onChange='EditCommandTemplate($(this).parent().parent());'><? echo $commandOptions; ?></select>
-                                        <img class='cmdTmplTooltipIcon' title='' data-bs-html='true' data-bs-toggle='tooltip'
-                                            src='images/redesign/help-icon.svg' width=22 height=22>
+                                            onChange='EditCommandTemplate($(this).parent().parent()); ValidateScheduleRow($(this).parent().parent());'><? echo $commandOptions; ?></select>
+                                        <img class='cmdTmplTooltipIcon' title='' data-bs-html='true'
+                                            data-bs-toggle='tooltip' src='images/redesign/help-icon.svg' width=22
+                                            height=22>
                                         <input type='button' class='buttons reallySmallButton' value='Edit'
                                             onClick='EditCommandTemplate($(this).parent().parent());'>
                                         <input type='button' class='buttons smallButton' value='Run Now'
@@ -966,6 +1292,47 @@ error_reporting(E_ALL);
 
             </div>
             <?php include 'common/footer.inc'; ?>
+        </div>
+
+        <!-- Holiday Editor Modal -->
+        <div id="holidayEditorModal" class="modal fade" tabindex="-1" role="dialog">
+            <div class="modal-dialog modal-lg" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Edit User-Defined Holidays</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="backdrop">
+                            <p><strong>Note:</strong> These custom holidays will be available in addition to your
+                                locale's standard holidays when scheduling.</p>
+                        </div>
+                        <div class="mb-3">
+                            <button type="button" class="btn btn-sm btn-success" onclick="AddHolidayRow();"><i
+                                    class="fas fa-plus"></i> Add Holiday</button>
+                        </div>
+                        <div class="table-responsive">
+                            <table id="tblUserHolidays" class="table table-sm table-bordered">
+                                <thead>
+                                    <tr>
+                                        <th>Display Name</th>
+                                        <th>Config Name</th>
+                                        <th>Month</th>
+                                        <th>Day</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tblUserHolidaysBody">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-success" onclick="SaveUserHolidays();">Save</button>
+                    </div>
+                </div>
+            </div>
         </div>
 </body>
 

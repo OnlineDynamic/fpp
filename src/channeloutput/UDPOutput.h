@@ -29,6 +29,10 @@ typedef void CURLM;
 
 #define MULTICAST_MESSAGES_KEY 0x00000001
 #define ANY_MESSAGES_KEY 0x00000002
+#define ARTNET_MESSAGES_KEY 0x00000003
+
+#define LATE_MESSAGES_START 0xFFFFFFF0
+#define ARTNET_SYNC_KEY 0xFFFFFFFD
 #define LATE_MULTICAST_MESSAGES_KEY 0xFFFFFFFE
 #define BROADCAST_MESSAGES_KEY 0xFFFFFFFF
 
@@ -39,7 +43,7 @@ public:
     UDPOutputMessages();
     ~UDPOutputMessages();
 
-    void ForceSocket(unsigned int key, int socket);
+    void ForceSocket(unsigned int key, int socket, bool preventClose = false);
     int GetSocket(unsigned int key);
 
     std::vector<struct mmsghdr>& GetMessages(unsigned int key);

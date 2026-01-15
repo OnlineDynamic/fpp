@@ -63,6 +63,7 @@ dispatch_get('/file/move/:fileName', 'MoveFile'); // keep above file/:DirName
 dispatch_get('/files/zip/:DirNames', 'GetZipDir');
 dispatch_post('/file/:DirName/copy/:source/:dest', 'files_copy');
 dispatch_post('/file/:DirName/rename/:source/:dest', 'files_rename');
+dispatch_get('/file/:DirName/tailfollow/**', 'TailFollowFile');
 dispatch_get('/file/:DirName/**', 'GetFile');
 dispatch_delete('/file/:DirName/**', 'DeleteFile');
 dispatch_post('/file/:DirName', 'PatchFile');
@@ -110,10 +111,12 @@ dispatch_get('/playlists/stopgracefullyafterloop', 'playlist_stopgracefullyafter
 dispatch_get('/playlist/:PlaylistName', 'playlist_get');
 dispatch_get('/playlist/:PlaylistName/start', 'playlist_start');
 dispatch_get('/playlist/:PlaylistName/start/:Repeat', 'playlist_start_repeat');
+dispatch_get('/playlist/:PlaylistName/start/:Repeat/:ScheduleProtected', 'playlist_start_repeat_protected');
 dispatch_post('/playlist/:PlaylistName', 'playlist_update');
 dispatch_delete('/playlist/:PlaylistName', 'playlist_delete');
 dispatch_post('/playlist/:PlaylistName/:SectionName/item', 'PlaylistSectionInsertItem');
 
+dispatch_get('/plugin/headerIndicators', 'GetPluginHeaderIndicators');
 dispatch_get('/plugin', 'GetInstalledPlugins');
 dispatch_post('/plugin', 'InstallPlugin');
 dispatch_get('/plugin/:RepoName', 'GetPluginInfo');
@@ -171,6 +174,7 @@ dispatch_delete('/statistics/usage', 'stats_delete_last_file');
 dispatch_get('/system/fppd/restart', 'RestartFPPD');
 dispatch_get('/system/fppd/start', 'StartFPPD');
 dispatch_get('/system/fppd/stop', 'StopFPPD');
+dispatch_post('/system/fppd/skipBootDelay', 'SkipBootDelay');
 dispatch_get('/system/reboot', 'RebootDevice');
 dispatch_get('/system/releaseNotes/:version', 'ViewReleaseNotes');
 dispatch_get('/system/shutdown', 'SystemShutdownOS');

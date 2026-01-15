@@ -189,9 +189,7 @@ void CommandManager::Cleanup() {
         Command* cmd = commands.begin()->second;
         commands.erase(commands.begin());
 
-        if (cmd->name != "GPIO") { // No idea why deleteing the GPIO command causes a crash on exit
-            delete cmd;
-        }
+        delete cmd;
     }
     commands.clear();
 }
@@ -224,6 +222,18 @@ std::unique_ptr<Command::Result> CommandManager::run(const std::string& command,
     auto f = commands.find(command);
     if (f != commands.end()) {
         LogDebug(VB_COMMAND, "Running command \"%s\"\n", command.c_str());
+
+        // Publish MQTT event for command execution
+        Json::Value payload;
+        payload["command"] = command;
+        payload["args"] = Json::Value(Json::arrayValue);
+        for (const auto& arg : args) {
+            payload["args"].append(arg);
+        }
+        payload["trigger"] = "internal";
+        std::string topic = "command/run";
+        Events::Publish(topic, SaveJsonToString(payload));
+
         return f->second->run(args);
     }
     LogWarn(VB_COMMAND, "No command found for \"%s\"\n", command.c_str());
@@ -271,6 +281,20 @@ std::unique_ptr<Command::Result> CommandManager::run(const std::string& command,
             }
             LogDebug(VB_COMMAND, "Running command \"%s(%s)\"\n", command.c_str(), argString.c_str());
         }
+
+        // Publish MQTT event for command execution
+        Json::Value payload;
+        payload["command"] = command;
+        payload["args"] = Json::Value(Json::arrayValue);
+        for (const auto& arg : args) {
+            payload["args"].append(arg);
+        }
+        payload["trigger"] = "ui";
+        std::string topic = "command/run";
+        std::string payloadStr = SaveJsonToString(payload);
+        LogWarn(VB_COMMAND, "JSONVAL MQTT Publishing command: %s, payload: %s\n", topic.c_str(), payloadStr.c_str());
+        Events::Publish(topic, payloadStr);
+
         return f->second->run(args);
     }
     LogWarn(VB_COMMAND, "No command found for \"%s\"\n", command.c_str());
@@ -355,6 +379,20 @@ HTTP_RESPONSE_CONST std::shared_ptr<httpserver::http_response> CommandManager::r
         auto f = commands.find(command);
         if (f != commands.end()) {
             LogDebug(VB_COMMAND, "Running command \"%s\"\n", command.c_str());
+
+            // Publish MQTT event for command execution
+            Json::Value payload;
+            payload["command"] = command;
+            payload["args"] = Json::Value(Json::arrayValue);
+            for (const auto& arg : args) {
+                payload["args"].append(arg);
+            }
+            payload["trigger"] = "api-get";
+            std::string topic = "command/run";
+            std::string payloadStr = SaveJsonToString(payload);
+            LogWarn(VB_COMMAND, "GET MQTT Publishing command: %s, payload: %s\n", topic.c_str(), payloadStr.c_str());
+            Events::Publish(topic, payloadStr);
+
             std::unique_ptr<Command::Result> r = f->second->run(args);
             int count = 0;
             while (!r->isDone() && count < 1000) {
@@ -388,6 +426,20 @@ HTTP_RESPONSE_CONST std::shared_ptr<httpserver::http_response> CommandManager::r
             auto f = commands.find(command);
             if (f != commands.end()) {
                 LogDebug(VB_COMMAND, "Running command \"%s\"\n", command.c_str());
+
+                // Publish MQTT event for command execution
+                Json::Value payload;
+                payload["command"] = command;
+                payload["args"] = Json::Value(Json::arrayValue);
+                for (const auto& arg : args) {
+                    payload["args"].append(arg);
+                }
+                payload["trigger"] = "api-post";
+                std::string topic = "command/run";
+                std::string payloadStr = SaveJsonToString(payload);
+                LogWarn(VB_COMMAND, "POST MQTT Publishing command: %s, payload: %s\n", topic.c_str(), payloadStr.c_str());
+                Events::Publish(topic, payloadStr);
+
                 std::unique_ptr<Command::Result> r = f->second->run(args);
                 int count = 0;
                 while (!r->isDone() && count < 1000) {
@@ -453,6 +505,18 @@ int CommandManager::TriggerPreset(int slot, std::map<std::string, std::string>& 
     }
     lock.unlock();
 
+    // Publish MQTT event for preset slot trigger
+    Json::Value payload;
+    payload["slot"] = slot;
+    if (!keywords.empty()) {
+        payload["keywords"] = Json::Value(Json::objectValue);
+        for (const auto& kv : keywords) {
+            payload["keywords"][kv.first] = kv.second;
+        }
+    }
+    std::string topic = "command/preset/triggered";
+    Events::Publish(topic, SaveJsonToString(payload));
+
     for (auto const& preset : slotPresets) {
         run(preset);
     }
@@ -467,11 +531,28 @@ int CommandManager::TriggerPreset(int slot) {
 
 int CommandManager::TriggerPreset(std::string name, std::map<std::string, std::string>& keywords) {
     std::unique_lock<std::mutex> lock(presetsMutex);
-    if (!presets.isMember(name))
+    if (!presets.isMember(name)) {
+        if (missingPresets.find(name) == missingPresets.end()) {
+            LogWarn(VB_COMMAND, "No preset found for name \"%s\"\n", name.c_str());
+            missingPresets.insert(name);
+        }
         return 0;
+    }
 
     auto it = presets[name];
     lock.unlock();
+
+    // Publish MQTT event for preset trigger
+    Json::Value payload;
+    payload["preset"] = name;
+    if (!keywords.empty()) {
+        payload["keywords"] = Json::Value(Json::objectValue);
+        for (const auto& kv : keywords) {
+            payload["keywords"][kv.first] = kv.second;
+        }
+    }
+    std::string topic = "command/preset/triggered";
+    Events::Publish(topic, SaveJsonToString(payload));
 
     for (int i = 0; i < it.size(); i++) {
         Json::Value cmd = ReplaceCommandKeywords(it[i], keywords);
@@ -491,6 +572,7 @@ void CommandManager::MaybeReloadPresets() {
     std::string commandsFile = FPP_DIR_CONFIG("/commandPresets.json");
     if (lastPresetTimeStamp < FileTimestamp(commandsFile)) {
         presets.clear();
+        missingPresets.clear();
         LoadPresets();
     }
 }
@@ -549,4 +631,9 @@ void CommandManager::LoadPresets() {
             }
         }
     }
+}
+
+bool CommandManager::HasPreset(const std::string& name) {
+    std::unique_lock<std::mutex> lock(presetsMutex);
+    return presets.isMember(name);
 }

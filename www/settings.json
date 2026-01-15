@@ -118,6 +118,7 @@
 				"temperatureInF",
 				"Latitude",
 				"Longitude"
+
 			]
 		},
 		"generalAudio": {
@@ -132,7 +133,8 @@
 				"ForceAudioId",
 				"WLEDAudioInput",
 				"disableIPAnnouncement",
-				"disableAudioVolumeSlider"
+				"disableAudioVolumeSlider",
+				"globalMediaOffset"
 			]
 		},
 		"generalVideo": {
@@ -146,7 +148,6 @@
 				"HardwareDecoding",
 				"VLCOptions",
 				"mediaOffset",
-				"globalMediaOffset",
 				"remoteIgnoreSync"
 			]
 		},
@@ -166,6 +167,7 @@
 			"description": "Scheduler",
 			"settings": [
 				"DisableScheduler",
+				"UIStartedPlaylistsProtected",
 				"ScheduleDistance",
 				"ScheduleSeconds"
 			]
@@ -265,7 +267,8 @@
 			"description": "Kiosk Mode",
 			"settings": [
 				"KioskUrl",
-				"KioskTimeout"
+				"KioskTimeout",
+				"KioskRotate"
 			]
 		},
 		"system": {
@@ -274,7 +277,8 @@
 				"GPIOFan",
 				"GPIOFanTemperature",
 				"LEDDisplayType",
-				"bootDelay"
+				"bootDelay",
+				"FPP_UUID"
 			]
 		},
 		"tethering": {
@@ -293,6 +297,7 @@
 				"ClockTime",
 				"piRTC",
 				"ntpServer",
+				"UseNTPFromDHCP",
 				"TimeZone"
 			]
 		},
@@ -304,7 +309,8 @@
 				"disableUIWarnings",
 				"disableUIPopoverAlerts",
 				"fileManagerThumbnailSize",
-				"fileManagerTableFilter"
+				"fileManagerTableFilter",
+				"gpioHideCapePins"
 			]
 		},
 		"uiColors": {
@@ -886,7 +892,7 @@
 			"name": "bootDelay",
 			"description": "FPPD Boot Delay",
 			"gatherStats": true,
-			"tip": "The time that FPP waits after system boot up to start fppd.  For environments that are powered down regularly, fppd may start up quicker than the network environment fully starts up which may cause E1.31 multicast to not work properly.  Setting a Boot Delay will cause the system to wait the specified amount of time during startup which can give the network switches and routers time to fully start up.  If Auto is selected, the system will wait until a valid time has been retrieved via NTP or a RTC (real-time clock) OR a maximum of 10 minutes.",
+			"tip": "The time that FPP waits after system boot up to start fppd.  For environments that are powered down regularly, fppd may start up quicker than the network environment fully starts up which may cause E1.31 multicast to not work properly.  Setting a Boot Delay will cause the system to wait the specified amount of time during startup which can give the network switches and routers time to fully start up.  If Auto is selected, the system will wait until a valid time has been retrieved via NTP or a RTC (real-time clock) OR a maximum of 5 minutes.",
 			"default": "0",
 			"type": "select",
 			"options": {
@@ -913,6 +919,9 @@
 			},
 			"platforms": [
 				"!MacOS"
+			],
+			"checkFile": [
+				"!/.dockerenv"
 			]
 		},
 		"ClockDate": {
@@ -1031,6 +1040,19 @@
 			"type": "checkbox",
 			"level": 1,
 			"restart": 1,
+			"exposedAsJSToPages": [
+				"all"
+			]
+		},
+		"UIStartedPlaylistsProtected": {
+			"name": "UIStartedPlaylistsProtected",
+			"gatherStats": true,
+			"description": "Protect UI-Started Playlists from Schedule Override",
+			"tip": "When enabled, playlists/sequences/media started from the UI will be protected from being stopped by scheduled playlists. This is useful when manually testing shows. Note: Playlists started via API/MQTT can still specify their own protection level.",
+			"type": "checkbox",
+			"level": 1,
+			"restart": 0,
+			"default": 0,
 			"exposedAsJSToPages": [
 				"all"
 			]
@@ -1175,15 +1197,30 @@
 				"filemanager"
 			]
 		},
+		"gpioHideCapePins": {
+			"name": "gpioHideCapePins",
+			"description": "Hide Cape Controlled GPIO Pins",
+			"tip": "Hide GPIO pins that are controlled by the currently installed cape from the GPIO Pin Control page to prevent accidental changes to pins that are in use by the cape.",
+			"level": 1,
+			"default": "1",
+			"type": "checkbox",
+			"checkedValue": "1",
+			"uncheckedValue": "0",
+			"exposedAsJSToPages": [
+				"gpio"
+			]
+		},
 		"FPP_UUID": {
 			"name": "FPP_UUID",
-			"description": "UUID to use for stats collection",
+			"description": "Override UUID",
 			"gatherStats": true,
-			"tip": "FPP UUID to use for stats collection.  This will override using the serial number from /proc/cpuinfo or dmidecode.",
-			"level": 3,
+			"tip": "FPP UUID to use for FPP Connect de-duplication, stats, and services.  This will override using the serial number from /proc/cpuinfo or dmidecode.",
+			"level": 1,
 			"type": "text",
 			"size": 30,
-			"maxlength": 30
+			"maxlength": 30,
+			"default": "",
+			"reboot": 1
 		},
 		"fppMode": {
 			"name": "fppMode",
@@ -2045,6 +2082,14 @@
 			"size": 30,
 			"maxlength": 64
 		},
+		"UseNTPFromDHCP": {
+			"name": "UseNTPFromDHCP",
+			"description": "Use NTP Server from DHCP",
+			"tip": "When enabled, allows DHCP to provide NTP server information which will override the configured NTP server above. When disabled (default), only the configured NTP server will be used.",
+			"level": 1,
+			"type": "checkbox",
+			"default": 0
+		},
 		"openStartDelay": {
 			"name": "openStartDelay",
 			"description": "Open/Start Delay",
@@ -2293,6 +2338,22 @@
 				"!MacOS"
 			]
 		},
+                "KioskRotate": {
+                        "name": "KioskRotate",
+                        "description": "Rotate Kiosk if using Raspberry Pi Touch Display 2 7inch",
+                        "tip": "Click here if you have Raspberry Pi Touch Display 2",
+                        "level": 1,
+                        "gatherStats": true,
+                        "restart": 0,
+                        "reboot": 0,
+                        "checkedValue": "1",
+                        "uncheckedValue": "0",
+                        "default": "0",
+                        "type": "checkbox",
+                        "platforms": [
+                            "Raspberry Pi"
+                        ]
+                },
 		"Service_rsync": {
 			"name": "Service_rsync",
 			"description": "Enable rsync",

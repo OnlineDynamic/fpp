@@ -509,8 +509,17 @@
 
             // If panelWidth, panelHeight, and panelScan exist (from legacy channelOutputs), 
             // reconstruct ledPanelsSize from them instead of using defaults
+            // This handles the upgrade path from pre-v3 configs
             if (mp.panelWidth && mp.panelHeight && mp.panelScan) {
                 mp.ledPanelsSize = `${mp.panelWidth}x${mp.panelHeight}x${mp.panelScan}`;
+                if (mp.panelAddressing) {
+                    mp.ledPanelsSize += `x${mp.panelAddressing}`;
+                }
+            } else if (mp.LEDPanelsSize) {
+                // Handle uppercase LEDPanelsSize from PHP-side reconstruction
+                mp.ledPanelsSize = mp.LEDPanelsSize;
+                const sizeparts = mp.ledPanelsSize.split("x");
+                [mp.panelWidth, mp.panelHeight, mp.panelScan, mp.LEDPanelAddressing] = sizeparts.map(Number);
             } else {
                 mp.ledPanelsSize ||= LEDPanelDefaults.LEDPanelsSize;
                 const sizeparts = mp.ledPanelsSize.split("x");
@@ -2114,6 +2123,7 @@
                 html += "<option value='80x40x10'>80x40 1/10 Scan</option>"
                 html += "<option value='80x40x20'>80x40 1/20 Scan</option>"
             }
+            html += "<option value='128x64x16'>128x64 1/16 Scan</option>"
             html += "<option value='128x64x32'>128x64 1/32 Scan</option>"
         <? } ?>
 
@@ -2691,6 +2701,54 @@
         DisplaySaveWarningIfRequired();
     }
 
+    function CheckForOldConfigVersion() {
+        if (verboseDebug) {
+            console.trace("CheckForOldConfigVersion called");
+        }
+        
+        // Check if any matrix has an old config version
+        let hasOldVersion = false;
+        let oldVersionPanels = [];
+        
+        if (channelOutputs && channelOutputs.channelOutputs) {
+            channelOutputs.channelOutputs.forEach((output, index) => {
+                if (output.type === "LEDPanelMatrix") {
+                    const cfgVersion = output.cfgVersion || 1;
+                    const panelMatrixID = output.panelMatrixID || (index + 1);
+                    
+                    if (cfgVersion < 3) {
+                        hasOldVersion = true;
+                        oldVersionPanels.push({
+                            id: panelMatrixID,
+                            version: cfgVersion,
+                            name: output.LEDPanelMatrixName || `Panel Matrix ${panelMatrixID}`
+                        });
+                    }
+                }
+            });
+        }
+        
+        if (hasOldVersion) {
+            const panelList = oldVersionPanels.map(p => `${p.name} (v${p.version})`).join(", ");
+            const message = `Configuration upgrade detected: ${panelList}. Please review your panel settings and click Save to upgrade to config version 3.`;
+            
+            // Show warning banner
+            if ($('.configUpgradeWarning').length === 0) {
+                const warningHtml = `
+                    <div class="alert alert-warning alert-dismissible fade show configUpgradeWarning" role="alert" style="margin: 10px 0; color: #856404; background-color: #fff3cd; border-color: #ffeaa7;">
+                        <strong><i class="fas fa-exclamation-triangle"></i> Configuration Upgrade Required:</strong> 
+                        ${message}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                `;
+                $('#divLEDPanelMatrices').prepend(warningHtml);
+            }
+            
+            // Also trigger the standard save warning
+            DisplaySaveWarningIfRequired();
+        }
+    }
+
     $(document).ready(function () {
 
         <?
@@ -2727,6 +2785,9 @@
             ?>
             WarnIfSlowNIC(1);
             SetupToolTips();
+            
+            // Check for old config versions that need upgrading
+            CheckForOldConfigVersion();
         <? } else { ?> //No Panel Matrices Defined
             channelOutputsLookup["LEDPanelMatrices"] = {};
         <? } ?>

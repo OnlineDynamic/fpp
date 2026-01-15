@@ -15,6 +15,7 @@
 #include <httpserver.hpp>
 #include <list>
 #include <map>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -79,11 +80,18 @@ public:
             allowBlanks = ab;
             return *this;
         }
-        CommandArg& setContentList(const std::vector<std::string>& v) {
-            contentList = v;
+        CommandArg& setContentList(std::vector<std::string> v) {
+            contentList = std::move(v);
             return *this;
         }
-        CommandArg& setDefaultValue(const std::string& d) {
+        CommandArg& setContentListRange(std::span<const std::string_view> s) {
+            contentList.clear();
+            contentList.reserve(s.size());
+            for (auto& e : s)
+                contentList.emplace_back(e);
+            return *this;
+        }
+        CommandArg& setDefaultValue(std::string_view d) {
             defaultValue = d;
             return *this;
         }
@@ -129,6 +137,7 @@ public:
     void removeCommand(const std::string& cmdName);
 
     Json::Value getDescriptions();
+    bool HasPreset(const std::string& name);
 
     virtual std::unique_ptr<Command::Result> run(const std::string& command, const std::vector<std::string>& args);
     virtual std::unique_ptr<Command::Result> run(const std::string& command, const Json::Value& argsArray);
@@ -159,4 +168,5 @@ private:
     uint64_t lastPresetTimeStamp = 0;
 
     std::map<std::string, Command*> commands;
+    std::set<std::string> missingPresets;
 };

@@ -312,6 +312,8 @@ int VirtualDisplayBaseOutput::InitializePixelMap(void) {
 
     LoadBackgroundImage();
 
+    fclose(file);
+
     return 1;
 }
 

@@ -105,9 +105,9 @@ private:
     int m_outputs;
     int m_longestChain;
     int m_invertedData;
-    char* m_outputFrame;
-    Matrix* m_matrix;
-    PanelMatrix* m_panelMatrix;
+    std::unique_ptr<char[]> m_outputFrame;
+    std::unique_ptr<Matrix> m_matrix;
+    std::unique_ptr<PanelMatrix> m_panelMatrix;
     uint8_t m_gammaCurve[256];
     int m_flippedLayout;
     bool m_colorlightDisable;
@@ -127,8 +127,9 @@ private:
     struct ifreq m_if_idx;
     struct ifreq m_if_mac;
     struct ether_header* m_eh;
-    struct sockaddr_ll m_sock_addr;
 
     std::string m_autoCreatedModelName;
     std::list<std::string> m_warnings;
+
+    struct sockaddr_ll m_sock_addr;
 };

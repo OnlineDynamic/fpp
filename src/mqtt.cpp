@@ -204,7 +204,7 @@ int MosquittoClient::Init(const std::string& username, const std::string& passwo
     // Tell MQTT broker to make MQTT "ready" topic go to zero if crash or network loss
     static std::string last_ready_message = "0";
     static std::string last_ready_topic = m_baseTopic + "/" + MQTT_READY_TOPIC_NAME;
-    int rc = mosquitto_will_set(m_mosq, last_ready_topic.c_str(), last_ready_message.size(), last_ready_message.c_str(), 1, false);
+    int rc = mosquitto_will_set(m_mosq, last_ready_topic.c_str(), last_ready_message.size(), last_ready_message.c_str(), 1, true);
     if (rc != MOSQ_ERR_SUCCESS) {
         LogErr(VB_CONTROL, "MQTT: Unable to set last will for  %s. Error code: %d\n", MQTT_READY_TOPIC_NAME, rc);
     }
@@ -242,7 +242,12 @@ int MosquittoClient::PublishRaw(const std::string& topic, const std::string& msg
     pthread_mutex_unlock(&m_mosqLock);
 
     if (result != 0) {
-        LogErr(VB_CONTROL, "Error running mosquitto_publish: %d\n", result);
+        // MOSQ_ERR_NO_CONN (4) is expected when disconnected, don't spam logs
+        if (result == 4 && !m_isConnected) {
+            LogDebug(VB_CONTROL, "Cannot publish to MQTT, not connected to broker\n");
+        } else {
+            LogErr(VB_CONTROL, "Error running mosquitto_publish: %d\n", result);
+        }
         return 0;
     }
 
@@ -407,6 +412,15 @@ void MosquittoClient::HandleConnect() {
     }
 
     WarningHolder::RemoveWarning(4, "MQTT Disconnected");
+    
+    // Re-publish retained status messages on reconnection
+    // This ensures the broker has the current values after a network disconnection
+    // that may have triggered the last will (ready=0)
+    LogInfo(VB_CONTROL, "MQTT: Re-publishing retained status on reconnection\n");
+    Publish(MQTT_READY_TOPIC_NAME, 1, true, 1);
+    Publish("version", getFPPVersion(), true, 1);
+    Publish("branch", getFPPBranch(), true, 1);
+    
     LogInfo(VB_CONTROL, "MQTT HandleConnect Complete\n");
 }
 

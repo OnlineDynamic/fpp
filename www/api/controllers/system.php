@@ -378,6 +378,20 @@ function finalizeStatusJson($obj)
         $obj['restartFlag'] = 0;
     }
 
+    // Check if boot delay is in progress
+    $bootDelayFile = $settings['mediaDirectory'] . '/tmp/boot_delay';
+    if (file_exists($bootDelayFile)) {
+        $obj['bootDelayActive'] = 1;
+        $delayInfo = trim(file_get_contents($bootDelayFile));
+        $parts = explode(',', $delayInfo);
+        if (count($parts) == 2) {
+            $obj['bootDelayStart'] = intval($parts[0]);
+            $obj['bootDelayDuration'] = $parts[1]; // Could be number or "auto"
+        }
+    } else {
+        $obj['bootDelayActive'] = 0;
+    }
+
     //Get the advanced info directly as an array
     $request_expert_content = GetSystemInfoJsonInternal(isset($_GET['simple']), !isset($_GET['nonetwork']));
     //check we have valid data
@@ -387,6 +401,11 @@ function finalizeStatusJson($obj)
     //Add data into the final response, since we have the status as an array already then just add the expert view
     //Add a new key for the expert data to the original data array
     $obj['advancedView'] = $request_expert_content;
+    // Add plugin header indicators
+    if (!isset($_GET['noplugins'])) {
+        $obj['pluginHeaderIndicators'] = json_decode(GetPluginHeaderIndicators(), true);
+    }
+
 
     if (is_dir($settings['mediaDirectory'] . "/crashes")) {
         $num = count(glob($settings['mediaDirectory'] . "/crashes/*.zip"));
@@ -490,5 +509,22 @@ function GetOSPackageInfo()
     ]);
 }
 
+// Skip boot delay and start FPPD immediately
+function SkipBootDelay()
+{
+    global $settings;
+
+    $bootDelayFile = $settings['mediaDirectory'] . '/tmp/boot_delay';
+    $skipFile = $settings['mediaDirectory'] . '/tmp/boot_delay_skip';
+
+    if (!file_exists($bootDelayFile)) {
+        return json_encode(['status' => 'error', 'message' => 'No boot delay in progress']);
+    }
+
+    // Create skip flag file that FPPINIT will check for
+    file_put_contents($skipFile, '1');
+
+    return json_encode(['status' => 'OK', 'message' => 'Boot delay skip requested']);
+}
 
 

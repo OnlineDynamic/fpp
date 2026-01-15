@@ -520,6 +520,9 @@ function DoModalDialog (options) {
 		dlg.find('#modalCloseButton').prop('disabled', true);
 	}
 
+	var focus = options.focus;
+	delete options.focus;
+
 	if (typeof options.title === 'string') {
 		dlg.find('.modal-title').html(options.title);
 	}
@@ -530,6 +533,14 @@ function DoModalDialog (options) {
 
 	$('#' + options.id).on('shown.bs.modal', function () {
 		float_fppModalStickyThead();
+
+		// Now that the bootstrap is shown, focus the element if specified
+		if (typeof focus === 'function') {
+			focus = focus.call(self); // call the function to get the element to focus
+		}
+		if (typeof focus === 'string') {
+			$('#' + focus).focus();
+		}
 	});
 }
 function DisplayProgressDialog (id, title) {
@@ -2071,15 +2082,37 @@ function GetPlaylistRowHTML (ID, entry, editMode) {
 		HTML += " title='" + entry.note + "'";
 	HTML += '>';
 
-	if (entry.type == 'dynamic') {
-		HTML += psiDetailsForEntrySimple(entry, editMode);
+	// Determine display mode (default to argsOnly for backward compatibility)
+	var displayMode = entry.displayMode || 'argsOnly';
+	var noteText =
+		typeof entry.note == 'string' && entry.note != '' ? entry.note : '';
 
-		if (entry.hasOwnProperty('dynamic'))
-			HTML += psiDetailsForEntrySimple(entry.dynamic, editMode);
-	} else if (entry.type == 'branch') {
-		HTML += psiDetailsForEntrySimpleBranch(entry, editMode);
+	if (displayMode === 'justNote' && noteText) {
+		// Display only the note
+		HTML += "<span class='psiNote'>Note: " + noteText + '</span>';
+	} else if (displayMode === 'argsAndNote' && noteText) {
+		// Display args first, then note
+		if (entry.type == 'dynamic') {
+			HTML += psiDetailsForEntrySimple(entry, editMode);
+			if (entry.hasOwnProperty('dynamic'))
+				HTML += psiDetailsForEntrySimple(entry.dynamic, editMode);
+		} else if (entry.type == 'branch') {
+			HTML += psiDetailsForEntrySimpleBranch(entry, editMode);
+		} else {
+			HTML += psiDetailsForEntrySimple(entry, editMode);
+		}
+		HTML += " <span class='psiNote'>Note: " + noteText + '</span>';
 	} else {
-		HTML += psiDetailsForEntrySimple(entry, editMode);
+		// Default: argsOnly - display just the args (current behavior)
+		if (entry.type == 'dynamic') {
+			HTML += psiDetailsForEntrySimple(entry, editMode);
+			if (entry.hasOwnProperty('dynamic'))
+				HTML += psiDetailsForEntrySimple(entry.dynamic, editMode);
+		} else if (entry.type == 'branch') {
+			HTML += psiDetailsForEntrySimpleBranch(entry, editMode);
+		} else {
+			HTML += psiDetailsForEntrySimple(entry, editMode);
+		}
 	}
 	HTML += '</div>';
 
@@ -2161,8 +2194,17 @@ function PlaylistTypeChanged () {
 		$('#autoSelectMatches').prop('checked', true);
 	}
 
+	if (type == 'both' || type == 'sequence') {
+		$('#filterSequencesWrapper').show();
+	}
+
 	if (oldSequence != '') {
 		$('.arg_sequenceName').val(oldSequence);
+	}
+
+	// If no sequence is selected (e.g., old sequence was filtered out), select the first one
+	if ($('.arg_sequenceName').length && !$('.arg_sequenceName').val()) {
+		$('.arg_sequenceName').prop('selectedIndex', 0);
 	}
 
 	if (oldMedia != '') {
@@ -2189,11 +2231,11 @@ function PlaylistNameOK (name) {
 function LoadPlaylistDetails (name) {
 	$.get('api/playlist/' + name)
 		.done(function (data) {
-			PopulatePlaylistDetails(data, 1, name);
-			RenumberPlaylistEditorEntries();
-			UpdatePlaylistDurations();
-			VerbosePlaylistItemDetailsToggled();
-			//$("#tblPlaylistLeadInHeader").get(0).scrollIntoView();
+			// Use setTimeout to allow UI to update before heavy DOM manipulation
+			setTimeout(function () {
+				PopulatePlaylistDetails(data, 1, name);
+				//$("#tblPlaylistLeadInHeader").get(0).scrollIntoView();
+			}, 0);
 		})
 		.fail(function () {
 			DialogError('Error loading playlist', 'Error loading playlist details!');
@@ -2250,6 +2292,15 @@ function EditPlaylist () {
 
 	LoadPlaylistDetails(name);
 	$('#playlistEditor').addClass('hasPlaylistDetailsLoaded');
+
+	// Push history state so browser back button works
+	if (window.location.pathname.includes('playlists.php')) {
+		history.pushState(
+			{ view: 'editor', playlist: name },
+			'',
+			window.location.href
+		);
+	}
 }
 function SetButtonState (button, state) {
 	// Enable Button
@@ -2334,7 +2385,10 @@ function UpdatePlaylistDurations () {
 
 		$('.playlistDuration' + sections[s]).html(SecondsToHuman(duration));
 
+		// Store raw duration values for v4 playlist format
 		if (sections[s] == 'MainPlaylist') $('#playlistDuration').html(duration);
+		if (sections[s] == 'LeadIn') $('#playlistDurationLeadIn').html(duration);
+		if (sections[s] == 'LeadOut') $('#playlistDurationLeadOut').html(duration);
 	}
 }
 
@@ -2813,10 +2867,9 @@ function SavePlaylistAs (name, options, callback) {
 	var itemCount = 0;
 	var pl = {};
 	pl.name = name;
-	pl.version = 3; // v1 == CSV, v2 == JSON, v3 == deprecated some things
+	pl.version = 4; // v1 == CSV, v2 == JSON, v3 == deprecated some things, v4 == per-section stats in playlistInfo
 	pl.repeat = 0; // currently unused by player
 	pl.loopCount = 0; // currently unused by player
-	pl.empty = false;
 	pl.desc = $('#txtPlaylistDesc').val();
 	pl.random = parseInt($('#randomizePlaylist').prop('value'));
 	if (typeof options === 'object') {
@@ -2828,24 +2881,70 @@ function SavePlaylistAs (name, options, callback) {
 	var leadOut = [];
 	var playlistInfo = {};
 
-	if (pl.empty == false) {
-		$('#tblPlaylistLeadIn > tr:not(.unselectable)').each(function () {
-			leadIn.push(GetPlaylistEntry(this));
-		});
+	// Collect all playlist entries
+	$('#tblPlaylistLeadIn > tr:not(.unselectable)').each(function () {
+		leadIn.push(GetPlaylistEntry(this));
+	});
 
-		$('#tblPlaylistMainPlaylist > tr:not(.unselectable)').each(function () {
-			mainPlaylist.push(GetPlaylistEntry(this));
-		});
+	$('#tblPlaylistMainPlaylist > tr:not(.unselectable)').each(function () {
+		mainPlaylist.push(GetPlaylistEntry(this));
+	});
 
-		$('#tblPlaylistLeadOut > tr:not(.unselectable)').each(function () {
-			leadOut.push(GetPlaylistEntry(this));
-		});
+	$('#tblPlaylistLeadOut > tr:not(.unselectable)').each(function () {
+		leadOut.push(GetPlaylistEntry(this));
+	});
 
-		playlistInfo.total_duration = parseFloat($('#playlistDuration').html());
-		playlistInfo.total_items = mainPlaylist.length;
-	} else {
+	// Determine if playlist is empty based on actual content
+	pl.empty =
+		leadIn.length === 0 && mainPlaylist.length === 0 && leadOut.length === 0;
+
+	if (pl.empty) {
+		// v4 format: per-section stats
 		playlistInfo.total_duration = parseFloat(0);
 		playlistInfo.total_items = 0;
+		playlistInfo.leadIn_duration = parseFloat(0);
+		playlistInfo.leadIn_items = 0;
+		playlistInfo.mainPlaylist_duration = parseFloat(0);
+		playlistInfo.mainPlaylist_items = 0;
+		playlistInfo.leadOut_duration = parseFloat(0);
+		playlistInfo.leadOut_items = 0;
+	} else {
+		// Calculate durations from collected entries
+		var leadInDuration = 0;
+		for (var i = 0; i < leadIn.length; i++) {
+			if (leadIn[i].hasOwnProperty('duration') && leadIn[i].duration > 0) {
+				leadInDuration += leadIn[i].duration;
+			}
+		}
+
+		var mainDuration = 0;
+		for (var i = 0; i < mainPlaylist.length; i++) {
+			if (
+				mainPlaylist[i].hasOwnProperty('duration') &&
+				mainPlaylist[i].duration > 0
+			) {
+				mainDuration += mainPlaylist[i].duration;
+			}
+		}
+
+		var leadOutDuration = 0;
+		for (var i = 0; i < leadOut.length; i++) {
+			if (leadOut[i].hasOwnProperty('duration') && leadOut[i].duration > 0) {
+				leadOutDuration += leadOut[i].duration;
+			}
+		}
+
+		// v4 format: per-section stats
+		playlistInfo.leadIn_duration = leadInDuration;
+		playlistInfo.leadIn_items = leadIn.length;
+		playlistInfo.mainPlaylist_duration = mainDuration;
+		playlistInfo.mainPlaylist_items = mainPlaylist.length;
+		playlistInfo.leadOut_duration = leadOutDuration;
+		playlistInfo.leadOut_items = leadOut.length;
+		playlistInfo.total_duration =
+			leadInDuration + mainDuration + leadOutDuration;
+		playlistInfo.total_items =
+			leadIn.length + mainPlaylist.length + leadOut.length;
 	}
 	pl.leadIn = leadIn;
 	pl.mainPlaylist = mainPlaylist;
@@ -3231,7 +3330,8 @@ function ChangeGitBranch (newBranch) {
 		)
 	) {
 		var remote = $('#gitRemote').val() || 'origin';
-		location.href = 'changebranch.php?branch=' + newBranch + '&remote=' + remote;
+		location.href =
+			'changebranch.php?branch=' + newBranch + '&remote=' + remote;
 	} else {
 		location.reload(true);
 	}
@@ -3376,7 +3476,7 @@ function IPOutputTypeChanged (item, input) {
 			$(item).parent().parent().find('input.pingButton').prop('hidden', false);
 		}
 	} else {
-		// 0,1 = E1.31, 2,3 = Artnet, 6,7 = KiNet
+		// 0,1 = E1.31, 2,3,9 = Artnet, 6,7 = KiNet
 		var univ = $(item).parent().parent().find('input.txtUniverse');
 		univ.prop('hidden', false);
 		if (type <= 1 && parseInt(univ.val()) < 1) {
@@ -3418,7 +3518,7 @@ function IPOutputTypeChanged (item, input) {
 			}
 
 			var universe = $(item).parent().parent().find('input.txtUniverse');
-			if (type == 2 || type == 3) {
+			if (type == 2 || type == 3 || type == 9) {
 				universe.prop('min', 0);
 			} else {
 				universe.prop('min', 1);
@@ -3494,6 +3594,7 @@ function populateUniverseData (data, reload, input) {
 		var typeKiNet1 = type == 6 ? 'selected' : '';
 		var typeKiNet2 = type == 7 ? 'selected' : '';
 		var typeTwinkly = type == 8 ? 'selected' : '';
+		var typeUniqueArtNet = type == 9 ? 'selected' : '';
 		var monitor = 1;
 		if (universe.monitor != null) {
 			monitor = universe.monitor;
@@ -3518,7 +3619,7 @@ function populateUniverseData (data, reload, input) {
 			hasMCBC = true;
 		}
 		var minNum = 1;
-		if (type == 2 || type == 3) {
+		if (type == 2 || (type == 3) | (type == 9)) {
 			minNum = 0;
 		}
 		if (type == 0 || type == 2) {
@@ -3540,7 +3641,7 @@ function populateUniverseData (data, reload, input) {
 			"<td><input class='txtDesc' type='text' size='24' maxlength='64' value='" +
 			desc +
 			"'/></td>";
-		bodyHTML += "<td><select class='universeType' style='width:150px'";
+		bodyHTML += "<td><select class='universeType'";
 
 		if (input) {
 			bodyHTML +=
@@ -3570,6 +3671,9 @@ function populateUniverseData (data, reload, input) {
 				'>ArtNet - Broadcast</option>' +
 				"<option value='3' " +
 				typeUnicastArtNet +
+				'>ArtNet - Unicast/ArtNet Port</option>' +
+				"<option value='9' " +
+				typeUniqueArtNet +
 				'>ArtNet - Unicast</option>' +
 				"<option value='4' " +
 				typeDDPR +
@@ -4526,12 +4630,59 @@ function GetFPPStatus () {
 			if (!('warningInfo' in response)) {
 				response.warningInfo = [];
 			}
-			response.warnings.push('FPPD Daemon is not running');
-			response.warningInfo.push({
-				message: 'FPPD Daemon is not running',
-				id: 1
-			});
+			// Check if boot delay is active
+			if (response.bootDelayActive == 1) {
+				var message =
+					'Boot Delay in Progress - FPPD will start when delay completes';
 
+				// Calculate remaining time if we have timing info
+				if (response.bootDelayStart && response.bootDelayDuration) {
+					var currentTime = Math.floor(Date.now() / 1000);
+					var elapsed = currentTime - response.bootDelayStart;
+
+					if (response.bootDelayDuration === 'auto') {
+						message =
+							'Boot Delay in Progress - Waiting for valid system time (max 5 minutes)';
+						var maxDuration = 300; // 5 minutes
+						var remaining = Math.max(0, maxDuration - elapsed);
+						if (remaining > 0) {
+							var mins = Math.floor(remaining / 60);
+							var secs = remaining % 60;
+							message +=
+								' - ' + (mins > 0 ? mins + 'm ' : '') + secs + 's remaining';
+						}
+					} else {
+						var duration = parseInt(response.bootDelayDuration);
+						var remaining = Math.max(0, duration - elapsed);
+						if (remaining > 0) {
+							var mins = Math.floor(remaining / 60);
+							var secs = remaining % 60;
+							message =
+								'Boot Delay in Progress - ' +
+								(mins > 0 ? mins + 'm ' : '') +
+								secs +
+								's remaining';
+						}
+					}
+				}
+
+				// Add Boot Now button to the message
+				message +=
+					' <button class="btn btn-success btn-xs ml-2" onclick="SkipBootDelay()"><i class="fas fa-play"></i> Boot Now</button>';
+
+				response.warnings.push(message);
+				// Use id 0 to avoid the click-through handler which mangles HTML in the message
+				response.warningInfo.push({
+					message: message,
+					id: 0
+				});
+			} else {
+				response.warnings.push('FPPD Daemon is not running');
+				response.warningInfo.push({
+					message: 'FPPD Daemon is not running',
+					id: 1
+				});
+			}
 			$.get('api/system/volume')
 				.done(function (data) {
 					updateVolumeUI(parseInt(data.volume));
@@ -4611,6 +4762,21 @@ function updateWarnings (jsonStatus) {
 				}
 			});
 		}
+
+		// Add blocked schedule warning if present
+		if (jsonStatus.scheduler && jsonStatus.scheduler.blockedSchedule) {
+			var blockedWarning = {
+				id: 0,
+				message:
+					"Scheduled playlist '" +
+					jsonStatus.scheduler.blockedSchedule.playlistName +
+					"' was blocked from starting due to schedule protection on manually started playlist.",
+				icon: 'fas fa-exclamation-triangle'
+			};
+			// Add at the beginning of the warnings array
+			currentWarnings = [blockedWarning].concat(currentWarnings);
+		}
+
 		var txt =
 			'<b>Abnormal Conditions - May cause poor performance or other issues';
 		var hasID = false;
@@ -5455,6 +5621,16 @@ function SetSetting (
 		success: function () {
 			settings[key] = value;
 			if (key != 'restartFlag' && key != 'rebootFlag') {
+				// Set restart/reboot flags BEFORE callback to ensure they're saved
+				// even if callback reloads the page
+				if (restart > 0 && restart != settings['restartFlag']) {
+					SetRestartFlag(restart);
+				}
+				if (reboot > 0 && reboot != settings['rebootFlag']) {
+					SetRebootFlag(restart);
+				}
+				CheckRestartRebootFlags();
+
 				if (!hideChange) {
 					if (isBool === null) {
 						$.jGrowl(key + ' setting saved.', { themeState: 'success' });
@@ -5468,13 +5644,6 @@ function SetSetting (
 					callback();
 				}
 			}
-			if (restart > 0 && restart != settings['restartFlag']) {
-				SetRestartFlag(restart);
-			}
-			if (reboot > 0 && reboot != settings['rebootFlag']) {
-				SetRebootFlag(restart);
-			}
-			CheckRestartRebootFlags();
 		}
 	}).fail(function () {
 		if (isBool === null) {
@@ -5508,6 +5677,16 @@ function SetPluginSetting (
 		async: false,
 		success: function () {
 			if (key != 'restartFlag' && key != 'rebootFlag') {
+				// Set restart/reboot flags BEFORE callback to ensure they're saved
+				// even if callback reloads the page
+				if (restart > 0 && restart != settings['restartFlag']) {
+					SetRestartFlag(restart);
+				}
+				if (reboot > 0 && reboot != settings['rebootFlag']) {
+					SetRebootFlag(restart);
+				}
+				CheckRestartRebootFlags();
+
 				if (isBool === null) {
 					$.jGrowl(key + ' setting saved.', { themeState: 'success' });
 				} else if (isBool) {
@@ -5519,13 +5698,6 @@ function SetPluginSetting (
 					callback();
 				}
 			}
-			if (restart > 0 && restart != settings['restartFlag']) {
-				SetRestartFlag(restart);
-			}
-			if (reboot > 0 && reboot != settings['rebootFlag']) {
-				SetRebootFlag(restart);
-			}
-			CheckRestartRebootFlags();
 		}
 	}).fail(function () {
 		if (isBool === null) {
@@ -5678,6 +5850,18 @@ function CheckRestartRebootFlags () {
 		// Adjust the scroll up text to match state.
 		setTopScrollText();
 	}
+}
+
+function SkipBootDelay () {
+	$.post('api/system/fppd/skipBootDelay')
+		.done(function (data) {
+			$.jGrowl('Boot delay skip requested - FPPD will start shortly', {
+				themeState: 'success'
+			});
+		})
+		.fail(function () {
+			DialogError('Skip Boot Delay', 'Failed to skip boot delay');
+		});
 }
 
 function RestartFPPD () {
@@ -5898,7 +6082,17 @@ function PopulatePlaylists (sequencesAlso, options) {
 } */
 
 function PlayPlaylist (Playlist, goToStatus = 0) {
-	$.get('api/command/Start Playlist/' + Playlist + '/0', function () {
+	// Check if UI-started playlists should be protected from schedule override
+	var scheduleProtected =
+		settings.hasOwnProperty('UIStartedPlaylistsProtected') &&
+		settings['UIStartedPlaylistsProtected'] == '1';
+
+	var url =
+		'api/command/Start Playlist/' +
+		Playlist +
+		'/0/false/' +
+		(scheduleProtected ? 'true' : 'false');
+	$.get(url, function () {
 		if (goToStatus) location.href = 'index.php';
 		else $.jGrowl('Playlist Started', { themeState: 'success' });
 	});
@@ -5907,9 +6101,14 @@ function PlayPlaylist (Playlist, goToStatus = 0) {
 function StartPlaylistNow () {
 	var Playlist = $('#playlistSelect').val();
 	var repeat = $('#chkRepeat').is(':checked') ? true : false;
+	// Check if UI-started playlists should be protected from schedule override
+	var scheduleProtected =
+		settings.hasOwnProperty('UIStartedPlaylistsProtected') &&
+		settings['UIStartedPlaylistsProtected'] == '1';
+
 	var obj = {
 		command: 'Start Playlist At Item',
-		args: [Playlist, PlayEntrySelected, repeat, false]
+		args: [Playlist, PlayEntrySelected, repeat, false, scheduleProtected]
 	};
 	$.post('api/command', JSON.stringify(obj))
 		.done(function () {
@@ -6352,17 +6551,16 @@ function PopulatePlaylistDetails (data, editMode, name = '') {
 	if (!editMode) $('#deprecationWarning').hide(); // will re-show if we find any
 
 	var sections = ['leadIn', 'mainPlaylist', 'leadOut'];
-	for (var s = 0; s < sections.length; s++) {
-		var idPart = sections[s].charAt(0).toUpperCase() + sections[s].slice(1);
+
+	// Build all HTML first (fast, synchronous)
+	for (let s = 0; s < sections.length; s++) {
+		let idPart = sections[s].charAt(0).toUpperCase() + sections[s].slice(1);
 
 		if (data.hasOwnProperty(sections[s]) && data[sections[s]].length > 0) {
+			let sectionData = data[sections[s]];
 			innerHTML = '';
-			for (i = 0; i < data[sections[s]].length; i++) {
-				innerHTML += GetPlaylistRowHTML(
-					entries,
-					data[sections[s]][i],
-					editMode
-				);
+			for (var i = 0; i < sectionData.length; i++) {
+				innerHTML += GetPlaylistRowHTML(entries, sectionData[i], editMode);
 				entries++;
 			}
 			$('#tblPlaylist' + idPart).html(innerHTML);
@@ -6377,10 +6575,6 @@ function PopulatePlaylistDetails (data, editMode, name = '') {
 						idPart +
 						"PlaceHolder' class='unselectable'><td>&nbsp;</td></tr>"
 				);
-
-			$('#tblPlaylist' + idPart + ' > tr').each(function () {
-				PopulatePlaylistItemDuration($(this), editMode);
-			});
 		} else {
 			$('#tblPlaylist' + idPart).html('');
 			if (editMode) {
@@ -6401,6 +6595,13 @@ function PopulatePlaylistDetails (data, editMode, name = '') {
 			}
 		}
 	}
+
+	RenumberPlaylistEditorEntries();
+	UpdatePlaylistDurations();
+	VerbosePlaylistItemDetailsToggled();
+
+	// Don't fetch durations on load - they're already in the JSON data
+	// Only fetch when explicitly needed (like when adding new items)
 
 	if (!editMode) {
 		gblCurrentLoadedPlaylist = data.name;
@@ -6747,6 +6948,138 @@ function TailFile (dir, file, lines) {
 	// console.log(url);
 	ViewFileImpl(url, file);
 }
+
+var tailFollowEventSource = null;
+var TAIL_FOLLOW_MAX_LINES = 1000;
+
+function TailFollowFile (dir, file, lines = 50) {
+	var url =
+		'api/file/' +
+		dir +
+		'/tailfollow/' +
+		encodeURIComponent(file).replaceAll('%2F', '/') +
+		'?lines=' +
+		lines;
+
+	var options = {
+		id: 'tailFollowDialog',
+		title: 'Tail Follow: ' + file,
+		body: "<pre id='tailFollowText' class='fileText' style='margin: 0; padding: 10px; background: #000; color: #0f0; max-height: 65vh; overflow-y: auto; overflow-anchor: none; font-family: monospace; white-space: pre-wrap; word-wrap: break-word;'></pre>",
+		class: 'modal-xl',
+		keyboard: false,
+		backdrop: 'static',
+		buttons: {
+			Stop: {
+				id: 'tailFollowStopButton',
+				click: function () {
+					if (tailFollowEventSource) {
+						tailFollowEventSource.close();
+						tailFollowEventSource = null;
+						$('#tailFollowStopButton')
+							.text('Start')
+							.removeClass('btn-danger')
+							.addClass('btn-success');
+						var pre = document.getElementById('tailFollowText');
+						if (pre) {
+							pre.textContent += '\n--- Streaming stopped ---\n';
+						}
+					} else {
+						// Restart
+						$('#tailFollowStopButton')
+							.text('Stop')
+							.removeClass('btn-success')
+							.addClass('btn-danger');
+						var pre = document.getElementById('tailFollowText');
+						if (pre) {
+							pre.textContent += '\n--- Restarting stream ---\n';
+						}
+						startTailFollowStream(url);
+					}
+				},
+				class: 'btn-danger'
+			},
+			Close: {
+				id: 'tailFollowCloseButton',
+				click: function () {
+					if (tailFollowEventSource) {
+						tailFollowEventSource.close();
+						tailFollowEventSource = null;
+					}
+					CloseModalDialog('tailFollowDialog');
+				},
+				class: 'btn-secondary'
+			}
+		}
+	};
+
+	DoModalDialog(options);
+
+	// Reset button state
+	$('#tailFollowStopButton')
+		.text('Stop')
+		.removeClass('btn-success')
+		.addClass('btn-danger')
+		.prop('disabled', false);
+
+	// Clean up on modal close
+	$('#tailFollowDialog')
+		.off('hidden.bs.modal.tailfollow')
+		.on('hidden.bs.modal.tailfollow', function () {
+			if (tailFollowEventSource) {
+				tailFollowEventSource.close();
+				tailFollowEventSource = null;
+			}
+		});
+	$('#tailFollowDialog').one('shown.bs.modal', function () {
+		startTailFollowStream(url);
+	});
+}
+
+function startTailFollowStream (url) {
+	if (tailFollowEventSource) {
+		tailFollowEventSource.close();
+	}
+
+	tailFollowEventSource = new EventSource(url);
+	var outputArea = document.getElementById('tailFollowText');
+	var lineCount = 0;
+
+	tailFollowEventSource.onmessage = function (event) {
+		if (outputArea && event.data) {
+			outputArea.textContent += event.data + '\n';
+			lineCount++;
+
+			// Trim if exceeds max lines (keep most recent)
+			if (lineCount > TAIL_FOLLOW_MAX_LINES) {
+				var lines = outputArea.textContent.split('\n');
+				var trimmed = lines.slice(-TAIL_FOLLOW_MAX_LINES);
+				outputArea.textContent =
+					'... (older content trimmed) ...\n' + trimmed.join('\n');
+				lineCount = TAIL_FOLLOW_MAX_LINES;
+			}
+
+			// Auto-scroll to bottom (deferred for cross-platform reliability)
+			requestAnimationFrame(function () {
+				outputArea.scrollTop = outputArea.scrollHeight;
+			});
+		}
+	};
+
+	tailFollowEventSource.onerror = function (error) {
+		if (outputArea) {
+			outputArea.textContent += '\n--- Connection error or stream ended ---\n';
+		}
+		if (tailFollowEventSource) {
+			tailFollowEventSource.close();
+			tailFollowEventSource = null;
+		}
+		$('#tailFollowStopButton')
+			.text('Start')
+			.removeClass('btn-danger')
+			.addClass('btn-success');
+	};
+}
+
 function ViewFileImpl (url, file, html = '') {
 	var options = {
 		id: 'fileViewerDialog',
@@ -7778,6 +8111,24 @@ function PrintArgInputs (tblCommand, configAdjustable, args, startCount = 1) {
 		$('#' + tblCommand).append(line);
 		if (typeof val['contentListUrl'] != 'undefined') {
 			var selId = '#' + tblCommand + '_arg_' + count + contentListPostfix;
+
+			// Check if we should filter used sequences - reuse existing GetPlaylistEntry()
+			var filterSequences = [];
+			if (
+				val['contentListUrl'].includes('sequences') &&
+				$('#filterUsedSequences').length &&
+				$('#filterUsedSequences').is(':checked')
+			) {
+				$(
+					'#tblPlaylistLeadIn > tr:not(.unselectable), #tblPlaylistMainPlaylist > tr:not(.unselectable), #tblPlaylistLeadOut > tr:not(.unselectable)'
+				).each(function () {
+					var entry = GetPlaylistEntry(this);
+					if (entry.sequenceName) {
+						filterSequences.push(entry.sequenceName);
+					}
+				});
+			}
+
 			$.ajax({
 				dataType: 'json',
 				url: val['contentListUrl'],
@@ -7785,6 +8136,10 @@ function PrintArgInputs (tblCommand, configAdjustable, args, startCount = 1) {
 				success: function (data) {
 					if (Array.isArray(data)) {
 						$.each(data, function (key, v) {
+							// Skip if filtering and sequence is already used
+							if (filterSequences.length > 0 && filterSequences.includes(v)) {
+								return true; // continue to next iteration
+							}
 							var line = '<option value="' + v.replace('"', '&quot;') + '"';
 							if (v == dv) {
 								line += ' selected';
@@ -7797,6 +8152,10 @@ function PrintArgInputs (tblCommand, configAdjustable, args, startCount = 1) {
 						});
 					} else {
 						$.each(data, function (key, v) {
+							// Skip if filtering and sequence is already used
+							if (filterSequences.length > 0 && filterSequences.includes(key)) {
+								return true; // continue to next iteration
+							}
 							var line = '<option value="' + key.replace('"', '&quot;') + '"';
 							if (key == dv) {
 								line += ' selected';
@@ -8134,10 +8493,38 @@ function FillInCommandTemplate (row, data) {
 		row.find('.cmdTmplName').val(data.name);
 	}
 
+	// Check if command exists in the command list
+	var commandExists =
+		data.command !== '' && commandListByName.hasOwnProperty(data.command);
+
+	// If command doesn't exist in the dropdown, add it as a disabled option
+	if (data.command !== '' && !commandExists) {
+		var $select = row.find('.cmdTmplCommand');
+		// Remove any previously added invalid option to avoid duplicates
+		$select.find('option.invalidCommandOption').remove();
+		// Add the invalid command as a disabled option
+		$select.prepend(
+			'<option class="invalidCommandOption" value="' +
+				data.command +
+				'" disabled>' +
+				data.command +
+				' (unavailable)</option>'
+		);
+	}
+
 	row.find('.cmdTmplCommand').val(data.command);
 
 	if (data.hasOwnProperty('presetSlot'))
 		row.find('.cmdTmplPresetSlot').val(data.presetSlot);
+
+	// Add visual indicator if command is missing
+	if (data.command !== '' && !commandExists) {
+		row.addClass('commandPresetInvalidCommand');
+		row.find('.cmdTmplCommand').css('background-color', '#ffcccc');
+	} else {
+		row.removeClass('commandPresetInvalidCommand');
+		row.find('.cmdTmplCommand').css('background-color', '');
+	}
 
 	if (data.args.length) {
 		var args = '';
@@ -8182,30 +8569,41 @@ function FillInCommandTemplate (row, data) {
 	if (json != '') {
 		var data = JSON.parse(json);
 		if (data.command != '') {
-			tip =
-				"<span class='tooltipSpan' style='display: block; text-align: left;'><b>Command: </b>" +
-				data.command +
-				'<br>';
+			// Check if command exists before accessing its properties
+			if (!commandExists) {
+				tip =
+					"<span class='tooltipSpan' style='display: block; text-align: left; color: red;'><b>WARNING: Command not available</b><br>" +
+					'<b>Command: </b>' +
+					data.command +
+					'<br>' +
+					'This command is not currently available. It may be from a disabled plugin or require additional configuration (e.g., MQTT).' +
+					'</span>';
+			} else {
+				tip =
+					"<span class='tooltipSpan' style='display: block; text-align: left;'><b>Command: </b>" +
+					data.command +
+					'<br>';
 
-			if (data.hasOwnProperty('multisyncCommand')) {
-				tip += '<b>Multisync: </b>';
-				if (data.multisyncCommand) tip += 'Yes';
-				else tip += 'No';
+				if (data.hasOwnProperty('multisyncCommand')) {
+					tip += '<b>Multisync: </b>';
+					if (data.multisyncCommand) tip += 'Yes';
+					else tip += 'No';
 
-				tip += '<br>';
+					tip += '<br>';
 
-				if (data.hasOwnProperty('multisyncHosts')) {
-					tip += '<b>Multisync Hosts: </b>' + data.multisyncHosts + '<br>';
+					if (data.hasOwnProperty('multisyncHosts')) {
+						tip += '<b>Multisync Hosts: </b>' + data.multisyncHosts + '<br>';
+					}
 				}
-			}
-			var args = commandListByName[data.command]['args'];
-			if (data.args.length) {
-				for (var j = 0; j < args.length; j++) {
-					tip +=
-						'<b>' + args[j]['description'] + ': </b>' + data.args[j] + '<br>';
+				var args = commandListByName[data.command]['args'];
+				if (data.args.length) {
+					for (var j = 0; j < args.length; j++) {
+						tip +=
+							'<b>' + args[j]['description'] + ': </b>' + data.args[j] + '<br>';
+					}
 				}
+				tip += '</span>';
 			}
-			tip += '</span>';
 		}
 	}
 
@@ -8327,7 +8725,7 @@ function PreviewSchedule () {
 		id: 'schedulePreview',
 		title: 'Schedule Preview',
 		body: "<div id='schedulePreviewDiv'> " + response + '</div>',
-		class: 'modal-dialog-scrollable',
+		class: 'modal-xl',
 		keyboard: true,
 		backdrop: true
 	};
@@ -8406,6 +8804,16 @@ function OnSystemStatusChange (funcToCall) {
 }
 
 /*
+ * Helper function to format IP address with CIDR notation
+ */
+function formatIPWithCIDR (ip, prefixlen) {
+	if (prefixlen !== undefined && prefixlen !== null) {
+		return ip + '/' + prefixlen;
+	}
+	return ip;
+}
+
+/*
  * Called each time the system status JSON is updated to refresh icons in the header bar.
  */
 var headerCache = {}; // Used to cache what we've displayed on screen so we only update it if it has changed
@@ -8466,11 +8874,12 @@ function RefreshHeaderBar () {
 							e.ifname.startsWith('SoftAp') ||
 							e.ifname.startsWith('tether'))
 					) {
+						var ipWithCIDR = formatIPWithCIDR(n.local, n.prefixlen);
 						var row =
 							'<span ifname="' +
 							e.ifname +
 							'" class="ipTooltip" data-bs-toggle="tooltip" data-bs-html="true" data-bs-placement="bottom" data-bs-title="Tether IP: ' +
-							n.local +
+							ipWithCIDR +
 							'"><i class="fas fa-broadcast-tower"></i><small>' +
 							e.ifname +
 							'<div class="divIPAddress">: ' +
@@ -8478,11 +8887,12 @@ function RefreshHeaderBar () {
 							'</div></small></span>';
 						rc.push(row);
 					} else if (n.family === 'inet' && 'wifi' in e) {
+						var ipWithCIDR = formatIPWithCIDR(n.local, n.prefixlen);
 						var row =
 							'<span ifname="' +
 							e.ifname +
 							'" class="ipTooltip" data-bs-toggle="tooltip" data-bs-html="true" data-bs-placement="bottom" data-bs-title="IP: ' +
-							n.local +
+							ipWithCIDR +
 							'<br/>Strength: ' +
 							e.wifi.level +
 							e.wifi.unit +
@@ -8505,11 +8915,12 @@ function RefreshHeaderBar () {
 						} else if (e.flags.includes('STATIC') && e.operstate != 'UP') {
 							icon = 'text-danger';
 						}
+						var ipWithCIDR = formatIPWithCIDR(n.local, n.prefixlen);
 						var row =
 							'<span ifname="' +
 							e.ifname +
 							'" class="ipTooltip" data-bs-toggle="tooltip" data-bs-html="true" data-bs-placement="bottom" data-bs-title="IP: ' +
-							n.local +
+							ipWithCIDR +
 							'" ><i class="fas fa-network-wired ' +
 							icon +
 							'"></i><small>' +
@@ -8642,6 +9053,49 @@ function RefreshHeaderBar () {
 			headerCache.Player = row;
 		}
 	}
+	// Render plugin header indicators
+	if (data.pluginHeaderIndicators != undefined) {
+		var indicators = [];
+		data.pluginHeaderIndicators.forEach(function (indicator) {
+			if (indicator && indicator.visible) {
+				var icon = indicator.icon || 'fa-puzzle-piece';
+				var color = indicator.color || '#999';
+				var tooltip = indicator.tooltip || 'Plugin Indicator';
+				var link = indicator.link || '#';
+				var animate = indicator.animate || '';
+				var animStyle = animate
+					? ' style="animation: ' + animate + ' 2s infinite;"'
+					: '';
+
+				var row =
+					'<span class="pluginIndicator headerBox" data-plugin="' +
+					indicator.pluginName +
+					'"' +
+					' style="cursor: pointer; color: ' +
+					color +
+					'; margin-left: 5px; transition: color 0.3s ease;"' +
+					' title="' +
+					tooltip +
+					'"' +
+					' onclick="window.location.href=\'' +
+					link +
+					'\'">' +
+					'<i class="fas ' +
+					icon +
+					'"' +
+					animStyle +
+					'></i>' +
+					'</span>';
+				indicators.push(row);
+			}
+		});
+		var indicatorsJoined = indicators.join('');
+		if (headerCache.PluginIndicators != indicatorsJoined) {
+			$('#header_plugin_indicators').html(indicatorsJoined);
+			headerCache.PluginIndicators = indicatorsJoined;
+		}
+	}
+
 	if (data.mode_name != undefined) {
 		$('#fppModeDropdownButtonModeText').html(
 			data.mode_name == 'player' ? 'Player' : data.mode_name

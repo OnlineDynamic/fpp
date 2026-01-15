@@ -12,6 +12,11 @@
 
 #include "fpp-pch.h"
 
+#ifndef PLATFORM_OSX
+#include <linux/sockios.h>
+#include <sys/ioctl.h>
+#endif
+
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -71,14 +76,17 @@ public:
         curSocket = -1;
     }
     ~SendSocketInfo() {
-        for (int x : sockets) {
-            close(x);
+        if (!preventClose) {
+            for (int x : sockets) {
+                close(x);
+            }
         }
     }
 
     std::vector<int> sockets;
     int errCount;
     int curSocket;
+    bool preventClose = false;
 };
 
 UDPOutputMessages::UDPOutputMessages() {
@@ -96,15 +104,18 @@ int UDPOutputMessages::GetSocket(unsigned int key) {
     }
     return -1;
 }
-void UDPOutputMessages::ForceSocket(unsigned int key, int socket) {
+void UDPOutputMessages::ForceSocket(unsigned int key, int socket, bool preventClose) {
     SendSocketInfo* info = sendSockets[key];
     if (info == nullptr) {
         info = new SendSocketInfo();
         sendSockets[key] = info;
     }
-    for (int x = 0; x < info->sockets.size(); x++) {
-        close(info->sockets[x]);
+    if (!info->preventClose) {
+        for (int x = 0; x < info->sockets.size(); x++) {
+            close(info->sockets[x]);
+        }
     }
+    info->preventClose = preventClose;
     info->sockets.clear();
     info->sockets.push_back(socket);
 }
@@ -270,6 +281,7 @@ int UDPOutput::Init(Json::Value config) {
             break;
         case 2:
         case 3:
+        case 9:
             // ArtNet types
             outputs.push_back(new ArtNetOutputData(s));
             hasArtNet = true;
@@ -347,7 +359,7 @@ int UDPOutput::Init(Json::Value config) {
                     std::string msg = "UDP Output set to send data to myself.  Disabling ";
                     msg += host.c_str();
                     LogWarn(VB_CHANNELOUT, msg.c_str());
-                    WarningHolder::AddWarning(msg);
+                    WarningHolder::AddWarning(6, msg);
                     o->active = false;
                 }
             }
@@ -407,7 +419,7 @@ int UDPOutput::Init(Json::Value config) {
     if (hasArtNet) {
         // we have artnet packets so we'll need to get the special artnet socket created,
         // but we want to make sure it's on the given interface
-        CreateArtNetSocket(localAddress.sin_addr.s_addr);
+        CreateArtNetSocket(localAddress.sin_addr.s_addr, true);
     }
     return ChannelOutput::Init(config);
 }
@@ -454,6 +466,27 @@ void UDPOutput::GetRequiredChannelRanges(const std::function<void(int, int)>& ad
 void UDPOutput::addOutput(UDPOutputData* out) {
     outputs.push_back(out);
 }
+
+static void flushBuffers(int socket, int msgs, int total) {
+#ifndef PLATFORM_OSX
+    int bytes_in_buffer = 0;
+    if (ioctl(socket, SIOCOUTQ, &bytes_in_buffer) == 0) {
+        // Check bytes_in_buffer, if its too high, wait for it to drain
+        int cnt = 0;
+        int start = bytes_in_buffer;
+        while (bytes_in_buffer > 1024 && cnt < 50) {
+            cnt++;
+            std::this_thread::sleep_for(std::chrono::microseconds(1));
+            ioctl(socket, SIOCOUTQ, &bytes_in_buffer);
+        }
+        // if (cnt > 0) {
+        //     printf("Flush: Socket %d had to wait %d  (%d->%d)      (%d/%d)...\n", socket, cnt, start, bytes_in_buffer, msgs, total);
+        // }
+    }
+#endif
+}
+
+constexpr int MSGS_PER_SENDMMSG = 8;
 int UDPOutput::SendMessages(unsigned int socketKey, SendSocketInfo* socketInfo, std::vector<struct mmsghdr>& sendmsgs) {
     errno = 0;
     struct mmsghdr* msgs = &sendmsgs[0];
@@ -471,6 +504,7 @@ int UDPOutput::SendMessages(unsigned int socketKey, SendSocketInfo* socketInfo, 
     if (blockingOutput) {
         int errorCount = 0;
         for (int x = 0; x < msgCount; x++) {
+            flushBuffers(sendSocket, x, msgCount);
             ssize_t s = sendmsg(sendSocket, &msgs[x].msg_hdr, 0);
             if (s != -1) {
                 errorCount = 0;
@@ -485,19 +519,29 @@ int UDPOutput::SendMessages(unsigned int socketKey, SendSocketInfo* socketInfo, 
             }
         }
     } else {
-        int oc = sendmmsg(sendSocket, msgs, msgCount, MSG_DONTWAIT);
+        int oc = sendmmsg(sendSocket, msgs, msgCount > MSGS_PER_SENDMMSG ? MSGS_PER_SENDMMSG : msgCount, MSG_DONTWAIT);
         if (oc > 0) {
             outputCount += oc;
         }
         if (outputCount != msgCount) {
-            // in many cases, a simple thread yield will allow the network stack
-            // to flush some data and free up space, give that a chance first
+#ifndef PLATFORM_OSX
+            flushBuffers(sendSocket, outputCount, msgCount);
+#else
+            // On OSX we have no good way to check the socket buffer, so just
+            // sleep a bit to allow the stack to flush
             std::this_thread::sleep_for(std::chrono::microseconds(100));
-            oc = sendmmsg(sendSocket, &msgs[outputCount], msgCount - outputCount, MSG_DONTWAIT);
+#endif
+            int outMsgCnt = msgCount - outputCount;
+            oc = sendmmsg(sendSocket, &msgs[outputCount], outMsgCnt > MSGS_PER_SENDMMSG ? MSGS_PER_SENDMMSG : outMsgCnt, MSG_DONTWAIT);
             while (oc > 0) {
                 outputCount += oc;
+#ifndef PLATFORM_OSX
+                flushBuffers(sendSocket, outputCount, msgCount);
+#else
                 std::this_thread::sleep_for(std::chrono::microseconds(100));
-                oc = sendmmsg(sendSocket, &msgs[outputCount], msgCount - outputCount, MSG_DONTWAIT);
+#endif
+                outMsgCnt = msgCount - outputCount;
+                oc = sendmmsg(sendSocket, &msgs[outputCount], outMsgCnt > MSGS_PER_SENDMMSG ? MSGS_PER_SENDMMSG : outMsgCnt, MSG_DONTWAIT);
             }
         }
     }
@@ -600,9 +644,8 @@ int UDPOutput::SendData(unsigned char* channelData) {
         int total = 0;
         auto t1 = clock.now();
         for (auto& msgs : messages.messages) {
-            if (!msgs.second.empty() && msgs.first < LATE_MULTICAST_MESSAGES_KEY) {
+            if (!msgs.second.empty() && msgs.first < LATE_MESSAGES_START) {
                 SendSocketInfo* socketInfo = findOrCreateSocket(msgs.first);
-
                 std::unique_lock<std::mutex> lock(workMutex);
                 workQueue.push_back(WorkItem(msgs.first, socketInfo, msgs.second));
                 lock.unlock();
@@ -625,11 +668,23 @@ int UDPOutput::SendData(unsigned char* channelData) {
             t2 = clock.now();
         }
         if (doneWorkCount == total) {
+#ifndef PLATFORM_OSX
+            // now make sure the buffers are drained for the early packets do that they are
+            // fully received before we send the late packets
+            for (auto& msgs : messages.messages) {
+                if (!msgs.second.empty() && msgs.first < LATE_MESSAGES_START) {
+                    int bytes_in_buffer = 0;
+                    SendSocketInfo* socketInfo = findOrCreateSocket(msgs.first);
+                    int sendSocket = socketInfo->sockets[socketInfo->curSocket];
+                    flushBuffers(sendSocket, msgs.second.size(), msgs.second.size());
+                }
+            }
+#endif
             // now output the LATE/Broadcast packets (likely sync packets)
             for (auto& msgs : messages.messages) {
                 if (!msgs.second.empty()) {
                     SendSocketInfo* socketInfo = findOrCreateSocket(msgs.first);
-                    if (msgs.first >= LATE_MULTICAST_MESSAGES_KEY) {
+                    if (msgs.first >= LATE_MESSAGES_START) {
                         t1 = clock.now();
                         int outputCount = SendMessages(msgs.first, socketInfo, msgs.second);
                         t2 = clock.now();
@@ -803,7 +858,7 @@ int UDPOutput::createSocket(int port, bool broadCast, bool multiCast) {
         return -1;
     }
     // make sure the send buffer is actually set to a reasonable size for non-blocking mode
-    int bufSize = 1024 * (blockingOutput ? 4 : 512);
+    int bufSize = (blockingOutput ? 4096 : (MSGS_PER_SENDMMSG * 1511)) - 1;
     setsockopt(sendSocket, SOL_SOCKET, SO_SNDBUF, &bufSize, sizeof(bufSize));
     // these sockets are for sending only, don't need a large receive buffer so
     // free some memory by setting to just a single page

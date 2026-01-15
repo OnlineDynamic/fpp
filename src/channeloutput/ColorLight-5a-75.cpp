@@ -247,8 +247,6 @@ ColorLight5a75Output::ColorLight5a75Output(unsigned int startChannel, unsigned i
     m_outputs(0),
     m_longestChain(0),
     m_invertedData(0),
-    m_matrix(NULL),
-    m_panelMatrix(NULL),
     m_slowCount(0),
     m_flippedLayout(0),
     m_highestFirmwareVersion(0) {
@@ -282,9 +280,6 @@ ColorLight5a75Output::~ColorLight5a75Output() {
 
     if (m_fd >= 0)
         close(m_fd);
-
-    if (m_outputFrame)
-        delete[] m_outputFrame;
 }
 
 /*
@@ -307,7 +302,7 @@ int ColorLight5a75Output::Init(Json::Value config) {
     m_colorOrder = ColorOrderFromString(config["colorOrder"].asString());
 
     m_panelMatrix =
-        new PanelMatrix(m_panelWidth, m_panelHeight, m_invertedData);
+        std::make_unique<PanelMatrix>(m_panelWidth, m_panelHeight, m_invertedData);
 
     if (!m_panelMatrix) {
         LogErr(VB_CHANNELOUT, "Unable to create PanelMatrix\n");
@@ -373,9 +368,9 @@ int ColorLight5a75Output::Init(Json::Value config) {
 
     m_channelCount = m_width * m_height * 3;
 
-    m_outputFrame = new char[m_outputs * m_longestChain * m_panelHeight * m_panelWidth * 3];
+    m_outputFrame = std::make_unique<char[]>(m_outputs * m_longestChain * m_panelHeight * m_panelWidth * 3);
 
-    m_matrix = new Matrix(m_startChannel, m_width, m_height);
+    m_matrix = std::make_unique<Matrix>(m_startChannel, m_width, m_height);
 
     if (config.isMember("subMatrices")) {
         for (int i = 0; i < config["subMatrices"].size(); i++) {
@@ -441,12 +436,12 @@ int ColorLight5a75Output::Init(Json::Value config) {
 
     if (ifstate != "up") {
         LogErr(VB_CHANNELOUT, "Error ColorLight: Configured interface %s does not have link %s\n", m_ifName.c_str(), strerror(errno));
-        WarningHolder::AddWarning("ColorLight: Configured interface " + m_ifName + " does not have link");
+        WarningHolder::AddWarning(7, "ColorLight: Configured interface " + m_ifName + " does not have link");
         if (m_colorlightDisable) {
             return 0;
         }
     } else {
-        WarningHolder::RemoveWarning("ColorLight: Configured interface " + m_ifName + " does not have link");
+        WarningHolder::RemoveWarning(7, "ColorLight: Configured interface " + m_ifName + " does not have link");
     }
 
     // Check interface is 1000Mbps capable and display error if not
@@ -460,12 +455,12 @@ int ColorLight5a75Output::Init(Json::Value config) {
 
     if (ifspeed > 0 && ifspeed < 1000) {
         LogErr(VB_CHANNELOUT, "Error ColorLight: Configured interface %s is not 1000Mbps Capable: %s\n", m_ifName.c_str(), strerror(errno));
-        WarningHolder::AddWarning("ColorLight: Configured interface " + m_ifName + " is not 1000Mbps Capable");
+        WarningHolder::AddWarning(8, "ColorLight: Configured interface " + m_ifName + " is not 1000Mbps Capable");
         if (m_colorlightDisable) {
             return 0;
         }
     } else {
-        WarningHolder::RemoveWarning("ColorLight: Configured interface " + m_ifName + " is not 1000Mbps Capable");
+        WarningHolder::RemoveWarning(8, "ColorLight: Configured interface " + m_ifName + " is not 1000Mbps Capable");
     }
 
     // Open our raw socket
@@ -568,7 +563,7 @@ int ColorLight5a75Output::Init(Json::Value config) {
     }
 
     // Pixel Data row packets - Type 0x55
-    char* rowPtr = (char*)m_outputFrame;
+    char* rowPtr = m_outputFrame.get();
     unsigned int dSize = 0;
     unsigned int part = 0;
     unsigned int hSize = CL_PACKET_DATA_OFFSET + CL_PIXL_HEADER_SIZE;
@@ -832,7 +827,7 @@ void ColorLight5a75Output::PrepData(unsigned char* channelData) {
                 int px = chain * m_panelWidth;
                 int yw = y * m_panelWidth * 3;
 
-                dst = (unsigned char*)(m_outputFrame + (((((output * m_panelHeight) + y) * m_panelWidth * m_longestChain) + px) * 3));
+                dst = (unsigned char*)(m_outputFrame.get() + (((((output * m_panelHeight) + y) * m_panelWidth * m_longestChain) + px) * 3));
 
                 for (int x = 0; x < pw3; x += 3) {
                     *(dst++) = m_gammaCurve[channelData[m_panelMatrix->m_panels[panel].pixelMap[yw + x]]];
@@ -1066,7 +1061,7 @@ void ColorLight5a75Output::GetReceiverInfo() {
         LogInfo(VB_CHANNELOUT, "Found %d ColorLight receiver(s)\n", m_receivers.size());
     } else {
         std::string warning = "ColorLight: No receiver cards were detected on interface " + m_ifName;
-        WarningHolder::AddWarning(warning);
+        WarningHolder::AddWarning(9, warning);
         LogWarn(VB_CHANNELOUT, "WARNING: %s\n", warning.c_str());
         m_warnings.push_front(warning);
     }
